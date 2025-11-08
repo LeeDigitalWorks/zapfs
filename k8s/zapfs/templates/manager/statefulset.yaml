@@ -1,0 +1,176 @@
+{{- if .Values.manager.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "zapfs.fullname" . }}-manager
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  serviceName: {{ include "zapfs.manager.headlessService" . }}
+  replicas: {{ .Values.manager.replicas | default 3 }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.manager.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "zapfs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: manager
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "zapfs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: manager
+        securityContext:
+          {{- toYaml .Values.manager.securityContext | nindent 10 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - /zapfs
+          - manager
+          - --ip=0.0.0.0
+          - --grpc_port={{ .Values.manager.grpcPort | default 8050 }}
+          - --debug_port={{ .Values.manager.debugPort | default 8055 }}
+          - --admin_port={{ .Values.manager.adminPort | default 8060 }}
+          - --raft_dir=/data/raft
+          - --raft_addr=$(POD_NAME).{{ include "zapfs.manager.headlessService" . }}:{{ .Values.manager.raftPort | default 8051 }}
+          - --node_id=$(POD_NAME)
+          - --region_id={{ .Values.manager.regionID | default "default" }}
+          {{- if .Values.manager.tls.enabled }}
+          - --cert_file=/etc/tls/tls.crt
+          - --key_file=/etc/tls/tls.key
+          {{- end }}
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        {{- if .Values.manager.iamMasterKey }}
+        - name: ZAPFS_IAM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.manager.iamMasterKeySecret | default (printf "%s-iam-secrets" (include "zapfs.fullname" .)) }}
+              key: master-key
+        {{- end }}
+        ports:
+        - name: grpc
+          containerPort: {{ .Values.manager.grpcPort | default 8050 }}
+          protocol: TCP
+        - name: raft
+          containerPort: {{ .Values.manager.raftPort | default 8051 }}
+          protocol: TCP
+        - name: debug
+          containerPort: {{ .Values.manager.debugPort | default 8055 }}
+          protocol: TCP
+        - name: admin
+          containerPort: {{ .Values.manager.adminPort | default 8060 }}
+          protocol: TCP
+        # Liveness: is the process running?
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: debug
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        # Readiness: is the Raft cluster ready (has leader)?
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: debug
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        # Startup: allow time for Raft cluster formation
+        startupProbe:
+          httpGet:
+            path: /ready
+            port: debug
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+        resources:
+          {{- toYaml .Values.manager.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        {{- if .Values.manager.tls.enabled }}
+        - name: tls
+          mountPath: /etc/tls
+          readOnly: true
+        {{- end }}
+        {{- if .Values.manager.config }}
+        - name: config
+          mountPath: /config
+          readOnly: true
+        {{- end }}
+      {{- if .Values.manager.tls.enabled }}
+      volumes:
+      - name: tls
+        secret:
+          secretName: {{ .Values.manager.tls.secretName }}
+      {{- end }}
+      {{- if .Values.manager.config }}
+      - name: config
+        configMap:
+          name: {{ include "zapfs.fullname" . }}-manager-config
+      {{- end }}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if not .Values.manager.affinity }}
+      affinity:
+        # Anti-affinity: spread managers across nodes for HA
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "zapfs.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: manager
+              topologyKey: kubernetes.io/hostname
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      {{- if .Values.manager.storageClass }}
+      storageClassName: {{ .Values.manager.storageClass }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.manager.storage | default "1Gi" }}
+{{- end }}
+

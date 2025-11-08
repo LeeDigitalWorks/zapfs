@@ -1,0 +1,26 @@
+{
+  "_comment": "Minimal single-pool configuration for development/testing",
+  "pools": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "default",
+      "description": "Default local storage pool",
+      "backend_type": "local",
+      "disk_type": "ssd",
+      "weight": 1.0,
+      "backends": ["/tmp/zapfs/data"]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "STANDARD",
+      "description": "Default storage profile",
+      "pools": [
+        {"pool_id": "00000000-0000-0000-0000-000000000001"}
+      ],
+      "replication": 1,
+      "compression": "none"
+    }
+  ]
+}

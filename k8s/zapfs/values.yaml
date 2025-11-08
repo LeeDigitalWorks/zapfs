@@ -1,0 +1,236 @@
+# ZapFS Helm Chart Values
+# https://github.com/zapfs/zapfs
+
+# =============================================================================
+# Global Settings
+# =============================================================================
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: zapfs/zapfs
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to Chart.appVersion
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# =============================================================================
+# Manager Cluster (Raft Consensus)
+# =============================================================================
+# The manager cluster provides:
+# - Raft-based consensus for high availability
+# - IAM credential management (central authority)
+# - Service registry for file and metadata services
+# - Placement decisions for chunk storage
+# - Collection (bucket) management via Raft
+
+manager:
+  enabled: true
+  replicas: 3  # Must be odd for Raft quorum (1, 3, 5)
+
+  # Ports
+  grpcPort: 8050    # gRPC API for clients and cluster operations
+  raftPort: 8051    # Raft peer-to-peer communication
+  debugPort: 8055   # Prometheus metrics, pprof, health checks
+  adminPort: 8060   # IAM Admin HTTP API
+
+  # Region identifier
+  regionID: "default"
+
+  # Storage for Raft logs and snapshots
+  storage: "1Gi"
+  storageClass: ""  # Use default storage class
+
+  # IAM master key for encrypting secrets at rest
+  # Generate with: openssl rand -base64 32
+  # For production, use external secrets management
+  iamMasterKey: ""
+  iamMasterKeySecret: ""  # Or reference existing secret
+
+  # Bootstrap configuration
+  bootstrap:
+    enabled: true  # Enable bootstrap job for cluster initialization
+
+  # TLS configuration
+  tls:
+    enabled: false
+    secretName: ""
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # Pod placement
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}  # If empty, anti-affinity is applied automatically
+
+  # Service configuration
+  service:
+    type: ClusterIP
+
+  # Optional: mount config file
+  config: false
+
+# =============================================================================
+# Metadata Service (S3 API Gateway)
+# =============================================================================
+# The metadata service provides:
+# - S3-compatible HTTP API
+# - AWS Signature V4/V2 authentication
+# - Request routing and filtering
+# - IAM credential sync from manager cluster
+# - Bucket and object metadata storage (MySQL/SQLite)
+
+metadata:
+  enabled: true
+  replicaCount: 2
+
+  # Ports
+  httpPort: 8082    # S3-compatible HTTP API
+  grpcPort: 8083    # Internal gRPC
+  debugPort: 8085   # Prometheus metrics, pprof, health checks
+
+  # Manager cluster address for IAM sync
+  managerAddr: ""  # Defaults to zapfs-manager:8050
+
+  # Region identifier
+  regionID: "us-west"
+
+  # S3 domain names for virtual-hosted style bucket addressing
+  # Requests to bucket.s3.example.com will be parsed as bucket "bucket"
+  # Add your S3-compatible domain names here
+  s3Domains:
+    - "localhost"
+    - "s3.local"
+    # Example production domains:
+    # - "s3.example.com"
+    # - "s3.us-west-1.example.com"
+
+  # Database configuration
+  # Supports MySQL, Vitess, or SQLite
+  # For Vitess: use vtgate address (e.g., "user:pass@tcp(vtgate:3306)/keyspace")
+  database:
+    driver: "mysql"  # mysql, sqlite
+    # DSN format: user:password@tcp(host:port)/database
+    # For Vitess/PlanetScale: same MySQL DSN format via vtgate
+    dsn: ""  # Required - set via --set or values override
+    # Example DSNs:
+    #   MySQL:   "zapfs:password@tcp(mysql:3306)/zapfs"
+    #   Vitess:  "zapfs:password@tcp(vtgate:3306)/zapfs@primary"
+    #   SQLite:  "/data/metadata.db" (with driver: sqlite)
+
+  # TLS configuration
+  tls:
+    enabled: false
+    secretName: ""
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  # Pod placement
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Service configuration
+  service:
+    type: ClusterIP
+
+  # Ingress for external S3 access
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: s3.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+# =============================================================================
+# File Servers (Chunk Storage)
+# =============================================================================
+# File servers provide:
+# - Chunk storage and retrieval
+# - Replication between file servers
+# - Erasure coding support
+# - Direct data path (bypasses metadata for reads)
+
+file:
+  enabled: true
+  replicas: 2
+
+  # Ports
+  httpPort: 8080    # HTTP API for direct access
+  grpcPort: 8081    # gRPC for internal communication
+  debugPort: 8010   # Prometheus metrics, pprof, health checks
+
+  # Storage for chunk data
+  storage: "100Gi"
+  storageClass: ""  # Use default storage class
+
+  # TLS configuration
+  tls:
+    enabled: false
+    secretName: ""
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "512Mi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  # Pod placement
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Service configuration
+  service:
+    type: ClusterIP
+
+# =============================================================================
+# External Database
+# =============================================================================
+# ZapFS requires an external SQL database for metadata storage.
+# Supported databases: MySQL 8.0+, Vitess, PlanetScale, SQLite (dev only)
+#
+# For production, we recommend Vitess for horizontal scalability.
+# See: https://vitess.io/
+#
+# Example Vitess deployment:
+#   helm install vitess planetscale/vitess-operator
+#
+# Then configure metadata.database.dsn to point to vtgate.

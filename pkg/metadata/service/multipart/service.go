@@ -1,0 +1,144 @@
+package multipart
+
+import (
+	"context"
+	"io"
+)
+
+// Service defines the interface for multipart upload operations.
+// This separates business logic from HTTP handling.
+type Service interface {
+	// CreateUpload initiates a new multipart upload.
+	CreateUpload(ctx context.Context, req *CreateUploadRequest) (*CreateUploadResult, error)
+
+	// UploadPart uploads a part of a multipart upload.
+	UploadPart(ctx context.Context, req *UploadPartRequest) (*UploadPartResult, error)
+
+	// CompleteUpload completes a multipart upload by assembling parts.
+	CompleteUpload(ctx context.Context, req *CompleteUploadRequest) (*CompleteUploadResult, error)
+
+	// AbortUpload aborts a multipart upload and cleans up parts.
+	AbortUpload(ctx context.Context, bucket, key, uploadID string) error
+
+	// ListParts lists the parts of a multipart upload.
+	ListParts(ctx context.Context, req *ListPartsRequest) (*ListPartsResult, error)
+
+	// ListUploads lists in-progress multipart uploads for a bucket.
+	ListUploads(ctx context.Context, req *ListUploadsRequest) (*ListUploadsResult, error)
+}
+
+// PartEntry represents a part in a complete request
+type PartEntry struct {
+	PartNumber int
+	ETag       string
+}
+
+// CreateUploadRequest contains parameters for initiating a multipart upload
+type CreateUploadRequest struct {
+	Bucket       string
+	Key          string
+	OwnerID      string
+	ContentType  string
+	StorageClass string
+}
+
+// CreateUploadResult contains the result of initiating a multipart upload
+type CreateUploadResult struct {
+	UploadID string
+}
+
+// UploadPartRequest contains parameters for uploading a part
+type UploadPartRequest struct {
+	Bucket        string
+	Key           string
+	UploadID      string
+	PartNumber    int
+	Body          io.Reader
+	ContentLength int64
+}
+
+// UploadPartResult contains the result of uploading a part
+type UploadPartResult struct {
+	ETag string
+}
+
+// CompleteUploadRequest contains parameters for completing a multipart upload
+type CompleteUploadRequest struct {
+	Bucket   string
+	Key      string
+	UploadID string
+	Parts    []PartEntry
+}
+
+// CompleteUploadResult contains the result of completing a multipart upload
+type CompleteUploadResult struct {
+	Location string
+	Bucket   string
+	Key      string
+	ETag     string
+}
+
+// ListPartsRequest contains parameters for listing parts
+type ListPartsRequest struct {
+	Bucket           string
+	Key              string
+	UploadID         string
+	PartNumberMarker int
+	MaxParts         int
+}
+
+// ListPartsResult contains the result of listing parts
+type ListPartsResult struct {
+	Bucket               string
+	Key                  string
+	UploadID             string
+	OwnerID              string
+	StorageClass         string
+	PartNumberMarker     int
+	NextPartNumberMarker int
+	MaxParts             int
+	IsTruncated          bool
+	Parts                []PartInfo
+}
+
+// PartInfo represents a part in list results
+type PartInfo struct {
+	PartNumber   int
+	LastModified int64
+	ETag         string
+	Size         int64
+}
+
+// ListUploadsRequest contains parameters for listing uploads
+type ListUploadsRequest struct {
+	Bucket         string
+	Prefix         string
+	Delimiter      string
+	KeyMarker      string
+	UploadIDMarker string
+	MaxUploads     int
+}
+
+// ListUploadsResult contains the result of listing uploads
+type ListUploadsResult struct {
+	Bucket             string
+	KeyMarker          string
+	UploadIDMarker     string
+	NextKeyMarker      string
+	NextUploadIDMarker string
+	Delimiter          string
+	Prefix             string
+	MaxUploads         int
+	IsTruncated        bool
+	Uploads            []UploadInfo
+	CommonPrefixes     []string
+}
+
+// UploadInfo represents an upload in list results
+type UploadInfo struct {
+	Key          string
+	UploadID     string
+	OwnerID      string
+	StorageClass string
+	Initiated    int64
+}

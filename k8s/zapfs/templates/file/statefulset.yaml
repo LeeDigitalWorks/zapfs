@@ -1,0 +1,125 @@
+{{- if .Values.file.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "zapfs.fullname" . }}-file
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: file
+spec:
+  serviceName: {{ include "zapfs.file.service" . }}-headless
+  replicas: {{ .Values.file.replicas | default 2 }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: file
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.file.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "zapfs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: file
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "zapfs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.file.podSecurityContext | nindent 8 }}
+      containers:
+      - name: file
+        securityContext:
+          {{- toYaml .Values.file.securityContext | nindent 10 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - /zapfs
+          - file
+          - --ip=0.0.0.0
+          - --http_port={{ .Values.file.httpPort | default 8080 }}
+          - --grpc_port={{ .Values.file.grpcPort | default 8081 }}
+          - --debug_port={{ .Values.file.debugPort | default 8010 }}
+          - --index_path=/data/index
+          - --node_id=$(POD_NAME)
+          {{- if .Values.file.tls.enabled }}
+          - --cert_file=/etc/tls/tls.crt
+          - --key_file=/etc/tls/tls.key
+          {{- end }}
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        ports:
+        - name: http
+          containerPort: {{ .Values.file.httpPort | default 8080 }}
+          protocol: TCP
+        - name: grpc
+          containerPort: {{ .Values.file.grpcPort | default 8081 }}
+          protocol: TCP
+        - name: debug
+          containerPort: {{ .Values.file.debugPort | default 8010 }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: debug
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: debug
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.file.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        {{- if .Values.file.tls.enabled }}
+        - name: tls
+          mountPath: /etc/tls
+          readOnly: true
+        {{- end }}
+      {{- if .Values.file.tls.enabled }}
+      volumes:
+      - name: tls
+        secret:
+          secretName: {{ .Values.file.tls.secretName }}
+      {{- end }}
+      {{- with .Values.file.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.file.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.file.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      {{- if .Values.file.storageClass }}
+      storageClassName: {{ .Values.file.storageClass }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.file.storage | default "10Gi" }}
+{{- end }}
+

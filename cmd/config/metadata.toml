@@ -1,0 +1,36 @@
+# ZapFS Metadata Server Configuration
+# All keys use underscores for consistency with CLI flags and environment variables
+# Environment variables: ZAPFS_HTTP_PORT, ZAPFS_GRPC_PORT, etc.
+
+# Network
+ip = "0.0.0.0"
+http_port = 8082
+grpc_port = 8083
+debug_port = 8085
+
+# TLS (optional)
+cert_file = ""
+key_file = ""
+
+# Logging
+log_level = "info"
+
+# Manager connection
+manager_addr = "localhost:8050"
+
+# S3 API
+s3_domains = ["localhost"]
+
+# Regional
+region_id = "us-west"
+
+# Storage configuration (optional - defaults will be created if not specified)
+pools_config = ""
+profiles_config = ""
+data_dir = "/tmp/zapfs/data"
+
+# Database
+db_driver = "memory"
+db_dsn = ""
+db_max_open_conns = 25
+db_max_idle_conns = 5

@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package iam_pb;
+
+option go_package = "zapfs/proto/iam_pb";
+
+import "google/protobuf/timestamp.proto";
+
+// IAMService provides centralized identity and access management.
+// The manager cluster is the authoritative source for IAM data.
+// Metadata services sync credentials from here and verify signatures locally.
+service IAMService {
+  // GetCredential retrieves a credential by access key
+  // Returns decrypted secret for trusted metadata services to verify signatures locally
+  rpc GetCredential(GetCredentialRequest) returns (GetCredentialResponse);
+  
+  // StreamCredentials streams credential changes in real-time
+  // Metadata services use this to keep their caches in sync
+  rpc StreamCredentials(StreamCredentialsRequest) returns (stream CredentialEvent);
+  
+  // ListCredentials returns all credentials (for initial sync on startup)
+  rpc ListCredentials(ListCredentialsRequest) returns (stream Credential);
+  
+  // GetIAMVersion returns the current IAM data version
+  rpc GetIAMVersion(GetIAMVersionRequest) returns (GetIAMVersionResponse);
+}
+
+// Credential represents credential data for IAM sync.
+// 
+// Security Model:
+// - At rest: secret_key is encrypted with ZAPFS_IAM_MASTER_KEY
+// - In transit (manager→metadata): secret_key is sent in plaintext over internal network
+// - Metadata caches plaintext secret for local S3 signature verification
+//
+// This avoids metadata services calling manager for every S3 request.
+// The internal network should be secured (mTLS, network policies, etc.).
+message Credential {
+  string access_key = 1;
+  string username = 2;
+  string account_id = 3;
+  string display_name = 4;
+  string email = 5;
+  bool disabled = 6;
+  string status = 7;  // Active, Inactive
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  
+  // Secret key for S3 signature verification (decrypted for internal sync)
+  // This is ONLY sent to trusted metadata services, never to external clients
+  string secret_key = 10;
+  
+  // Policy and group names for reference
+  repeated string policy_names = 11;
+  repeated string group_names = 12;
+  
+  // Full policy documents for authorization (embedded for simplicity)
+  // Policies are small (~1KB) and rarely change, so embedding is efficient
+  repeated Policy policies = 13;
+}
+
+// Policy represents an IAM policy document
+message Policy {
+  string name = 1;
+  string arn = 2;
+  string document = 3;  // JSON policy document (AWS IAM format)
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message GetCredentialRequest {
+  string access_key = 1;
+  
+  // If true, include secret_key for signature verification
+  // Only set when called from trusted internal services (metadata servers)
+  bool include_secret = 2;
+}
+
+message GetCredentialResponse {
+  Credential credential = 1;
+  bool found = 2;
+  uint64 version = 3;
+}
+
+message StreamCredentialsRequest {
+  // Resume streaming from this version (0 = from beginning)
+  uint64 since_version = 1;
+}
+
+message CredentialEvent {
+  enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_CREATED = 1;
+    EVENT_TYPE_UPDATED = 2;
+    EVENT_TYPE_DELETED = 3;
+  }
+  
+  EventType type = 1;
+  Credential credential = 2;
+  uint64 version = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message ListCredentialsRequest {
+  // Optional: filter by status
+  string status_filter = 1;
+}
+
+message GetIAMVersionRequest {}
+
+message GetIAMVersionResponse {
+  uint64 version = 1;
+  uint64 credential_count = 2;
+  google.protobuf.Timestamp last_updated = 3;
+}
+

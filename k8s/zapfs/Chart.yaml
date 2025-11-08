@@ -1,0 +1,23 @@
+apiVersion: v2
+name: zapfs
+description: A distributed object storage system with S3-compatible API
+
+type: application
+
+# Chart version
+version: 0.1.0
+
+# Application version
+appVersion: "0.1.0"
+
+keywords:
+  - storage
+  - s3
+  - object-storage
+  - distributed
+  - raft
+
+home: https://github.com/zapfs/zapfs
+
+maintainers:
+  - name: ZapFS Team

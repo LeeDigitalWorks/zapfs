@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Keys - ZapFS Admin</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --border: #30363d;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo { font-size: 1.5rem; font-weight: 600; color: var(--accent); }
+        
+        nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 2rem;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover, nav a.active { color: var(--text-primary); background: var(--bg-tertiary); }
+        
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 2rem 0;
+            overflow: hidden;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .section-header h2 { font-size: 1.125rem; font-weight: 600; }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-secondary); font-weight: 500; font-size: 0.875rem; }
+        tr:hover { background: var(--bg-tertiary); }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+        .badge-warning { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
+        .badge-danger { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
+        
+        .mono { font-family: 'SF Mono', Consolas, monospace; font-size: 0.875rem; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active { display: flex; }
+        
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-header h3 { font-size: 1.25rem; }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+        
+        .warning-text {
+            color: var(--warning);
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+        
+        .loading { text-align: center; padding: 2rem; color: var(--text-secondary); }
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-secondary); }
+        
+        .key-prefix {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">⚡ ZapFS Admin</div>
+        <nav>
+            <a href="/v1/iam/ui/">Dashboard</a>
+            <a href="/v1/iam/ui/users.html">Users</a>
+            <a href="/v1/iam/ui/keys.html" class="active">Access Keys</a>
+        </nav>
+    </header>
+    
+    <div class="container">
+        <div class="section">
+            <div class="section-header">
+                <h2>All Access Keys</h2>
+            </div>
+            <div id="loading" class="loading">Loading...</div>
+            <table id="keysTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Access Key ID</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="keysBody"></tbody>
+            </table>
+            <div id="empty" class="empty-state" style="display: none;">
+                No access keys found. <a href="/v1/iam/ui/users.html">Create a user first</a>.
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Delete Access Key</h3>
+                <button class="modal-close" onclick="hideModal()">&times;</button>
+            </div>
+            <p>Are you sure you want to delete access key <code id="deleteKeyId" class="mono"></code>?</p>
+            <p class="warning-text">Any application using this key will lose access immediately.</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="hideModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="deleteKey()">Delete Key</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/v1/iam';
+        let keyToDelete = null;
+        let userForKey = null;
+        
+        function hideModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+        }
+        
+        async function loadKeys() {
+            try {
+                // First get all users
+                const usersResp = await fetch(`${API_BASE}/users`);
+                const usersData = await usersResp.json();
+                
+                if (!usersData.users || usersData.users.length === 0) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('empty').style.display = 'block';
+                    return;
+                }
+                
+                const allKeys = [];
+                
+                // Get keys for each user
+                for (const username of usersData.users) {
+                    const userResp = await fetch(`${API_BASE}/users/${username}`);
+                    const userData = await userResp.json();
+                    
+                    for (const key of (userData.access_keys || [])) {
+                        allKeys.push({
+                            accessKey: key.access_key,
+                            username: username,
+                            status: key.status || 'Active',
+                            createdAt: key.created_at
+                        });
+                    }
+                }
+                
+                document.getElementById('loading').style.display = 'none';
+                
+                if (allKeys.length === 0) {
+                    document.getElementById('empty').style.display = 'block';
+                    return;
+                }
+                
+                document.getElementById('keysTable').style.display = 'table';
+                
+                const tbody = document.getElementById('keysBody');
+                tbody.innerHTML = '';
+                
+                for (const key of allKeys) {
+                    const tr = document.createElement('tr');
+                    const created = key.createdAt ? new Date(key.createdAt).toLocaleDateString() : '-';
+                    
+                    tr.innerHTML = `
+                        <td class="mono">
+                            <span class="key-prefix">${key.accessKey.substring(0, 4)}</span>${key.accessKey.substring(4)}
+                        </td>
+                        <td>${key.username}</td>
+                        <td><span class="badge ${key.status === 'Active' ? 'badge-success' : 'badge-warning'}">${key.status}</span></td>
+                        <td>${created}</td>
+                        <td>
+                            <button class="btn btn-danger" onclick="confirmDelete('${key.accessKey}', '${key.username}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            } catch (e) {
+                document.getElementById('loading').innerHTML = `<span style="color: var(--danger);">Error: ${e.message}</span>`;
+            }
+        }
+        
+        function confirmDelete(keyId, username) {
+            keyToDelete = keyId;
+            userForKey = username;
+            document.getElementById('deleteKeyId').textContent = keyId;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        
+        async function deleteKey() {
+            if (!keyToDelete || !userForKey) return;
+            
+            try {
+                const resp = await fetch(`${API_BASE}/users/${userForKey}/keys/${keyToDelete}`, { method: 'DELETE' });
+                if (!resp.ok && resp.status !== 204) {
+                    const err = await resp.json();
+                    throw new Error(err.message || 'Failed to delete key');
+                }
+                
+                hideModal();
+                loadKeys();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        loadKeys();
+    </script>
+</body>
+</html>
+

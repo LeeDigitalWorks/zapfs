@@ -1,0 +1,50 @@
+# Rate Limiting Tier Configuration
+default_tier = "standard"
+
+# Tier Definitions
+[[tiers]]
+name = "standard"
+max_read_rps = 800        # Default: 800 read requests/sec per bucket/user
+max_write_rps = 800       # Default: 800 write requests/sec per bucket/user
+max_list_rps = 100        # Default: 100 list requests/sec (more expensive)
+max_read_bandwidth = 1073741824   # 1 GB/s read bandwidth
+max_write_bandwidth = 1073741824  # 1 GB/s write bandwidth
+max_objects = 0           # 0 = unlimited (pay-as-you-go model)
+max_size_bytes = 0        # 0 = unlimited
+
+[[tiers]]
+name = "premium"
+max_read_rps = 5000       # AWS-like: 5,500/s per prefix
+max_write_rps = 3500      # AWS-like: 3,500/s per prefix
+max_list_rps = 500        # 5x standard
+max_read_bandwidth = 10737418240  # 10 GB/s read
+max_write_bandwidth = 5368709120  # 5 GB/s write
+max_objects = 0
+max_size_bytes = 0
+
+[[tiers]]
+name = "restricted"
+max_read_rps = 100
+max_write_rps = 50
+max_list_rps = 10
+max_read_bandwidth = 104857600   # 100 MB/s
+max_write_bandwidth = 52428800   # 50 MB/s
+max_objects = 0
+max_size_bytes = 0
+
+[[tiers]]
+name = "blocked"
+max_read_rps = 0
+max_write_rps = 0
+max_list_rps = 0
+max_read_bandwidth = 0
+max_write_bandwidth = 0
+max_objects = 1
+max_size_bytes = 1
+
+[collection_tiers]
+# Example:
+# "abusive-user-bucket" = "restricted"
+# "premium-customer-bucket" = "premium"
+# "high-priority-app" = "premium"
+# "test-load-generator" = "restricted"

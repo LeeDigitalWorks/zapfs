@@ -1,0 +1,83 @@
+{
+  "profiles": [
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "name": "STANDARD",
+      "description": "General-purpose storage with balanced performance",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000001",
+          "weight_override": 0
+        },
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000002",
+          "weight_override": 0
+        },
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000003",
+          "weight_override": 0
+        }
+      ],
+      "replication": 1,
+      "compression": "lz4"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "name": "REPLICATED",
+      "description": "3-way replicated storage for critical data",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000001"
+        },
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000002"
+        },
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000003"
+        }
+      ],
+      "replication": 3,
+      "compression": "lz4",
+      "spread_across_racks": true
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000012",
+      "name": "EC_6_3",
+      "description": "Erasure coded storage (6 data + 3 parity shards)",
+      "pools": [
+        {"pool_id": "00000000-0000-0000-0000-000000000001"},
+        {"pool_id": "00000000-0000-0000-0000-000000000002"},
+        {"pool_id": "00000000-0000-0000-0000-000000000003"}
+      ],
+      "ec_scheme": {
+        "data_shards": 6,
+        "parity_shards": 3
+      },
+      "compression": "zstd"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000013",
+      "name": "COLD",
+      "description": "Infrequent access storage on S3",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000004"
+        }
+      ],
+      "replication": 1,
+      "compression": "zstd"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000014",
+      "name": "ARCHIVE",
+      "description": "Long-term archival on S3 Glacier",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000004"
+        }
+      ],
+      "replication": 1,
+      "compression": "zstd"
+    }
+  ]
+}

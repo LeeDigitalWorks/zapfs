@@ -1,0 +1,54 @@
+{{- if .Values.file.enabled }}
+---
+# Headless service for stable pod DNS names
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zapfs.file.service" . }}-headless
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: file
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: {{ .Values.file.grpcPort | default 8081 }}
+    targetPort: grpc
+    protocol: TCP
+    name: grpc
+  - port: {{ .Values.file.httpPort | default 8080 }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "zapfs.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: file
+---
+# Regular service for load-balanced access
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zapfs.file.service" . }}
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: file
+spec:
+  type: {{ .Values.file.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.file.grpcPort | default 8081 }}
+    targetPort: grpc
+    protocol: TCP
+    name: grpc
+  - port: {{ .Values.file.httpPort | default 8080 }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: {{ .Values.file.debugPort | default 8010 }}
+    targetPort: debug
+    protocol: TCP
+    name: debug
+  selector:
+    {{- include "zapfs.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: file
+{{- end }}
+

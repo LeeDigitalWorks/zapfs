@@ -1,0 +1,163 @@
+# Mockery v3 Configuration
+# https://vektra.github.io/mockery/latest/configuration/
+#
+# Generate mocks: make mocks
+# Install mockery: go install github.com/vektra/mockery/v3@latest
+#
+# Template variables available:
+#   {{.InterfaceDir}}    - Directory containing the interface
+#   {{.InterfaceName}}   - Name of the interface
+#   {{.SrcPackageName}}  - Source package name
+#   {{.Mock}}            - "Mock" prefix
+
+all: false
+dir: "mocks/{{.SrcPackageName}}"
+filename: "mock_{{.InterfaceName | lower}}.go"
+structname: "Mock{{.InterfaceName}}"
+pkgname: "mocks"
+formatter: goimports
+template: testify
+force-file-write: true
+include-auto-generated: true
+template-data:
+  unroll-variadic: true
+packages:
+  # gRPC Service Clients (from proto-generated code)
+  zapfs/proto/manager_pb:
+    interfaces:
+      ManagerServiceClient:
+
+  zapfs/proto/metadata_pb:
+    interfaces:
+      MetadataServiceClient:
+
+  zapfs/proto/file_pb:
+    interfaces:
+      FileServiceClient:
+
+  zapfs/proto/iam_pb:
+    interfaces:
+      IAMServiceClient:
+
+  # IAM Package - credential storage and policy evaluation
+  zapfs/pkg/iam:
+    config:
+      all: false
+    interfaces:
+      CredentialStore:
+      PolicyStore:
+      GroupStore:
+
+  # Metadata DB Package - database layer
+  zapfs/pkg/metadata/db:
+    config:
+      all: false
+    interfaces:
+      DB:
+      ObjectStore:
+      BucketStore:
+      MultipartStore:
+      VersionStore:
+      ACLStore:
+      PolicyStore:
+      CORSStore:
+      WebsiteStore:
+      TaggingStore:
+      EncryptionStore:
+      LifecycleStore:
+      ObjectLockStore:
+      TxStore:
+
+  # Metadata Filter Package - request processing filters
+  zapfs/pkg/metadata/filter:
+    config:
+      all: false
+    interfaces:
+      Filter:
+      PolicyStore:
+      ACLStore:
+      BucketChecker:
+      TierStore:
+
+  # Metadata Client Package - service client interfaces
+  zapfs/pkg/metadata/client:
+    config:
+      all: false
+    interfaces:
+      Manager:
+      File:
+
+  # Metadata Service Package - business logic layer
+  zapfs/pkg/metadata/service/object:
+    config:
+      all: false
+    interfaces:
+      Service:
+
+  zapfs/pkg/metadata/service/bucket:
+    config:
+      all: false
+    interfaces:
+      Service:
+
+  zapfs/pkg/metadata/service/multipart:
+    config:
+      all: false
+    interfaces:
+      Service:
+      Storage:
+
+  zapfs/pkg/metadata/service/config:
+    config:
+      all: false
+    interfaces:
+      Service:
+      BucketStore:
+
+  # Cache Package - caching layer
+  zapfs/pkg/cache:
+    config:
+      all: false
+    interfaces:
+      BucketCacheClient:
+
+  # Storage Package - storage backends
+  zapfs/pkg/storage/store:
+    config:
+      all: false
+    interfaces:
+      Store:
+
+  zapfs/pkg/storage/placer:
+    config:
+      all: false
+    interfaces:
+      Placer:
+
+  zapfs/pkg/storage/ec:
+    config:
+      all: false
+    interfaces:
+      ErasureCoder:
+
+  # Types Package - core type interfaces
+  zapfs/pkg/types:
+    config:
+      all: false
+    interfaces:
+      BackendStorage:
+
+  # Manager Package - cluster management
+  zapfs/pkg/manager:
+    config:
+      all: false
+    interfaces:
+      CredentialNotifier:
+
+  # Task Queue - core interfaces
+  zapfs/pkg/taskqueue:
+    config:
+      all: false
+    interfaces:
+      Queue:
+      Handler:

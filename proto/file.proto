@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package file_pb;
+option go_package = "zapfs/proto/file_pb";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "common.proto";
+
+service FileService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc FileServerStatus(FileServerStatusRequest) returns (FileServerStatusResponse);
+  rpc MarkBackendReadOnly(MarkBackendReadOnlyRequest) returns (google.protobuf.Empty);
+  rpc MarkBackendWritable(MarkBackendWritableRequest) returns (google.protobuf.Empty);
+
+  rpc PutObject(stream PutObjectRequest) returns (PutObjectResponse);
+  rpc GetObject(GetObjectRequest) returns (stream GetObjectResponse);
+  rpc GetObjectRange(GetObjectRangeRequest) returns (stream GetObjectResponse);
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+  rpc BatchDeleteObjects(BatchDeleteObjectsRequest) returns (BatchDeleteObjectsResponse);
+
+  // RefCount management for GC
+  rpc DecrementRefCount(DecrementRefCountRequest) returns (DecrementRefCountResponse);
+  rpc DecrementRefCountBatch(DecrementRefCountBatchRequest) returns (DecrementRefCountBatchResponse);
+}
+
+message MemStatus {
+  int32 goroutines = 1;
+  uint64 all = 2;
+  uint64 used = 3;
+  uint64 free = 4;
+  uint64 self = 5;
+  uint64 heap = 6;
+  uint64 stack = 7;
+}
+
+message FileServerStatusRequest {}
+message FileServerStatusResponse {
+  repeated common_pb.Backend backends = 1;
+  MemStatus memory_status = 2;
+  string version = 3;
+  string data_center = 4;
+  string rack = 5;
+  string node = 6;
+}
+
+message PingRequest {}
+message PingResponse {
+  uint64 start_time = 1;
+  uint64 current_time = 2;
+  uint64 stop_time = 3;
+}
+
+message PutObjectRequest {
+  oneof payload {
+    PutObjectMeta meta = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PutObjectMeta {
+  string object_id = 1;
+  string preferred_backend_id = 2;
+  uint64 total_size = 3;
+
+  bool async_replication = 5;
+  bool use_erasure_coding = 6;
+  common_pb.ECScheme ec_scheme = 7;
+}
+
+message PutObjectResponse {
+  string object_id = 1;
+  uint64 size = 2;
+  string etag = 3;
+  google.protobuf.Timestamp modified_at = 4;
+}
+
+message GetObjectRequest {
+  string object_id = 1;
+}
+
+message GetObjectRangeRequest {
+  string object_id = 1;
+  uint64 offset = 2;
+  uint64 length = 3;
+}
+
+message GetObjectResponse {
+  bytes chunk = 1;
+  string etag = 2;
+}
+
+message DeleteObjectRequest {
+  string object_id = 1;
+}
+
+message DeleteObjectResponse {
+  string object_id = 1;
+  int32 status = 2;
+  string error = 3;
+  uint32 size = 4;
+  uint32 version = 5;
+  google.protobuf.Timestamp deleted_at = 6;
+}
+
+message BatchDeleteObjectsRequest {
+  repeated string object_ids = 1;
+}
+
+message BatchDeleteObjectsResponse {
+  repeated DeleteObjectResponse results = 1;
+}
+
+message MarkBackendReadOnlyRequest {
+  string backend_id = 1;
+}
+
+message MarkBackendWritableRequest {
+  string backend_id = 1;
+}
+
+// RefCount management messages
+message DecrementRefCountRequest {
+  string chunk_id = 1;
+  // Optional: expected RefCount for compare-and-swap semantics
+  // If provided and doesn't match current RefCount, returns current value without decrementing
+  uint32 expected_ref_count = 2;
+}
+
+message DecrementRefCountResponse {
+  string chunk_id = 1;
+  uint32 new_ref_count = 2;      // RefCount after decrement (or current if CAS failed)
+  bool success = 3;              // true if decrement succeeded, false if CAS mismatch or not found
+  string error = 4;              // Error message if any
+}
+
+message DecrementRefCountBatchRequest {
+  repeated DecrementRefCountRequest chunks = 1;
+}
+
+message DecrementRefCountBatchResponse {
+  repeated DecrementRefCountResponse results = 1;
+}

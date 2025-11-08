@@ -1,0 +1,69 @@
+ZapFS Enterprise License Agreement
+Version 1.0 — © 2025 ZapInvest
+
+This ZapFS Enterprise License Agreement (“Agreement”) is between ZapInvest, Inc. (“Licensor”) and the entity or individual (“Licensee”) that has purchased or otherwise obtained rights to use the Enterprise Features of ZapFS. By installing, accessing, or using the Enterprise Features, Licensee agrees to be bound by this Agreement.
+
+1. Definitions
+   "ZapFS" means the open-core distributed file system software distributed by Licensor under an open-source license.
+   "Enterprise Features" means the proprietary, commercially-licensed components of ZapFS provided under this Agreement (e.g., erasure coding, multi-disk striping, hierarchical storage tiers, LDAP/SSO integration, quota enforcement, cross-node replication, advanced metrics, and other proprietary modules designated by Licensor).
+   "License Key" means the signed, cryptographically verified key provided by Licensor to enable Enterprise Features.
+   "Instance" means each running copy of ZapFS (per node, container, VM, or binary).
+
+2. Grant of License
+   Licensor grants Licensee a non-exclusive, non-transferable, revocable license to:
+   a. Install and use the Enterprise Features on the number of Instances covered by the purchased license.
+   b. Use the Enterprise Features solely for internal business operations.
+   This license does not permit redistribution, resale, hosting as a service, or sublicensing unless explicitly permitted by a separate agreement.
+
+3. Restrictions
+   Licensee may not:
+   a. Use Enterprise Features without a valid, non-expired License Key.
+   b. Modify, remove, disable, bypass, or interfere with any license checks or feature gating.
+   c. Publish, redistribute, or open-source the Enterprise Features or any derivative.
+   d. Use Enterprise Features to offer a hosted service to third parties.
+   e. Share the License Key outside Licensee’s organization.
+   f. Exceed the licensed number of Instances or nodes.
+   g. Use Enterprise Features for benchmarking, competitive analysis, or training ML models without permission.
+
+4. Term and Expiry
+   a. Enterprise License is valid for the term specified in the commercial order, typically one (1) year.
+   b. License Keys may enforce expiry by disabling or degrading Enterprise Features when the term ends.
+   c. Renewal requires payment and issuance of a new License Key.
+   Expired licenses revert Enterprise Features to disabled; core ZapFS functionality continues under the open-source license.
+
+5. Payments & Audits
+   a. License fees must be paid according to the commercial order.
+   b. Licensor may audit usage with 10 days’ notice, limited to verifying:
+      - Number of running Instances
+      - Validity of License Key
+      - Compliance with license restrictions
+
+6. Support & Updates
+   a. Support, bug fixes, and updates to Enterprise Features are provided only if Licensee has a valid support subscription.
+   b. Without an active subscription, Enterprise Features may continue to function but no support or updates are provided.
+
+7. Confidentiality
+   License Key and Enterprise Features are confidential. Licensee must protect them using reasonable commercial efforts.
+
+8. Ownership
+   Licensor retains all rights, title, and interest in Enterprise Features, including all IP rights. No ownership is transferred.
+
+9. Termination
+   Licensor may terminate the license if:
+   a. Licensee breaches this Agreement and fails to cure within 10 days.
+   b. Licensee attempts to bypass licensing restrictions.
+   Upon termination, Licensee must cease using Enterprise Features and disable them.
+
+10. Warranty Disclaimer
+    Enterprise Features are provided "as is" without warranty of any kind, express or implied, including merchantability, fitness for purpose, or non-infringement.
+
+11. Limitation of Liability
+    Licensor will not be liable for indirect, incidental, consequential, or punitive damages. Total liability is limited to fees paid in the 12 months preceding the claim.
+
+12. Governing Law
+    This Agreement is governed by the laws of the jurisdiction in which ZapInvest is incorporated.
+
+13. Entire Agreement
+    This Agreement constitutes the entire understanding regarding the Enterprise Features and supersedes all prior agreements relating to them.
+
+END OF AGREEMENT

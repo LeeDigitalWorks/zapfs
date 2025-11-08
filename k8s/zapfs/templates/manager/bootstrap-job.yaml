@@ -1,0 +1,66 @@
+{{- if and .Values.manager.enabled .Values.manager.bootstrap.enabled }}
+# Bootstrap job runs once to initialize the first manager as the Raft leader
+# Subsequent managers will join via the --join flag
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "zapfs.fullname" . }}-manager-bootstrap
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager-bootstrap
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "zapfs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: manager-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "zapfs.serviceAccountName" . }}
+      containers:
+      - name: bootstrap
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - /bin/sh
+          - -c
+          - |
+            set -e
+            echo "Waiting for manager-0 to be ready..."
+            MANAGER_0="{{ include "zapfs.fullname" . }}-manager-0.{{ include "zapfs.manager.headlessService" . }}:{{ .Values.manager.grpcPort | default 8050 }}"
+            
+            # Wait for manager-0 to be accessible
+            for i in $(seq 1 60); do
+              if wget -q --spider "http://{{ include "zapfs.fullname" . }}-manager-0.{{ include "zapfs.manager.headlessService" . }}:{{ .Values.manager.debugPort | default 8055 }}/ready" 2>/dev/null; then
+                echo "manager-0 is ready and is the leader"
+                break
+              fi
+              echo "Waiting for manager-0... ($i/60)"
+              sleep 2
+            done
+            
+            # Add remaining managers to the cluster
+            {{- $fullname := include "zapfs.fullname" . }}
+            {{- $headless := include "zapfs.manager.headlessService" . }}
+            {{- $grpcPort := .Values.manager.grpcPort | default 8050 }}
+            {{- $raftPort := .Values.manager.raftPort | default 8051 }}
+            {{- $replicas := .Values.manager.replicas | int }}
+            {{- range $i := until $replicas }}
+            {{- if gt $i 0 }}
+            echo "Adding manager-{{ $i }} to cluster..."
+            /zapfs raftctl add-server \
+              --addr="$MANAGER_0" \
+              --id="{{ $fullname }}-manager-{{ $i }}" \
+              --raft-addr="{{ $fullname }}-manager-{{ $i }}.{{ $headless }}:{{ $raftPort }}" \
+              --voter=true || echo "Manager-{{ $i }} may already be in cluster"
+            {{- end }}
+            {{- end }}
+            
+            echo "Bootstrap complete!"
+{{- end }}
+

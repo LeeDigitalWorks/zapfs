@@ -1,0 +1,56 @@
+{{- if .Values.manager.enabled }}
+---
+# Headless service for Raft peer discovery
+# Each pod gets a stable DNS name: <pod-name>.<headless-service>.<namespace>.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zapfs.manager.headlessService" . }}
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless
+  publishNotReadyAddresses: true  # Pods need to find each other during bootstrap
+  ports:
+  - port: {{ .Values.manager.raftPort | default 8051 }}
+    targetPort: raft
+    protocol: TCP
+    name: raft
+  - port: {{ .Values.manager.grpcPort | default 8050 }}
+    targetPort: grpc
+    protocol: TCP
+    name: grpc
+  selector:
+    {{- include "zapfs.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+---
+# Regular service for client access (load balances across all managers)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zapfs.manager.service" . }}
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  type: {{ .Values.manager.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.manager.grpcPort | default 8050 }}
+    targetPort: grpc
+    protocol: TCP
+    name: grpc
+  - port: {{ .Values.manager.adminPort | default 8060 }}
+    targetPort: admin
+    protocol: TCP
+    name: admin
+  - port: {{ .Values.manager.debugPort | default 8055 }}
+    targetPort: debug
+    protocol: TCP
+    name: debug
+  selector:
+    {{- include "zapfs.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+{{- end }}
+

@@ -1,0 +1,321 @@
+# ZapFS Docker Compose
+#
+# Full stack deployment with:
+# - Manager cluster (3 nodes for Raft quorum + IAM authority)
+# - Metadata service (syncs IAM from manager)
+# - File servers (2 replicas)
+# - MySQL database
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f
+#   docker compose down -v
+#
+# Environment Variables:
+#   ZAPFS_IAM_MASTER_KEY - Base64-encoded 32-byte key for encrypting secrets at rest
+#                          Generate with: openssl rand -base64 32
+#
+# =============================================================================
+# SERVICE DISCOVERY PATTERN (etcd/CockroachDB style)
+# =============================================================================
+#
+# Each service uses two address concepts:
+#   --bind_addr:      What interface to listen on (e.g., 0.0.0.0:8081)
+#   --advertise_addr: What address to tell peers (e.g., file-1:8081)
+#
+# Docker Compose: Use service name as advertise host (DNS resolves automatically)
+#   --advertise_addr=file-1:8081
+#
+# Kubernetes: Use pod FQDN from StatefulSet + headless service
+#   --advertise_addr=$(POD_NAME).file-headless.$(NAMESPACE).svc.cluster.local:8081
+#
+# Environment variables (useful for K8s):
+#   NODE_ID        - Stable node identifier (e.g., pod name)
+#   ADVERTISE_ADDR - Full advertise address (overrides --advertise_addr flag)
+#
+# =============================================================================
+# RAFT NETWORKING EXPLAINED
+# =============================================================================
+#
+# Each manager node uses TWO ports:
+#   - grpc_port (8050): For client API calls (placement queries, cluster join requests)
+#   - raft_addr (8051): For Raft peer-to-peer consensus (leader election, log replication)
+#
+# Port Configuration:
+#   ┌─────────────┬────────────┬────────────┐
+#   │ Node        │ gRPC Port  │ Raft Port  │
+#   ├─────────────┼────────────┼────────────┤
+#   │ manager-1   │ 8050       │ 8051       │
+#   │ manager-2   │ 8050       │ 8051       │
+#   │ manager-3   │ 8050       │ 8051       │
+#   └─────────────┴────────────┴────────────┘
+#
+# Joining a Cluster:
+#   When a new node joins, it needs to know:
+#   1. --join=<leader-grpc-addr>  : The leader's gRPC address to send the join RPC
+#   2. --raft_addr=<this-raft-addr>: This node's Raft address that peers will connect to
+#
+#   Example: manager-2 joins via manager-1
+#     --join=manager-1:8050        # Send join RPC to leader's gRPC port
+#     --raft_addr=manager-2:8051   # Tell leader "my Raft address is manager-2:8051"
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Manager Cluster (Raft consensus)
+  # ===========================================================================
+  
+  # Bootstrap node - starts the cluster and becomes the initial leader
+  # This is the IAM authority - all IAM changes go through Raft
+  # The readiness check validates that:
+  #   1. The service is running
+  #   2. The Raft cluster has an elected leader
+  manager-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050          # API port for clients and join requests
+      - --debug_port=8055
+      - --admin_port=8060         # IAM Admin HTTP API
+      - --raft_dir=/data/raft
+      - --raft_addr=manager-1:8051 # Raft peer address (other managers connect here)
+      - --bootstrap                # This node bootstraps the cluster (becomes leader first)
+      - --node_id=manager-1
+    environment:
+      # Master key for encrypting secrets at rest (shared across all services)
+      # In production, use a secrets manager or external KMS
+      ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
+    ports:
+      - "8050:8050"  # gRPC API
+      - "8055:8055"  # Debug/metrics
+      - "8060:8060"  # IAM Admin API
+    volumes:
+      - manager-1-data:/data
+      - ../cmd/config:/config:ro  # Mount config directory
+    networks:
+      - zapfs-net
+    healthcheck:
+      # Readiness check validates cluster has a leader (CreateBucket will work)
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  # Follower node - joins manager-1
+  # Uses service_started (not service_healthy) to allow all managers to start
+  # together on restart - required for Raft quorum when cluster already exists
+  manager-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050
+      - --debug_port=8055
+      - --admin_port=8060
+      - --raft_dir=/data/raft
+      - --raft_addr=manager-2:8051 # This node's Raft address
+      - --join=manager-1:8050       # Join via leader's gRPC port (NOT Raft port)
+      - --node_id=manager-2
+    environment:
+      ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
+    volumes:
+      - manager-2-data:/data
+      - ../cmd/config:/config:ro
+    networks:
+      - zapfs-net
+    depends_on:
+      manager-1:
+        condition: service_started  # Start together for Raft quorum on restart
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  # Follower node - joins manager-1
+  manager-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050
+      - --debug_port=8055
+      - --admin_port=8060
+      - --raft_dir=/data/raft
+      - --raft_addr=manager-3:8051 # This node's Raft address
+      - --join=manager-1:8050       # Join via leader's gRPC port
+      - --node_id=manager-3
+    environment:
+      ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
+    volumes:
+      - manager-3-data:/data
+      - ../cmd/config:/config:ro
+    networks:
+      - zapfs-net
+    depends_on:
+      manager-1:
+        condition: service_started  # Start together for Raft quorum on restart
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  # ===========================================================================
+  # Metadata Service
+  # Syncs IAM credentials from manager cluster via gRPC streaming
+  # Receives decrypted secrets from manager - no master key needed here
+  # ===========================================================================
+  metadata:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - metadata
+      - --ip=0.0.0.0
+      - --http_port=8082
+      - --grpc_port=8083
+      - --debug_port=8085
+      - --db_driver=mysql
+      - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs
+      - --manager_addr=manager-1:8050
+      # IAM mode: "remote" syncs from manager, "local" uses config file
+      # - --iam_mode=remote
+    ports:
+      - "8082:8082"  # S3 API (HTTP)
+      - "8083:8083"  # gRPC
+    volumes:
+      - ../cmd/config:/config:ro
+    networks:
+      - zapfs-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      manager-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8085/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ===========================================================================
+  # File Servers
+  # ===========================================================================
+  
+  # File server 1 - accessible from host at localhost:8081 (gRPC)
+  # Network config follows etcd/CockroachDB pattern:
+  #   --bind_addr: Interface to listen on (0.0.0.0 = all interfaces)
+  #   --advertise_addr: Address peers use to connect (Docker service name + port)
+  file-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - file
+      - --bind_addr=0.0.0.0:8081
+      - --http_port=8080
+      - --debug_port=8010
+      - --index_path=/data/index
+      - --node_id=file-1
+      - --advertise_addr=file-1:8081
+      - --manager_addr=manager-1:8050
+      - --gc_interval=1m
+      - --gc_grace_period=5m
+    ports:
+      - "8080:8080"  # HTTP
+      - "8081:8081"  # gRPC (integration tests connect here)
+      - "8010:8010"  # Debug
+    networks:
+      - zapfs-net
+    depends_on:
+      manager-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8010/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # File server 2 - accessible from host at localhost:8091 (gRPC)
+  # For replication tests, file-1 connects to file-2 via Docker network (file-2:8091)
+  file-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - file
+      - --bind_addr=0.0.0.0:8091
+      - --http_port=8090
+      - --debug_port=8011
+      - --index_path=/data/index
+      - --node_id=file-2
+      - --advertise_addr=file-2:8091
+      - --manager_addr=manager-1:8050
+      - --gc_interval=1m
+      - --gc_grace_period=5m
+    ports:
+      - "8090:8090"  # HTTP
+      - "8091:8091"  # gRPC (integration tests connect here)
+      - "8011:8011"  # Debug
+    networks:
+      - zapfs-net
+    depends_on:
+      manager-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8011/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ===========================================================================
+  # Database
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: zapfs
+      MYSQL_USER: zapfs
+      MYSQL_PASSWORD: zapfs
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - zapfs-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - --default-authentication-plugin=mysql_native_password
+
+# ===========================================================================
+# Networks & Volumes
+# ===========================================================================
+
+networks:
+  zapfs-net:
+    driver: bridge
+
+volumes:
+  manager-1-data:
+  manager-2-data:
+  manager-3-data:
+  file-1-data:
+  file-2-data:
+  mysql-data:

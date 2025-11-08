@@ -1,0 +1,153 @@
+# ZapFS IAM Configuration
+# This file defines users, groups, and policies for S3 authentication/authorization.
+#
+# For production, generate secure access keys and secret keys:
+#   openssl rand -hex 10  # access key (20 chars)
+#   openssl rand -hex 20  # secret key (40 chars)
+
+[iam]
+# Cache settings
+cache_max_items = 1000000
+cache_ttl = "5m"
+
+# Enable AWS-compatible services
+enable_sts = false  # Security Token Service (temporary credentials)
+enable_kms = false  # Key Management Service (encryption)
+
+# STS configuration (if enabled)
+sts_default_duration = "1h"
+sts_max_duration = "12h"
+
+# =============================================================================
+# Users
+# =============================================================================
+
+[[iam.users]]
+name = "admin"
+access_key = "AKIAADMINKEY00001"
+secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE1"
+account_id = "000000000001"
+display_name = "Admin User"
+email = "admin@localhost"
+disabled = false
+policies = ["FullAccess"]
+
+[[iam.users]]
+name = "developer"
+access_key = "AKIADEVKEY0000002"
+secret_key = "devSecretKey1234567890123456789012345678"
+account_id = "000000000002"
+display_name = "Developer User"
+email = "developer@localhost"
+disabled = false
+policies = ["ReadOnly"]
+groups = ["developers"]
+
+[[iam.users]]
+name = "uploader"
+access_key = "AKIAUPLOADKEY0003"
+secret_key = "uploadSecretKey12345678901234567890123"
+account_id = "000000000003"
+display_name = "Upload Service Account"
+disabled = false
+policies = ["WriteOnly"]
+
+# =============================================================================
+# Groups
+# =============================================================================
+
+[[iam.groups]]
+name = "developers"
+policies = ["DevBucketAccess"]
+
+[[iam.groups]]
+name = "admins"
+policies = ["FullAccess"]
+
+# =============================================================================
+# Policies
+# =============================================================================
+
+[[iam.policies]]
+name = "FullAccess"
+document = '''
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "FullAccess",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": "*"
+    }
+  ]
+}
+'''
+
+[[iam.policies]]
+name = "ReadOnly"
+document = '''
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:Get*",
+        "s3:List*",
+        "s3:Head*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+'''
+
+[[iam.policies]]
+name = "WriteOnly"
+document = '''
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WriteOnlyAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+'''
+
+[[iam.policies]]
+name = "DevBucketAccess"
+document = '''
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DevBucketFullAccess",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::dev-*",
+        "arn:aws:s3:::dev-*/*"
+      ]
+    },
+    {
+      "Sid": "DenyProductionAccess",
+      "Effect": "Deny",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::prod-*",
+        "arn:aws:s3:::prod-*/*"
+      ]
+    }
+  ]
+}
+'''
+

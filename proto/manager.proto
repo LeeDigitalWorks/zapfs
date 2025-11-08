@@ -1,0 +1,247 @@
+syntax = "proto3";
+
+package manager_pb;
+option go_package = "zapfs/proto/manager_pb";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service ManagerService {
+  rpc RegisterService (RegisterServiceRequest) returns (RegisterServiceResponse);
+  rpc UnregisterService (UnregisterServiceRequest) returns (UnregisterServiceResponse);
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+
+  rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc ListCollections(ListCollectionsRequest) returns (stream Collection);
+  rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
+  rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
+
+  rpc RaftListClusterServers (RaftListClusterServersRequest) returns (RaftListClusterServersResponse);
+  rpc RaftAddServer (RaftAddServerRequest) returns (RaftAddServerResponse);
+  rpc RaftRemoveServer (RaftRemoveServerRequest) returns (RaftRemoveServerResponse);
+  rpc Ping (PingRequest) returns (PingResponse);
+
+  rpc GetReplicationTargets(GetReplicationTargetsRequest) returns (GetReplicationTargetsResponse);
+
+  rpc WatchTopology(WatchTopologyRequest) returns (stream TopologyEvent);
+}
+
+enum ServiceType {
+  FILE_SERVICE = 0;
+  METADATA_SERVICE = 1;
+}
+
+message ServiceInfo {
+  ServiceType service_type = 1;
+  common_pb.Location location = 2;
+  google.protobuf.Timestamp last_heartbeat = 3;
+}
+
+message StorageBackend {
+  string type = 1;
+  string id = 2;
+  map<string, string> properties = 3;
+  repeated common_pb.Backend backends = 4;
+}
+
+message PlacementPolicy {
+  string algorithm = 1;
+  uint32 num_replicas = 2;
+  map<string, TierPolicy> tier_policies = 3;
+}
+
+message TierPolicy {
+  string tier = 1;
+  repeated string disk_types = 2;
+  int32 replica_count = 3;
+}
+
+message FileServiceMetadata {
+  repeated StorageBackend storage_backends = 1;
+}
+
+message MetadataServiceMetadata {}
+
+message RegisterServiceRequest {
+  ServiceType service_type = 1;
+  common_pb.Location location = 2;
+
+  oneof service_metadata {
+    FileServiceMetadata file_service = 10;
+    MetadataServiceMetadata metadata_service = 11;
+  }
+}
+
+message RegisterServiceResponse {
+  bool success = 1;
+  string message = 2;
+  uint64 version = 3;
+  PlacementPolicy placement_policy = 4;
+  repeated ServiceInfo peer_services = 5;
+}
+
+message UnregisterServiceRequest {
+  ServiceType service_type = 1;
+  common_pb.Location location = 2;
+}
+
+message UnregisterServiceResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message HeartbeatRequest {
+  ServiceType service_type = 1;
+  common_pb.Location location = 2;
+  uint64 version = 3;
+
+  oneof service_metadata {
+    FileServiceMetadata file_service = 10;
+    MetadataServiceMetadata metadata_service = 11;
+  }
+}
+
+message HeartbeatResponse {
+  bool topology_changed = 1;
+  uint64 topology_version = 2;
+  PlacementPolicy placement_policy = 3;
+}
+
+message GetReplicationTargetsRequest {
+  uint64 file_size = 1;
+  uint32 num_replicas = 2;
+  string tier = 3;
+}
+
+message GetReplicationTargetsResponse {
+  repeated ReplicationTarget targets = 1;
+}
+
+message ReplicationTarget {
+  common_pb.Location location = 1;
+  string backend_id = 2;
+  string backend_type = 3;
+  int32 priority = 4;
+}
+
+message WatchTopologyRequest {
+  uint64 current_version = 1;  // Client's current version (0 for full sync)
+}
+
+message TopologyEvent {
+  enum EventType {
+    FULL_SYNC = 0;        // Initial full topology on subscribe
+    SERVICE_ADDED = 1;    // New service registered
+    SERVICE_REMOVED = 2;  // Service unregistered or offline
+    SERVICE_UPDATED = 3;  // Service metadata changed (backends, status)
+  }
+
+  EventType type = 1;
+  uint64 version = 2;              // New topology version
+  repeated ServiceInfo services = 3; // Affected services
+}
+
+message RaftListClusterServersRequest {}
+
+message RaftListClusterServersResponse {
+  message Server {
+    string id = 1;
+    string address = 2;
+    bool is_leader = 3;
+  }
+  repeated Server servers = 1;
+}
+
+message RaftAddServerRequest {
+  string id = 1;
+  string address = 2;
+  bool is_voter = 3;
+}
+
+message RaftAddServerResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RaftRemoveServerRequest {
+  string id = 1;
+  bool force = 2;
+}
+
+message RaftRemoveServerResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message PingRequest {}
+
+message PingResponse {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp current_time = 2;
+  google.protobuf.Timestamp stop_time = 3;
+  bool is_leader = 4;
+  string version = 5;
+}
+
+// Collection management
+message Collection {
+  string name = 1;
+  string owner = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+
+  // Async Deletion Flag
+  bool delete_pending = 5;
+  
+  // Current usage
+  int64 current_objects = 6;
+  int64 current_size_bytes = 7;
+  
+  // Metadata
+  map<string, string> tags = 8;
+  string description = 9;
+
+  string tier = 10;
+
+  // Tombstone Flag to update caches
+  bool is_deleted = 11;
+}
+
+message CreateCollectionRequest {
+  string name = 1;
+  string owner = 2;
+ 
+  // Metadata
+  map<string, string> tags = 7;
+  string description = 8;
+}
+
+message CreateCollectionResponse {
+  bool success = 1;
+  string message = 2;
+  Collection collection = 3;
+}
+
+message ListCollectionsRequest {
+  google.protobuf.Timestamp since_time = 2;
+  bool include_tombstoned = 3;
+}
+
+message GetCollectionRequest {
+  string name = 1;
+}
+
+message GetCollectionResponse {
+  Collection collection = 1;
+}
+
+message DeleteCollectionRequest {
+  string name = 1;
+  string owner = 2; // Optional ownership check
+}
+
+message DeleteCollectionResponse {
+  bool success = 1;
+  string message = 2;
+}
+

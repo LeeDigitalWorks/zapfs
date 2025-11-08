@@ -1,0 +1,43 @@
+{
+  "pools": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "local-ssd-1",
+      "description": "Fast SSD storage for hot data",
+      "backend_type": "local",
+      "disk_type": "ssd",
+      "weight": 2.0,
+      "backends": ["/data/ssd1"],
+      "protected": true
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "local-hdd-1",
+      "description": "High capacity HDD storage",
+      "backend_type": "local",
+      "disk_type": "hdd",
+      "weight": 10.0,
+      "backends": ["/data/hdd1", "/data/hdd2"]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "name": "local-hdd-2",
+      "description": "Secondary HDD pool",
+      "backend_type": "local",
+      "disk_type": "hdd",
+      "weight": 10.0,
+      "backends": ["/data/hdd3", "/data/hdd4"]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "name": "s3-cold",
+      "description": "S3 cold storage tier",
+      "backend_type": "s3",
+      "weight": 100.0,
+      "endpoint": "https://s3.amazonaws.com",
+      "region": "us-east-1",
+      "storage_class": "GLACIER",
+      "credentials_ref": "aws-prod"
+    }
+  ]
+}

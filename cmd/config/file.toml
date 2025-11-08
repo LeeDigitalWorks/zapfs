@@ -1,0 +1,71 @@
+# ZapFS File Server Configuration
+# All keys use underscores for consistency with CLI flags and environment variables
+# Environment variables: ZAPFS_BIND_ADDR, ZAPFS_ADVERTISE_ADDR, etc.
+
+# Network (following etcd/CockroachDB pattern)
+# bind_addr: Interface to listen on (host:port)
+# advertise_addr: Address peers use to connect (must be reachable from other nodes)
+#
+# Docker Compose example:
+#   bind_addr = "0.0.0.0:8001"
+#   advertise_addr = "file-1:8001"
+#
+# Kubernetes example (use env vars instead):
+#   NODE_ID=$(POD_NAME)
+#   ADVERTISE_ADDR=$(POD_NAME).file-headless.$(NAMESPACE).svc.cluster.local:8001
+bind_addr = "0.0.0.0:8001"
+advertise_addr = ""  # Required: set via flag, config, or ADVERTISE_ADDR env var
+http_port = 8000
+debug_port = 8010
+
+# Erasure Coding
+# Scheme format: "data+parity" (e.g., "4+2", "8+4", "10+4")
+# Common schemes:
+#   4+2  - 4 data + 2 parity, 50% overhead, tolerates 2 failures (needs 6 backends)
+#   6+3  - 6 data + 3 parity, 50% overhead, tolerates 3 failures
+#   8+4  - 8 data + 4 parity, 50% overhead, tolerates 4 failures
+#   10+4 - 10 data + 4 parity, 40% overhead, tolerates 4 failures (default)
+ec_scheme = "4+2"
+
+# TLS (optional)
+cert_file = ""
+key_file = ""
+
+# Logging
+log_level = "info"
+
+# Node identification (required)
+# Stable identifier for this node. Used for service registry and data placement.
+# Docker Compose: Use service name (e.g., "file-1")
+# Kubernetes: Use pod name via NODE_ID env var
+node_id = ""  # Required: set via flag, config, or NODE_ID env var
+
+# Storage
+index_path = "/tmp/zapfs/index"
+manager_addr = "localhost:8050"
+
+# Backend Configuration
+[backends.local_default]
+type = "local"
+path = "/tmp/zapfs/data"
+enabled = true
+min_free_space = "5"
+
+[backends.s3_default]
+type = "s3"
+access_key = ""
+secret_key = ""
+region = ""
+bucket = ""
+endpoint = ""
+enabled = false
+storage_class = "STANDARD"
+
+# Disk Configuration (optional)
+# [[disks]]
+# id = "disk0"
+# path = "/data/disk0"
+
+backend = "local_default"
+disk_type = "ssd"
+min_free_space = "5"

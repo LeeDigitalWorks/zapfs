@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zapfs.fullname" . }}-metadata
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metadata
+spec:
+  replicas: {{ .Values.metadata.replicaCount | default 3 }}
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metadata
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.metadata.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "zapfs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: metadata
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "zapfs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.metadata.podSecurityContext | nindent 8 }}
+      containers:
+      - name: metadata
+        securityContext:
+          {{- toYaml .Values.metadata.securityContext | nindent 10 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - /zapfs
+          - metadata
+          - --http_port={{ .Values.metadata.httpPort | default 8082 }}
+          - --grpc_port={{ .Values.metadata.grpcPort | default 8083 }}
+          - --debug_port={{ .Values.metadata.debugPort | default 8085 }}
+          - --manager_addr={{ .Values.metadata.managerAddr | default (printf "%s-manager:%d" (include "zapfs.fullname" .) (.Values.manager.grpcPort | default 8050 | int)) }}
+          - --region_id={{ .Values.metadata.regionID | default "us-west" }}
+          {{- if .Values.metadata.s3Domains }}
+          - --s3_domains={{ .Values.metadata.s3Domains | join "," }}
+          {{- end }}
+          {{- if .Values.metadata.database }}
+          - --db_driver={{ .Values.metadata.database.driver | default "mysql" }}
+          - --db_dsn={{ .Values.metadata.database.dsn }}
+          {{- end }}
+          {{- if .Values.metadata.tls.enabled }}
+          - --cert_file=/etc/tls/tls.crt
+          - --key_file=/etc/tls/tls.key
+          {{- end }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.metadata.httpPort | default 8082 }}
+          protocol: TCP
+        - name: grpc
+          containerPort: {{ .Values.metadata.grpcPort | default 8083 }}
+          protocol: TCP
+        - name: debug
+          containerPort: {{ .Values.metadata.debugPort | default 8085 }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: debug
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: debug
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.metadata.resources | nindent 10 }}
+        {{- if .Values.metadata.tls.enabled }}
+        volumeMounts:
+        - name: tls
+          mountPath: /etc/tls
+          readOnly: true
+        {{- end }}
+      {{- if .Values.metadata.tls.enabled }}
+      volumes:
+      - name: tls
+        secret:
+          secretName: {{ .Values.metadata.tls.secretName }}
+      {{- end }}
+      {{- with .Values.metadata.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.metadata.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.metadata.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

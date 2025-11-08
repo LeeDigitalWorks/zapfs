@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZapFS Admin</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --border: #30363d;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        
+        nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 2rem;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover, nav a.active {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+        
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        
+        .stat-card h3 {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin: 0.5rem 0;
+        }
+        
+        .stat-card .trend {
+            font-size: 0.875rem;
+            color: var(--success);
+        }
+        
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 2rem 0;
+            overflow: hidden;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .section-header h2 {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 0.75rem 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+        .badge-warning { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
+        .badge-danger { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
+        
+        .mono {
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.875rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+        
+        #loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">⚡ ZapFS Admin</div>
+        <nav>
+            <a href="/v1/iam/ui/" class="active">Dashboard</a>
+            <a href="/v1/iam/ui/users.html">Users</a>
+            <a href="/v1/iam/ui/keys.html">Access Keys</a>
+        </nav>
+    </header>
+    
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Users</h3>
+                <div class="value" id="userCount">-</div>
+                <div class="trend">Active accounts</div>
+            </div>
+            <div class="stat-card">
+                <h3>Access Keys</h3>
+                <div class="value" id="keyCount">-</div>
+                <div class="trend">Active credentials</div>
+            </div>
+            <div class="stat-card">
+                <h3>IAM Version</h3>
+                <div class="value mono" id="iamVersion">-</div>
+                <div class="trend">Last updated: <span id="lastUpdated">-</span></div>
+            </div>
+            <div class="stat-card">
+                <h3>Cache Size</h3>
+                <div class="value" id="cacheSize">-</div>
+                <div class="trend">Cached credentials</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-header">
+                <h2>Recent Users</h2>
+                <a href="/v1/iam/ui/users.html" class="btn btn-primary">View All</a>
+            </div>
+            <div id="usersLoading" class="loading">
+                <div class="spinner"></div> Loading...
+            </div>
+            <table id="usersTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Access Keys</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+            </table>
+            <div id="usersEmpty" class="empty-state" style="display: none;">
+                No users found. <a href="/v1/iam/ui/users.html">Create one</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/v1/iam';
+        
+        async function fetchJSON(url) {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            return resp.json();
+        }
+        
+        async function loadDashboard() {
+            try {
+                // Load status
+                const status = await fetchJSON(`${API_BASE}/status`);
+                document.getElementById('cacheSize').textContent = status.cache_size?.toLocaleString() || '0';
+                
+                // Load users
+                const users = await fetchJSON(`${API_BASE}/users`);
+                document.getElementById('userCount').textContent = users.users?.length || 0;
+                
+                // Count keys
+                let keyCount = 0;
+                const usersBody = document.getElementById('usersBody');
+                usersBody.innerHTML = '';
+                
+                for (const username of (users.users || []).slice(0, 5)) {
+                    try {
+                        const user = await fetchJSON(`${API_BASE}/users/${username}`);
+                        const keys = user.access_keys || [];
+                        keyCount += keys.length;
+                        
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="mono">${username}</td>
+                            <td>${keys.length} key(s)</td>
+                            <td><span class="badge badge-success">Active</span></td>
+                            <td><a href="/v1/iam/ui/users.html?user=${username}" class="btn btn-primary">Manage</a></td>
+                        `;
+                        usersBody.appendChild(tr);
+                    } catch (e) {
+                        console.error(`Failed to load user ${username}:`, e);
+                    }
+                }
+                
+                document.getElementById('keyCount').textContent = keyCount;
+                document.getElementById('iamVersion').textContent = (status.iam_version || 0).toString().slice(0, 10) + '...';
+                document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+                
+                document.getElementById('usersLoading').style.display = 'none';
+                if (users.users?.length > 0) {
+                    document.getElementById('usersTable').style.display = 'table';
+                } else {
+                    document.getElementById('usersEmpty').style.display = 'block';
+                }
+            } catch (e) {
+                console.error('Dashboard load failed:', e);
+                document.getElementById('usersLoading').innerHTML = `<span style="color: var(--danger);">Failed to load: ${e.message}</span>`;
+            }
+        }
+        
+        loadDashboard();
+        setInterval(loadDashboard, 30000); // Refresh every 30s
+    </script>
+</body>
+</html>
+

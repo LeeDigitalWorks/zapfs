@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users - ZapFS Admin</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --border: #30363d;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo { font-size: 1.5rem; font-weight: 600; color: var(--accent); }
+        
+        nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 2rem;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        nav a:hover, nav a.active { color: var(--text-primary); background: var(--bg-tertiary); }
+        
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 2rem 0;
+            overflow: hidden;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .section-header h2 { font-size: 1.125rem; font-weight: 600; }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem 1.5rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-secondary); font-weight: 500; font-size: 0.875rem; }
+        tr:hover { background: var(--bg-tertiary); }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+        .badge-danger { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
+        
+        .mono { font-family: 'SF Mono', Consolas, monospace; font-size: 0.875rem; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active { display: flex; }
+        
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-header h3 { font-size: 1.25rem; }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+        
+        .secret-display {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .secret-display label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .secret-display .value {
+            font-family: 'SF Mono', Consolas, monospace;
+            word-break: break-all;
+            color: var(--success);
+        }
+        
+        .warning-text {
+            color: var(--warning);
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+        
+        .loading { text-align: center; padding: 2rem; color: var(--text-secondary); }
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-secondary); }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">⚡ ZapFS Admin</div>
+        <nav>
+            <a href="/v1/iam/ui/">Dashboard</a>
+            <a href="/v1/iam/ui/users.html" class="active">Users</a>
+            <a href="/v1/iam/ui/keys.html">Access Keys</a>
+        </nav>
+    </header>
+    
+    <div class="container">
+        <div class="section">
+            <div class="section-header">
+                <h2>Users</h2>
+                <button class="btn btn-primary" onclick="showCreateModal()">+ Create User</button>
+            </div>
+            <div id="loading" class="loading">Loading...</div>
+            <table id="usersTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Access Keys</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+            </table>
+            <div id="empty" class="empty-state" style="display: none;">
+                No users found. Click "Create User" to add one.
+            </div>
+        </div>
+    </div>
+    
+    <!-- Create User Modal -->
+    <div id="createModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create User</h3>
+                <button class="modal-close" onclick="hideModals()">&times;</button>
+            </div>
+            <form id="createForm" onsubmit="createUser(event)">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="name" required pattern="[a-zA-Z0-9_-]+" placeholder="e.g., myuser">
+                </div>
+                <div class="form-group">
+                    <label for="email">Email (optional)</label>
+                    <input type="email" id="email" name="email" placeholder="user@example.com">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="hideModals()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Credentials Modal (shown after creation) -->
+    <div id="credentialsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>User Created Successfully</h3>
+                <button class="modal-close" onclick="hideModals()">&times;</button>
+            </div>
+            <p>Save these credentials - the secret key will not be shown again!</p>
+            <div class="secret-display">
+                <label>Access Key ID</label>
+                <div class="value" id="createdAccessKey"></div>
+            </div>
+            <div class="secret-display">
+                <label>Secret Access Key</label>
+                <div class="value" id="createdSecretKey"></div>
+            </div>
+            <p class="warning-text">⚠️ Copy these credentials now. The secret key cannot be retrieved later.</p>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="copyCredentials()">Copy to Clipboard</button>
+                <button class="btn btn-secondary" onclick="hideModals(); loadUsers();">Done</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Delete User</h3>
+                <button class="modal-close" onclick="hideModals()">&times;</button>
+            </div>
+            <p>Are you sure you want to delete user <strong id="deleteUsername"></strong>?</p>
+            <p class="warning-text">This will also delete all associated access keys and cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="hideModals()">Cancel</button>
+                <button class="btn btn-danger" onclick="deleteUser()">Delete User</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/v1/iam';
+        let userToDelete = null;
+        
+        function showCreateModal() {
+            document.getElementById('createForm').reset();
+            document.getElementById('createModal').classList.add('active');
+        }
+        
+        function hideModals() {
+            document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+        }
+        
+        async function loadUsers() {
+            try {
+                const resp = await fetch(`${API_BASE}/users`);
+                const data = await resp.json();
+                
+                document.getElementById('loading').style.display = 'none';
+                
+                if (!data.users || data.users.length === 0) {
+                    document.getElementById('empty').style.display = 'block';
+                    document.getElementById('usersTable').style.display = 'none';
+                    return;
+                }
+                
+                document.getElementById('usersTable').style.display = 'table';
+                document.getElementById('empty').style.display = 'none';
+                
+                const tbody = document.getElementById('usersBody');
+                tbody.innerHTML = '';
+                
+                for (const username of data.users) {
+                    const userResp = await fetch(`${API_BASE}/users/${username}`);
+                    const user = await userResp.json();
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="mono">${username}</td>
+                        <td>${(user.access_keys || []).length} key(s)</td>
+                        <td><span class="badge ${user.disabled ? 'badge-danger' : 'badge-success'}">${user.disabled ? 'Disabled' : 'Active'}</span></td>
+                        <td>
+                            <button class="btn btn-secondary" onclick="createKey('${username}')">+ Key</button>
+                            <button class="btn btn-danger" onclick="confirmDelete('${username}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            } catch (e) {
+                document.getElementById('loading').innerHTML = `<span style="color: var(--danger);">Error: ${e.message}</span>`;
+            }
+        }
+        
+        async function createUser(event) {
+            event.preventDefault();
+            const form = event.target;
+            const name = form.name.value.trim();
+            const email = form.email.value.trim();
+            
+            try {
+                const resp = await fetch(`${API_BASE}/users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email })
+                });
+                
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.message || 'Failed to create user');
+                }
+                
+                const data = await resp.json();
+                
+                // Show credentials
+                document.getElementById('createdAccessKey').textContent = data.access_key;
+                document.getElementById('createdSecretKey').textContent = data.secret_key;
+                document.getElementById('createModal').classList.remove('active');
+                document.getElementById('credentialsModal').classList.add('active');
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        async function createKey(username) {
+            try {
+                const resp = await fetch(`${API_BASE}/users/${username}/keys`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.message || 'Failed to create key');
+                }
+                
+                const data = await resp.json();
+                
+                document.getElementById('createdAccessKey').textContent = data.access_key;
+                document.getElementById('createdSecretKey').textContent = data.secret_key;
+                document.getElementById('credentialsModal').classList.add('active');
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        function confirmDelete(username) {
+            userToDelete = username;
+            document.getElementById('deleteUsername').textContent = username;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        
+        async function deleteUser() {
+            if (!userToDelete) return;
+            
+            try {
+                const resp = await fetch(`${API_BASE}/users/${userToDelete}`, { method: 'DELETE' });
+                if (!resp.ok && resp.status !== 204) {
+                    const err = await resp.json();
+                    throw new Error(err.message || 'Failed to delete user');
+                }
+                
+                hideModals();
+                loadUsers();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        function copyCredentials() {
+            const ak = document.getElementById('createdAccessKey').textContent;
+            const sk = document.getElementById('createdSecretKey').textContent;
+            navigator.clipboard.writeText(`AWS_ACCESS_KEY_ID=${ak}\nAWS_SECRET_ACCESS_KEY=${sk}`);
+            alert('Credentials copied to clipboard!');
+        }
+        
+        loadUsers();
+    </script>
+</body>
+</html>
+

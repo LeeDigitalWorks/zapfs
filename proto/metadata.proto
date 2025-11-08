@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package metadata_pb;
+option go_package = "zapfs/proto/metadata_pb";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service MetadataService {
+  rpc Ping (PingRequest) returns (PingResponse);
+
+  rpc GetObject(GetObjectRequest) returns (GetObjectResponse);
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+  
+  rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+}
+
+message GetObjectRequest {
+  string collection = 1;
+  string key = 2;
+}
+
+message GetObjectResponse {
+  ObjectInfo object_info = 1;
+}
+
+message ObjectInfo {
+  string collection = 1;
+  string key = 2;
+  int64 size_bytes = 3;
+  string etag = 4;
+  map<string, string> metadata = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  repeated ObjectLocation locations = 8;
+}
+
+message ObjectLocation {
+  common_pb.Location location = 1;
+  string disk_id = 2;
+}
+
+message DeleteObjectRequest {
+  string collection = 1;
+  string key = 2;
+}
+
+message DeleteObjectResponse {
+  bool success = 1;
+  repeated ObjectLocation deleted_locations = 2;
+}
+
+message ListObjectsRequest {
+  string collection = 1;
+  string prefix = 2;
+  string delimiter = 3;
+  int32 max_keys = 4;
+  string continuation_token = 5;
+}
+
+message ListObjectsResponse {
+  repeated ObjectInfo objects = 1;
+  repeated string common_prefixes = 2;
+  string next_continuation_token = 3;
+  bool is_truncated = 4;
+  int32 key_count = 5;
+}
+
+message CreateCollectionRequest {
+  string collection = 1;
+}
+
+message CollectionSettings {
+  int32 default_replica_count = 2;
+}
+
+message CreateCollectionResponse {
+  bool success = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+message DeleteCollectionRequest {
+  string collection = 1;
+  bool force = 2;                          // Delete even if not empty
+}
+
+message DeleteCollectionResponse {
+  bool success = 1;
+  int32 objects_deleted = 2;
+}
+
+message ListCollectionsRequest {
+  int32 max_collections = 1;
+  string continuation_token = 2;
+}
+
+message ListCollectionsResponse {
+  repeated CollectionInfo collections = 1;
+  string next_continuation_token = 2;
+}
+
+message CollectionInfo {
+  string collection = 1;
+  int64 object_count = 2;
+  int64 total_size_bytes = 3;
+  CollectionSettings settings = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message PingRequest {}
+
+message PingResponse {
+  uint64 start_time = 1;
+  uint64 current_time = 2;
+  uint64 stop_time = 3;
+}

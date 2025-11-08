@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zapfs.fullname" . }}-metadata
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metadata
+spec:
+  type: {{ .Values.metadata.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.metadata.httpPort | default 8082 }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: {{ .Values.metadata.grpcPort | default 8083 }}
+    targetPort: grpc
+    protocol: TCP
+    name: grpc
+  - port: {{ .Values.metadata.debugPort | default 8085 }}
+    targetPort: debug
+    protocol: TCP
+    name: debug
+  selector:
+    {{- include "zapfs.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: metadata

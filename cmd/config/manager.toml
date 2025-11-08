@@ -1,0 +1,31 @@
+# ZapFS Manager Server Configuration
+# All keys use underscores for consistency with CLI flags and environment variables
+# Environment variables: ZAPFS_GRPC_PORT, ZAPFS_DEBUG_PORT, etc.
+
+# Network
+ip = "0.0.0.0"
+grpc_port = 8050
+debug_port = 8055
+
+# TLS (optional)
+cert_file = ""
+key_file = ""
+
+# Logging
+log_level = "info"
+
+# Raft Configuration
+node_id = ""
+raft_dir = "/tmp/raft"
+raft_addr = ""
+bootstrap = false
+bootstrap_expect = 1
+join = ""
+
+# Regional
+region_id = "default"
+
+# Placement Defaults
+num_replicas = 3
+data_shards = 3
+parity_shards = 2

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package common_pb;
+option go_package = "zapfs/proto/common_pb";
+
+import "google/protobuf/timestamp.proto";
+
+// Backend represents a storage backend (local disk, S3 bucket, etc.)
+message Backend {
+  string id = 1;
+  string type = 2; // local, s3, ceph, azure, gcs
+  string media_type = 3; // ssd, hdd, nvme (for local)
+  string endpoint = 4; // for remote backends
+  string bucket = 5; // for object stores
+  string path = 6; // for local filesystem
+  string region = 7; // for cloud backends
+  uint64 total_bytes = 8;
+  uint64 used_bytes = 9;
+  bool read_only = 10;
+}
+
+// ECScheme defines erasure coding parameters
+message ECScheme {
+  int32 data_shards = 1;
+  int32 parity_shards = 2;
+}
+
+// ChunkRef references a stored chunk
+message ChunkRef {
+  string chunk_id = 1;
+  uint64 offset = 2;
+  uint64 size = 3;
+  string backend_id = 4;
+}
+
+// Location identifies a server in the cluster
+message Location {
+  string address = 1;
+  int32 grpc_port = 2;
+  
+  string data_center = 3;
+  string rack = 4;
+  string node = 5;
+
+  bool is_active = 6;
+  bool is_read_only = 7;
+  google.protobuf.Timestamp last_seen = 8;
+}
