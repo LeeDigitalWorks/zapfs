@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	clientmocks "zapfs/mocks/client"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
-	"zapfs/proto/manager_pb"
+	clientmocks "github.com/LeeDigitalWorks/zapfs/mocks/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

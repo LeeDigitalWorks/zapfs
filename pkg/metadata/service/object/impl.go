@@ -9,13 +9,13 @@ import (
 	"io"
 	"time"
 
-	"zapfs/pkg/cache"
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/service/encryption"
-	"zapfs/pkg/metadata/service/storage"
-	"zapfs/pkg/types"
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
 	"github.com/google/uuid"
 )

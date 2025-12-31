@@ -5,10 +5,10 @@ import (
 	"runtime"
 	"time"
 
-	"zapfs/pkg/storage/backend"
-	"zapfs/pkg/types"
-	"zapfs/proto/common_pb"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 )

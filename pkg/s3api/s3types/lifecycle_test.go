@@ -4,7 +4,7 @@ import (
 	"encoding/xml"
 	"testing"
 
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/google/go-cmp/cmp"

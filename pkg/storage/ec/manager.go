@@ -8,10 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"zapfs/pkg/storage/backend"
-	"zapfs/pkg/storage/index"
-	"zapfs/pkg/storage/placer"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/placer"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 )

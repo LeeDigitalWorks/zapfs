@@ -6,12 +6,12 @@ import (
 	"io"
 	"net/http"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/service/config"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // GetBucketTaggingHandler returns the tag set for a bucket.

@@ -1,5 +1,9 @@
 //go:build enterprise
 
+// Copyright 2025 ZapInvest, Inc. All rights reserved.
+// Use of this source code is governed by the ZapFS Enterprise License
+// that can be found in the LICENSE.enterprise file.
+
 package api
 
 import (
@@ -7,10 +11,10 @@ import (
 	"io"
 	"net/http"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // GetBucketReplicationHandler returns the replication configuration for a bucket.

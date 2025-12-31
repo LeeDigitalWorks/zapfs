@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/integration/testutil"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

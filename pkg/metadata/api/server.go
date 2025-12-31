@@ -3,18 +3,18 @@ package api
 import (
 	"context"
 
-	"zapfs/pkg/cache"
-	"zapfs/pkg/iam"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/filter"
-	"zapfs/pkg/metadata/service"
-	"zapfs/pkg/s3api/s3action"
-	"zapfs/pkg/storage/backend"
-	"zapfs/pkg/storage/placer"
-	"zapfs/pkg/taskqueue"
-	"zapfs/pkg/types"
-	"zapfs/proto/metadata_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/placer"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -155,94 +155,167 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 	ms.iamService = cfg.IAMService
 
 	// Register S3 API handlers (both HTTP and gRPC can call these)
+	// Handlers are organized by file location for maintainability.
 	ms.handlers = map[s3action.Action]Handler{
-		// Bucket actions
+		// =====================================================================
+		// bucket.go - Core bucket operations
+		// =====================================================================
 		s3action.CreateBucket:      ms.CreateBucketHandler,
 		s3action.DeleteBucket:      ms.DeleteBucketHandler,
 		s3action.ListBuckets:       ms.ListBucketsHandler,
 		s3action.HeadBucket:        ms.HeadBucketHandler,
 		s3action.GetBucketLocation: ms.GetBucketLocationHandler,
 
-		// Bucket versioning
+		// =====================================================================
+		// versioning.go - Bucket versioning
+		// =====================================================================
 		s3action.GetBucketVersioning: ms.GetBucketVersioningHandler,
 		s3action.PutBucketVersioning: ms.PutBucketVersioningHandler,
 
-		// Bucket ACL
+		// =====================================================================
+		// acl.go - Bucket and object ACLs
+		// =====================================================================
 		s3action.GetBucketAcl: ms.GetBucketAclHandler,
 		s3action.PutBucketAcl: ms.PutBucketAclHandler,
+		s3action.GetObjectAcl: ms.GetObjectAclHandler,
+		s3action.PutObjectAcl: ms.PutObjectAclHandler,
 
-		// Bucket policy
-		s3action.GetBucketPolicy:    ms.GetBucketPolicyHandler,
-		s3action.PutBucketPolicy:    ms.PutBucketPolicyHandler,
-		s3action.DeleteBucketPolicy: ms.DeleteBucketPolicyHandler,
+		// =====================================================================
+		// policy.go - Bucket policies
+		// =====================================================================
+		s3action.GetBucketPolicy:       ms.GetBucketPolicyHandler,
+		s3action.PutBucketPolicy:       ms.PutBucketPolicyHandler,
+		s3action.DeleteBucketPolicy:    ms.DeleteBucketPolicyHandler,
+		s3action.GetBucketPolicyStatus: ms.GetBucketPolicyStatusHandler,
 
-		// Bucket CORS
+		// =====================================================================
+		// cors.go - CORS configuration
+		// =====================================================================
 		s3action.GetBucketCors:    ms.GetBucketCorsHandler,
 		s3action.PutBucketCors:    ms.PutBucketCorsHandler,
 		s3action.DeleteBucketCors: ms.DeleteBucketCorsHandler,
+		s3action.OptionsPreflight: ms.OptionsPreflightHandler,
 
-		// Bucket website
+		// =====================================================================
+		// website.go - Static website hosting
+		// =====================================================================
 		s3action.GetBucketWebsite:    ms.GetBucketWebsiteHandler,
 		s3action.PutBucketWebsite:    ms.PutBucketWebsiteHandler,
 		s3action.DeleteBucketWebsite: ms.DeleteBucketWebsiteHandler,
 
-		// Bucket tagging
+		// =====================================================================
+		// tagging.go - Bucket and object tagging
+		// =====================================================================
 		s3action.GetBucketTagging:    ms.GetBucketTaggingHandler,
 		s3action.PutBucketTagging:    ms.PutBucketTaggingHandler,
 		s3action.DeleteBucketTagging: ms.DeleteBucketTaggingHandler,
-
-		// Bucket encryption
-		s3action.GetBucketEncryption:    ms.GetBucketEncryptionHandler,
-		s3action.PutBucketEncryption:    ms.PutBucketEncryptionHandler,
-		s3action.DeleteBucketEncryption: ms.DeleteBucketEncryptionHandler,
-
-		// Bucket lifecycle
-		s3action.GetBucketLifecycleConfiguration: ms.GetBucketLifecycleConfigurationHandler,
-		s3action.PutBucketLifecycleConfiguration: ms.PutBucketLifecycleConfigurationHandler,
-		s3action.DeleteBucketLifecycle:           ms.DeleteBucketLifecycleHandler,
-
-		// Object Lock (WORM)
-		s3action.GetObjectLockConfiguration: ms.GetObjectLockConfigurationHandler,
-		s3action.PutObjectLockConfiguration: ms.PutObjectLockConfigurationHandler,
-
-		// Bucket replication (enterprise feature)
-		s3action.GetBucketReplication:    ms.GetBucketReplicationHandler,
-		s3action.PutBucketReplication:    ms.PutBucketReplicationHandler,
-		s3action.DeleteBucketReplication: ms.DeleteBucketReplicationHandler,
-
-		// Object actions
-		s3action.PutObject:          ms.PutObjectHandler,
-		s3action.GetObject:          ms.GetObjectHandler,
-		s3action.HeadObject:         ms.HeadObjectHandler,
-		s3action.DeleteObject:       ms.DeleteObjectHandler,
-		s3action.DeleteObjects:      ms.DeleteObjectsHandler,
-		s3action.CopyObject:         ms.CopyObjectHandler,
-		s3action.ListObjects:        ms.ListObjectsHandler,
-		s3action.ListObjectsV2:      ms.ListObjectsV2Handler,
-		s3action.ListObjectVersions: ms.ListObjectVersionsHandler,
-
-		// Object ACL
-		s3action.GetObjectAcl: ms.GetObjectAclHandler,
-		s3action.PutObjectAcl: ms.PutObjectAclHandler,
-
-		// Object tagging
 		s3action.GetObjectTagging:    ms.GetObjectTaggingHandler,
 		s3action.PutObjectTagging:    ms.PutObjectTaggingHandler,
 		s3action.DeleteObjectTagging: ms.DeleteObjectTaggingHandler,
 
-		// Object retention and legal hold
-		s3action.GetObjectRetention: ms.GetObjectRetentionHandler,
-		s3action.PutObjectRetention: ms.PutObjectRetentionHandler,
-		s3action.GetObjectLegalHold: ms.GetObjectLegalHoldHandler,
-		s3action.PutObjectLegalHold: ms.PutObjectLegalHoldHandler,
+		// =====================================================================
+		// encryption.go - Server-side encryption (Enterprise: FeatureKMS)
+		// =====================================================================
+		s3action.GetBucketEncryption:    ms.GetBucketEncryptionHandler,
+		s3action.PutBucketEncryption:    ms.PutBucketEncryptionHandler,
+		s3action.DeleteBucketEncryption: ms.DeleteBucketEncryptionHandler,
 
-		// Multipart upload actions
+		// =====================================================================
+		// lifecycle.go - Lifecycle rules (Enterprise: FeatureLifecycle)
+		// =====================================================================
+		s3action.GetBucketLifecycleConfiguration: ms.GetBucketLifecycleConfigurationHandler,
+		s3action.PutBucketLifecycleConfiguration: ms.PutBucketLifecycleConfigurationHandler,
+		s3action.DeleteBucketLifecycle:           ms.DeleteBucketLifecycleHandler,
+
+		// =====================================================================
+		// object_lock.go - WORM / Object Lock (Enterprise: FeatureObjectLock)
+		// =====================================================================
+		s3action.GetObjectLockConfiguration: ms.GetObjectLockConfigurationHandler,
+		s3action.PutObjectLockConfiguration: ms.PutObjectLockConfigurationHandler,
+		s3action.GetObjectRetention:         ms.GetObjectRetentionHandler,
+		s3action.PutObjectRetention:         ms.PutObjectRetentionHandler,
+		s3action.GetObjectLegalHold:         ms.GetObjectLegalHoldHandler,
+		s3action.PutObjectLegalHold:         ms.PutObjectLegalHoldHandler,
+
+		// =====================================================================
+		// replication.go - Cross-region replication (Enterprise: FeatureMultiRegion)
+		// =====================================================================
+		s3action.GetBucketReplication:    ms.GetBucketReplicationHandler,
+		s3action.PutBucketReplication:    ms.PutBucketReplicationHandler,
+		s3action.DeleteBucketReplication: ms.DeleteBucketReplicationHandler,
+
+		// =====================================================================
+		// object.go - Core object operations
+		// =====================================================================
+		s3action.PutObject:              ms.PutObjectHandler,
+		s3action.GetObject:              ms.GetObjectHandler,
+		s3action.HeadObject:             ms.HeadObjectHandler,
+		s3action.DeleteObject:           ms.DeleteObjectHandler,
+		s3action.DeleteObjects:          ms.DeleteObjectsHandler,
+		s3action.CopyObject:             ms.CopyObjectHandler,
+		s3action.ListObjects:            ms.ListObjectsHandler,
+		s3action.ListObjectsV2:          ms.ListObjectsV2Handler,
+		s3action.ListObjectVersions:     ms.ListObjectVersionsHandler,
+		s3action.PostObject:             ms.PostObjectHandler,
+		s3action.GetObjectAttributes:    ms.GetObjectAttributesHandler,
+		s3action.GetObjectTorrent:       ms.GetObjectTorrentHandler,
+		s3action.RestoreObject:          ms.RestoreObjectHandler, // Enterprise: FeatureLifecycle
+		s3action.SelectObjectContent:    ms.SelectObjectContentHandler,
+		s3action.WriteGetObjectResponse: ms.WriteGetObjectResponseHandler,
+		s3action.CreateSession:          ms.CreateSessionHandler,
+
+		// =====================================================================
+		// multipart.go - Multipart upload operations
+		// =====================================================================
 		s3action.CreateMultipartUpload:   ms.CreateMultipartUploadHandler,
 		s3action.UploadPart:              ms.UploadPartHandler,
+		s3action.UploadPartCopy:          ms.UploadPartCopyHandler,
 		s3action.CompleteMultipartUpload: ms.CompleteMultipartUploadHandler,
 		s3action.AbortMultipartUpload:    ms.AbortMultipartUploadHandler,
 		s3action.ListParts:               ms.ListPartsHandler,
 		s3action.ListMultipartUploads:    ms.ListMultipartUploadsHandler,
+
+		// =====================================================================
+		// bucket_access.go - Public access block and ownership controls
+		// =====================================================================
+		s3action.GetPublicAccessBlock:          ms.GetPublicAccessBlockHandler,
+		s3action.PutPublicAccessBlock:          ms.PutPublicAccessBlockHandler,
+		s3action.DeletePublicAccessBlock:       ms.DeletePublicAccessBlockHandler,
+		s3action.GetBucketOwnershipControls:    ms.GetBucketOwnershipControlsHandler,
+		s3action.PutBucketOwnershipControls:    ms.PutBucketOwnershipControlsHandler,
+		s3action.DeleteBucketOwnershipControls: ms.DeleteBucketOwnershipControlsHandler,
+
+		// =====================================================================
+		// bucket_config.go - Logging, payment, acceleration, notifications
+		// =====================================================================
+		s3action.GetBucketLogging:                   ms.GetBucketLoggingHandler,    // Enterprise: FeatureAuditLog
+		s3action.PutBucketLogging:                   ms.PutBucketLoggingHandler,    // Enterprise: FeatureAuditLog
+		s3action.GetBucketRequestPayment:            ms.GetBucketRequestPaymentHandler,
+		s3action.PutBucketRequestPayment:            ms.PutBucketRequestPaymentHandler,
+		s3action.GetBucketAccelerateConfiguration:   ms.GetBucketAccelerateConfigurationHandler,
+		s3action.PutBucketAccelerateConfiguration:   ms.PutBucketAccelerateConfigurationHandler,
+		s3action.GetBucketNotificationConfiguration: ms.GetBucketNotificationConfigurationHandler,
+		s3action.PutBucketNotificationConfiguration: ms.PutBucketNotificationConfigurationHandler,
+
+		// =====================================================================
+		// bucket_analytics.go - Analytics, metrics, inventory, intelligent tiering
+		// =====================================================================
+		s3action.GetBucketAnalyticsConfiguration:             ms.GetBucketAnalyticsConfigurationHandler,
+		s3action.PutBucketAnalyticsConfiguration:             ms.PutBucketAnalyticsConfigurationHandler,
+		s3action.DeleteBucketAnalyticsConfiguration:          ms.DeleteBucketAnalyticsConfigurationHandler,
+		s3action.ListBucketAnalyticsConfigurations:           ms.ListBucketAnalyticsConfigurationsHandler,
+		s3action.GetBucketMetricsConfiguration:               ms.GetBucketMetricsConfigurationHandler,
+		s3action.PutBucketMetricsConfiguration:               ms.PutBucketMetricsConfigurationHandler,
+		s3action.DeleteBucketMetricsConfiguration:            ms.DeleteBucketMetricsConfigurationHandler,
+		s3action.ListBucketMetricsConfigurations:             ms.ListBucketMetricsConfigurationsHandler,
+		s3action.GetBucketInventoryConfiguration:             ms.GetBucketInventoryConfigurationHandler,
+		s3action.PutBucketInventoryConfiguration:             ms.PutBucketInventoryConfigurationHandler,
+		s3action.DeleteBucketInventoryConfiguration:          ms.DeleteBucketInventoryConfigurationHandler,
+		s3action.ListBucketInventoryConfigurations:           ms.ListBucketInventoryConfigurationsHandler,
+		s3action.GetBucketIntelligentTieringConfiguration:    ms.GetBucketIntelligentTieringConfigurationHandler,    // Enterprise: FeatureLifecycle
+		s3action.PutBucketIntelligentTieringConfiguration:    ms.PutBucketIntelligentTieringConfigurationHandler,    // Enterprise: FeatureLifecycle
+		s3action.DeleteBucketIntelligentTieringConfiguration: ms.DeleteBucketIntelligentTieringConfigurationHandler, // Enterprise: FeatureLifecycle
+		s3action.ListBucketIntelligentTieringConfigurations:  ms.ListBucketIntelligentTieringConfigurationsHandler,  // Enterprise: FeatureLifecycle
 	}
 
 	return ms

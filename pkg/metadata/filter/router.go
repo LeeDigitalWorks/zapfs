@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
 
 	"golang.org/x/text/encoding/charmap"
 )

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 )
 
 const (

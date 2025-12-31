@@ -3,7 +3,7 @@ package storage
 import (
 	"io"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // WriteRequest contains parameters for writing an object to storage

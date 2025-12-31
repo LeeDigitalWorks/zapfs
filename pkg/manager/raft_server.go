@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"

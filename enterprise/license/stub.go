@@ -12,22 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Feature represents an enterprise feature.
-type Feature string
-
-// License feature constants (defined but not usable in community edition).
-const (
-	FeatureAuditLog        Feature = "audit_log"
-	FeatureLDAP            Feature = "ldap"
-	FeatureOIDC            Feature = "oidc"
-	FeatureKMS             Feature = "kms"
-	FeatureMultiRegion     Feature = "multi_region"
-	FeatureObjectLock      Feature = "object_lock"
-	FeatureLifecycle       Feature = "lifecycle"
-	FeatureMultiTenancy    Feature = "multi_tenancy"
-	FeatureAdvancedMetrics Feature = "advanced_metrics"
-)
-
 // Common errors
 var (
 	ErrNoLicense             = errors.New("enterprise license required")
@@ -101,21 +85,6 @@ func (m *Manager) Info() map[string]interface{} {
 		"licensed": false,
 		"edition":  "community",
 		"features": []string{},
-	}
-}
-
-// AllFeatures returns all enterprise features.
-func AllFeatures() []Feature {
-	return []Feature{
-		FeatureAuditLog,
-		FeatureLDAP,
-		FeatureOIDC,
-		FeatureKMS,
-		FeatureMultiRegion,
-		FeatureObjectLock,
-		FeatureLifecycle,
-		FeatureMultiTenancy,
-		FeatureAdvancedMetrics,
 	}
 }
 

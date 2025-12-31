@@ -5,7 +5,7 @@ package file
 import (
 	"testing"
 
-	"zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
 
 	"github.com/stretchr/testify/assert"
 )

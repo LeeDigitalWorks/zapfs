@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3action"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // AuthorizationFilter checks if the authenticated identity is allowed to perform

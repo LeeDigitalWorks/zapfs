@@ -5,13 +5,13 @@ import (
 	"errors"
 	"time"
 
-	"zapfs/pkg/cache"
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/google/uuid"
 )

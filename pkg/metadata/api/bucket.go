@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/service/bucket"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 func (s *MetadataServer) CreateBucketHandler(d *data.Data, w http.ResponseWriter) {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // Config holds configuration for the config service

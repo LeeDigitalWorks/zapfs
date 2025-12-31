@@ -136,8 +136,36 @@ ZapFS is open-core software with dual licensing:
 | Component | License | Description |
 |-----------|---------|-------------|
 | Core (`pkg/`, `cmd/`, etc.) | [Apache 2.0](LICENSE) | Open source, free forever |
-| Enterprise (`enterprise/`) | [Commercial](LICENSE.enterprise) | Requires license key |
+| Enterprise (`enterprise/`, `*_enterprise.go`) | [Commercial](LICENSE.enterprise) | Requires license key |
 
-The core functionality is fully open source and free to use. Enterprise features (audit logging, LDAP/SSO, external KMS, multi-region replication) require a commercial license.
+### Community Edition (Default)
+
+The default build includes all core S3 functionality:
+
+```bash
+go build -o zapfs .
+```
+
+### Enterprise Edition
+
+Enterprise features require the `enterprise` build tag and a valid license key:
+
+```bash
+go build -tags enterprise -o zapfs-enterprise .
+```
+
+### Enterprise Features
+
+| Feature | License Required | Description |
+|---------|------------------|-------------|
+| Lifecycle Rules | FeatureLifecycle | Object expiration and transitions |
+| Object Lock (WORM) | FeatureObjectLock | Retention and legal hold |
+| SSE-KMS Encryption | FeatureKMS | KMS-managed encryption keys |
+| Bucket Logging | FeatureAuditLog | Access logging to target bucket |
+| Intelligent Tiering | FeatureLifecycle | Automatic storage class optimization |
+| Cross-Region Replication | FeatureMultiRegion | Replicate to remote regions |
+| LDAP/AD Integration | FeatureMultiRegion | Directory service authentication |
+| External KMS | FeatureKMS | HashiCorp Vault, AWS KMS, etc. |
+| Audit Logging | FeatureAuditLog | Compliance audit trails |
 
 See [LICENSE](LICENSE) and [LICENSE.enterprise](LICENSE.enterprise) for details.

@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
 
 type Handler func(*data.Data, http.ResponseWriter)

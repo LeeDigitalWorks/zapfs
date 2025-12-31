@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"zapfs/cmd"
+	"github.com/LeeDigitalWorks/zapfs/cmd"
 
 	"github.com/getsentry/sentry-go"
 )

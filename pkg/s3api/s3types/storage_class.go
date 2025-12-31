@@ -1,6 +1,6 @@
 package s3types
 
-import "zapfs/pkg/s3api/s3err"
+import "github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 
 type StorageClass uint8
 

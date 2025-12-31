@@ -12,7 +12,7 @@ import (
 	"io"
 	"strings"
 
-	"zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 )
 
 // Handler provides encryption/decryption services

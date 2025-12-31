@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/logger"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

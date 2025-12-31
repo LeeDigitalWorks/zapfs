@@ -6,11 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/debug"
-	"zapfs/pkg/logger"
-	"zapfs/pkg/storage/backend"
-	"zapfs/pkg/storage/index"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

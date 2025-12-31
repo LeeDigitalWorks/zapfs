@@ -1,3 +1,9 @@
+//go:build enterprise
+
+// Copyright 2025 ZapInvest, Inc. All rights reserved.
+// Use of this source code is governed by the ZapFS Enterprise License
+// that can be found in the LICENSE.enterprise file.
+
 package api
 
 import (
@@ -6,17 +12,24 @@ import (
 	"io"
 	"net/http"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/service/config"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // GetBucketEncryptionHandler returns the encryption configuration for a bucket.
 // GET /{bucket}?encryption
+// Enterprise feature: requires FeatureKMS license for SSE-KMS.
 func (s *MetadataServer) GetBucketEncryptionHandler(d *data.Data, w http.ResponseWriter) {
+	if !checkKMSLicense() {
+		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("bucket encryption feature requires enterprise license")
+		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+		return
+	}
+
 	if s.svc == nil {
 		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return
@@ -42,7 +55,14 @@ func (s *MetadataServer) GetBucketEncryptionHandler(d *data.Data, w http.Respons
 
 // PutBucketEncryptionHandler sets the encryption configuration for a bucket.
 // PUT /{bucket}?encryption
+// Enterprise feature: requires FeatureKMS license for SSE-KMS.
 func (s *MetadataServer) PutBucketEncryptionHandler(d *data.Data, w http.ResponseWriter) {
+	if !checkKMSLicense() {
+		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("bucket encryption feature requires enterprise license")
+		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+		return
+	}
+
 	if s.svc == nil {
 		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return
@@ -85,7 +105,14 @@ func (s *MetadataServer) PutBucketEncryptionHandler(d *data.Data, w http.Respons
 
 // DeleteBucketEncryptionHandler removes the encryption configuration for a bucket.
 // DELETE /{bucket}?encryption
+// Enterprise feature: requires FeatureKMS license for SSE-KMS.
 func (s *MetadataServer) DeleteBucketEncryptionHandler(d *data.Data, w http.ResponseWriter) {
+	if !checkKMSLicense() {
+		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("bucket encryption feature requires enterprise license")
+		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+		return
+	}
+
 	if s.svc == nil {
 		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return

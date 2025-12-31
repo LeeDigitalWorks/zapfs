@@ -3,10 +3,10 @@ package filter
 import (
 	"sync/atomic"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/signature"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/signature"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

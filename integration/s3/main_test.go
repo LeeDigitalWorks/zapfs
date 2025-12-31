@@ -5,7 +5,7 @@ package s3
 import (
 	"testing"
 
-	"zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
 
 	"go.uber.org/goleak"
 )

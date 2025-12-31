@@ -3,13 +3,13 @@ package service
 import (
 	"time"
 
-	"zapfs/pkg/cache"
-	"zapfs/pkg/iam"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/service/object"
-	"zapfs/pkg/taskqueue"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // Config holds all configuration for the metadata service layer.

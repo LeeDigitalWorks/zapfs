@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 
 	"github.com/spf13/viper"
 )

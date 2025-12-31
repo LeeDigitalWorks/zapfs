@@ -7,7 +7,7 @@ package taskqueue
 import (
 	"errors"
 
-	"zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
 var ErrEnterpriseRequired = errors.New("enterprise task types require enterprise edition")

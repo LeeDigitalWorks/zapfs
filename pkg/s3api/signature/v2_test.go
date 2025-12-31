@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/stretchr/testify/require"
 )

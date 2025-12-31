@@ -6,7 +6,7 @@ package mocks
 
 import (
 	"context"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	mock "github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"

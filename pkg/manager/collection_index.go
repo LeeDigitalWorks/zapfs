@@ -1,7 +1,7 @@
 package manager
 
 import (
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
 
 // ===== COLLECTION INDEX MANAGEMENT =====

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/logger"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/google/btree"
 	"google.golang.org/grpc/codes"

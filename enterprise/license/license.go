@@ -1,5 +1,9 @@
 //go:build enterprise
 
+// Copyright 2025 ZapInvest, Inc. All rights reserved.
+// Use of this source code is governed by the ZapFS Enterprise License
+// that can be found in the LICENSE.enterprise file.
+
 // Package license provides enterprise license key validation and feature gating.
 //
 // License keys are cryptographically signed JWT tokens that contain:
@@ -24,53 +28,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-// Feature represents an enterprise feature that can be enabled by license.
-type Feature string
-
-const (
-	// FeatureAuditLog enables audit logging and compliance features
-	FeatureAuditLog Feature = "audit_log"
-
-	// FeatureLDAP enables LDAP/Active Directory integration
-	FeatureLDAP Feature = "ldap"
-
-	// FeatureOIDC enables OpenID Connect SSO integration
-	FeatureOIDC Feature = "oidc"
-
-	// FeatureKMS enables external KMS integration (AWS KMS, Vault, etc.)
-	FeatureKMS Feature = "kms"
-
-	// FeatureMultiRegion enables cross-region replication
-	FeatureMultiRegion Feature = "multi_region"
-
-	// FeatureObjectLock enables S3 Object Lock (WORM) compliance
-	FeatureObjectLock Feature = "object_lock"
-
-	// FeatureLifecycle enables advanced lifecycle policies
-	FeatureLifecycle Feature = "lifecycle"
-
-	// FeatureMultiTenancy enables multi-tenant isolation and quotas
-	FeatureMultiTenancy Feature = "multi_tenancy"
-
-	// FeatureAdvancedMetrics enables advanced observability features
-	FeatureAdvancedMetrics Feature = "advanced_metrics"
-)
-
-// AllFeatures returns all available enterprise features.
-func AllFeatures() []Feature {
-	return []Feature{
-		FeatureAuditLog,
-		FeatureLDAP,
-		FeatureOIDC,
-		FeatureKMS,
-		FeatureMultiRegion,
-		FeatureObjectLock,
-		FeatureLifecycle,
-		FeatureMultiTenancy,
-		FeatureAdvancedMetrics,
-	}
-}
 
 // License represents a validated enterprise license.
 type License struct {
@@ -150,7 +107,10 @@ type licenseClaims struct {
 // The license field uses atomic.Pointer for lock-free reads and safe hot-reloading.
 type Manager struct {
 	license   atomic.Pointer[License]
-	publicKey *rsa.PublicKey
+	publicKey *rsa.PublicKey // Single key mode (for backward compatibility)
+
+	// Multi-key support for key rotation
+	publicKeys map[string]*rsa.PublicKey // keyID -> publicKey
 
 	// For file-based license reloading
 	mu          sync.Mutex // protects licenseFile and reload operations
@@ -170,6 +130,7 @@ var (
 
 // NewManager creates a new license manager with the given RSA public key.
 // The public key is used to verify license signatures.
+// For multi-key support (key rotation), use NewManagerWithKeys instead.
 func NewManager(publicKeyPEM []byte) (*Manager, error) {
 	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(publicKeyPEM)
 	if err != nil {
@@ -181,9 +142,81 @@ func NewManager(publicKeyPEM []byte) (*Manager, error) {
 	}, nil
 }
 
+// NewManagerWithKeys creates a license manager that supports multiple public keys.
+// This enables key rotation - new licenses can be signed with a new key while
+// old licenses signed with previous keys remain valid.
+//
+// The keyID in the JWT header ("kid") is used to select the appropriate public key.
+// If no "kid" header is present, the default key ID is used.
+func NewManagerWithKeys(publicKeys map[string][]byte) (*Manager, error) {
+	if len(publicKeys) == 0 {
+		return nil, errors.New("at least one public key is required")
+	}
+
+	parsedKeys := make(map[string]*rsa.PublicKey, len(publicKeys))
+	for keyID, keyPEM := range publicKeys {
+		if len(keyPEM) == 0 {
+			continue // Skip nil/empty keys (placeholder for future keys)
+		}
+		publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse public key %s: %w", keyID, err)
+		}
+		parsedKeys[keyID] = publicKey
+	}
+
+	if len(parsedKeys) == 0 {
+		return nil, errors.New("no valid public keys found")
+	}
+
+	return &Manager{
+		publicKeys: parsedKeys,
+	}, nil
+}
+
+// NewManagerWithProductionKeys creates a license manager using the embedded production keys.
+// Returns an error if no production keys are configured.
+func NewManagerWithProductionKeys() (*Manager, error) {
+	if !HasProductionKeys() {
+		return nil, errors.New("no production public keys configured")
+	}
+	return NewManagerWithKeys(ProductionPublicKeys)
+}
+
+// getPublicKeyForToken returns the appropriate public key for verifying the token.
+// It checks the "kid" (key ID) header to support key rotation.
+func (m *Manager) getPublicKeyForToken(token *jwt.Token) (*rsa.PublicKey, error) {
+	// Single-key mode (backward compatibility)
+	if m.publicKey != nil {
+		return m.publicKey, nil
+	}
+
+	// Multi-key mode - look up by kid header
+	if len(m.publicKeys) == 0 {
+		return nil, errors.New("no public keys configured")
+	}
+
+	// Get key ID from header, default to "v1" if not present
+	keyID := DefaultKeyID
+	if kid, ok := token.Header["kid"].(string); ok && kid != "" {
+		keyID = kid
+	}
+
+	publicKey, exists := m.publicKeys[keyID]
+	if !exists {
+		return nil, fmt.Errorf("unknown key ID: %s", keyID)
+	}
+
+	return publicKey, nil
+}
+
 // LoadLicense loads and validates a license key.
 // The license key is a JWT signed with the corresponding RSA private key.
 // This method is safe to call concurrently - license updates are atomic.
+//
+// If the manager was created with multiple keys (NewManagerWithKeys), the "kid"
+// header in the JWT is used to select the appropriate public key. If no "kid"
+// header is present, the default key ID ("v1") is used.
 func (m *Manager) LoadLicense(licenseKey string) error {
 	// Parse and validate the JWT
 	token, err := jwt.ParseWithClaims(licenseKey, &licenseClaims{}, func(token *jwt.Token) (interface{}, error) {
@@ -191,7 +224,7 @@ func (m *Manager) LoadLicense(licenseKey string) error {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return m.publicKey, nil
+		return m.getPublicKeyForToken(token)
 	})
 
 	if err != nil {

@@ -3,8 +3,8 @@ package manager
 import (
 	"testing"
 
-	"zapfs/proto/common_pb"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
 
 func TestRegistrationMateriallyChanged(t *testing.T) {

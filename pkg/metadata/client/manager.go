@@ -5,7 +5,7 @@ package client
 import (
 	"context"
 
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
 
 // Manager defines the manager service operations needed by MetadataServer.

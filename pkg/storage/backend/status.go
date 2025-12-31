@@ -3,7 +3,7 @@ package backend
 import (
 	"syscall"
 
-	"zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
 )
 
 // NewBackendStatus creates a Backend proto with disk stats

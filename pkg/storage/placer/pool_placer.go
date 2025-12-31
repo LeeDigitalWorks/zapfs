@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 )

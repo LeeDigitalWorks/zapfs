@@ -3,10 +3,10 @@ package file
 import (
 	"net/http"
 
-	"zapfs/pkg/grpc/pool"
-	"zapfs/pkg/storage/backend"
-	"zapfs/pkg/storage/store"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/grpc/pool"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/store"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"google.golang.org/grpc"
 )

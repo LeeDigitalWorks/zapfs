@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"zapfs/pkg/types"
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 // ErrChunkNotFound is returned when a chunk doesn't exist

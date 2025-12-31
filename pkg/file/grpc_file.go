@@ -5,10 +5,10 @@ import (
 	"errors"
 	"io"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/storage/store"
-	"zapfs/pkg/types"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/store"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"

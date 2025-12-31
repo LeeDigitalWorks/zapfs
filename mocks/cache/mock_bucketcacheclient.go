@@ -6,7 +6,7 @@ package mocks
 
 import (
 	"context"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	mock "github.com/stretchr/testify/mock"
 )

@@ -1,12 +1,16 @@
 //go:build enterprise
 
+// Copyright 2025 ZapInvest, Inc. All rights reserved.
+// Use of this source code is governed by the ZapFS Enterprise License
+// that can be found in the LICENSE.enterprise file.
+
 package license
 
 import (
 	"os"
 	"sync"
 	"time"
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -38,16 +42,22 @@ type Config struct {
 // Initialize sets up the global license manager and metrics.
 // This should be called early in main() before using any enterprise features.
 //
-// A public key must be provided via cfg.PublicKey or cfg.PublicKeyFile.
-// Without a valid public key, license verification cannot proceed.
+// Public key resolution order:
+// 1. cfg.PublicKey (explicit PEM bytes)
+// 2. cfg.PublicKeyFile (path to PEM file)
+// 3. Embedded production keys (ProductionPublicKeys)
+//
+// If no public key is available, license verification cannot proceed.
 func Initialize(cfg Config) error {
 	var initErr error
 
 	globalOnce.Do(func() {
-		// Determine public key source - required for enterprise features
+		var manager *Manager
+		var err error
+
+		// Try explicit public key first
 		publicKey := cfg.PublicKey
 		if len(publicKey) == 0 && cfg.PublicKeyFile != "" {
-			var err error
 			publicKey, err = os.ReadFile(cfg.PublicKeyFile)
 			if err != nil {
 				initErr = err
@@ -55,19 +65,28 @@ func Initialize(cfg Config) error {
 			}
 		}
 
-		// If no public key provided, we can't verify licenses
-		// Still create manager/metrics but license loading will fail
-		if len(publicKey) == 0 {
+		if len(publicKey) > 0 {
+			// Use explicitly provided key (single-key mode)
+			manager, err = NewManager(publicKey)
+			if err != nil {
+				initErr = err
+				return
+			}
+			logger.Debug().Msg("Using explicitly provided license public key")
+		} else if HasProductionKeys() {
+			// Use embedded production keys (multi-key mode with rotation support)
+			manager, err = NewManagerWithProductionKeys()
+			if err != nil {
+				initErr = err
+				return
+			}
+			logger.Debug().Msg("Using embedded production license public keys")
+		} else {
+			// No public keys available
 			logger.Debug().Msg("No license public key configured, enterprise features unavailable")
 			return
 		}
 
-		// Create manager
-		manager, err := NewManager(publicKey)
-		if err != nil {
-			initErr = err
-			return
-		}
 		globalManager = manager
 
 		// Create metrics

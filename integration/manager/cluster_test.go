@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/integration/testutil"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/stretchr/testify/assert"
 )

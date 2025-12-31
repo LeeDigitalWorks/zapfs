@@ -3,7 +3,7 @@ package bucket
 import (
 	"time"
 
-	"zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
 
 // CreateBucketRequest contains parameters for creating a bucket

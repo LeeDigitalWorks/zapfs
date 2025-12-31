@@ -6,12 +6,12 @@ import (
 	"io"
 	"net/http"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/service/config"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // GetBucketPolicyHandler returns the policy of a bucket.
@@ -114,4 +114,108 @@ func (s *MetadataServer) DeleteBucketPolicyHandler(d *data.Data, w http.Response
 	w.WriteHeader(http.StatusNoContent)
 
 	logger.Info().Str("bucket", d.S3Info.Bucket).Msg("bucket policy deleted")
+}
+
+// GetBucketPolicyStatusHandler checks if bucket policy grants public access.
+// GET /{bucket}?policyStatus
+//
+// Analyzes the bucket policy to determine if it allows public access.
+func (s *MetadataServer) GetBucketPolicyStatusHandler(d *data.Data, w http.ResponseWriter) {
+	// TODO: Implement policy status analysis
+	// Implementation steps:
+	// 1. Get bucket policy (if exists)
+	// 2. Analyze policy statements for public access:
+	//    - Check for Principal: "*" or Principal: {"AWS": "*"}
+	//    - Check for Condition keys that might restrict "public" access
+	// 3. Return PolicyStatus with IsPublic boolean
+	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketPolicyStatus.html
+
+	if s.svc == nil {
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Check if bucket has a policy
+	policy, err := s.svc.Config().GetBucketPolicy(d.Ctx, d.S3Info.Bucket)
+	if err != nil {
+		var cfgErr *config.Error
+		if errors.As(err, &cfgErr) {
+			// No policy means not public
+			if cfgErr.Code == config.ErrCodeNoSuchBucketPolicy {
+				writePolicyStatusResponse(w, d, false)
+				return
+			}
+			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
+			return
+		}
+		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to get bucket policy")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Analyze policy for public access
+	isPublic := isPolicyPublic(policy)
+	writePolicyStatusResponse(w, d, isPublic)
+}
+
+// writePolicyStatusResponse writes a PolicyStatus XML response
+func writePolicyStatusResponse(w http.ResponseWriter, d *data.Data, isPublic bool) {
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+
+	publicStr := "false"
+	if isPublic {
+		publicStr = "true"
+	}
+	w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><PolicyStatus xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsPublic>` + publicStr + `</IsPublic></PolicyStatus>`))
+}
+
+// isPolicyPublic checks if a bucket policy grants public access
+func isPolicyPublic(policy *s3types.BucketPolicy) bool {
+	if policy == nil || len(policy.Statements) == 0 {
+		return false
+	}
+
+	for _, stmt := range policy.Statements {
+		// Skip Deny statements - they restrict access, not grant it
+		if stmt.Effect == "Deny" {
+			continue
+		}
+
+		// Check Principal for public access
+		if isPublicPrincipal(stmt.Principal) {
+			// Check if there are conditions that might restrict public access
+			// For now, simple check: no conditions = public
+			if len(stmt.Condition) == 0 {
+				return true
+			}
+			// TODO: More sophisticated condition analysis
+			// Some conditions (like aws:SourceAccount) might still allow public
+		}
+	}
+
+	return false
+}
+
+// isPublicPrincipal checks if a principal represents public access
+func isPublicPrincipal(principal interface{}) bool {
+	switch p := principal.(type) {
+	case string:
+		return p == "*"
+	case map[string]interface{}:
+		if aws, ok := p["AWS"]; ok {
+			switch a := aws.(type) {
+			case string:
+				return a == "*"
+			case []interface{}:
+				for _, v := range a {
+					if s, ok := v.(string); ok && s == "*" {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }

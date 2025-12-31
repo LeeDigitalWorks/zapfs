@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3action"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 // RateLimitFilter implements request rate limiting and bandwidth throttling

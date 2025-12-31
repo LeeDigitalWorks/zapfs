@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/integration/testutil"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 )

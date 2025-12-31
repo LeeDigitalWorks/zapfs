@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"

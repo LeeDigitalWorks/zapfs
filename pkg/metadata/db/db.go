@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 )

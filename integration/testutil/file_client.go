@@ -7,8 +7,8 @@ import (
 	"io"
 	"testing"
 
-	"zapfs/proto/common_pb"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"github.com/stretchr/testify/require"
 )

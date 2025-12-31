@@ -3,7 +3,7 @@ package config
 import (
 	"context"
 
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // Service defines the interface for bucket/object configuration operations.

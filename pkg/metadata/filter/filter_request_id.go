@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"

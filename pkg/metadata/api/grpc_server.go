@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	"zapfs/proto/metadata_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 )
 
 // gRPC service method implementations

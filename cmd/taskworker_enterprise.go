@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"time"
 
-	"zapfs/enterprise/license"
-	enttaskqueue "zapfs/enterprise/taskqueue"
-	"zapfs/pkg/debug"
-	"zapfs/pkg/logger"
-	"zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
+	enttaskqueue "github.com/LeeDigitalWorks/zapfs/enterprise/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
 // TaskWorkerConfig configures the enterprise task worker.

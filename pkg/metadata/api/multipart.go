@@ -13,14 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/service/multipart"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 )
@@ -427,6 +427,24 @@ func (s *MetadataServer) ListPartsHandler(d *data.Data, w http.ResponseWriter) {
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(result)
+}
+
+// UploadPartCopyHandler copies data from an existing object as a part.
+// PUT /{bucket}/{key}?partNumber={partNumber}&uploadId={uploadId}
+// with x-amz-copy-source header
+func (s *MetadataServer) UploadPartCopyHandler(d *data.Data, w http.ResponseWriter) {
+	// TODO: Implement server-side copy for multipart parts
+	// Implementation steps:
+	// 1. Parse x-amz-copy-source header to get source bucket/key
+	// 2. Parse x-amz-copy-source-range for partial copy (optional)
+	// 3. Validate source object exists and caller has access
+	// 4. Validate upload exists
+	// 5. Copy bytes from source to new part via file server
+	// 6. Store part metadata with ETag
+	// 7. Return CopyPartResult with ETag and LastModified
+	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
+
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 }
 
 // ListMultipartUploadsHandler lists in-progress multipart uploads.

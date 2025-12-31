@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/enterprise/license/testdata"
+	"github.com/LeeDigitalWorks/zapfs/enterprise/license/testdata"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -535,4 +535,291 @@ func TestWatchLicenseFile(t *testing.T) {
 
 	// Verify no panic on double stop
 	stop()
+}
+
+func TestNewManagerWithKeys(t *testing.T) {
+	t.Parallel()
+
+	// Generate two key pairs for v1 and v2
+	privateKeyV1, publicKeyV1, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	privateKeyV2, publicKeyV2, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Create manager with multiple keys
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"v1": publicKeyV1,
+		"v2": publicKeyV2,
+	})
+	require.NoError(t, err)
+
+	// Create generators for each key
+	generatorV1, err := NewGeneratorWithKeyID(privateKeyV1, "v1")
+	require.NoError(t, err)
+
+	generatorV2, err := NewGeneratorWithKeyID(privateKeyV2, "v2")
+	require.NoError(t, err)
+
+	// Generate license with v1 key
+	licenseV1, err := generatorV1.Generate(LicenseRequest{
+		CustomerID:   "cust_v1",
+		CustomerName: "V1 Corp",
+		Features:     []Feature{FeatureAuditLog},
+		Tier:         "basic",
+		ValidDays:    30,
+	})
+	require.NoError(t, err)
+
+	// Generate license with v2 key
+	licenseV2, err := generatorV2.Generate(LicenseRequest{
+		CustomerID:   "cust_v2",
+		CustomerName: "V2 Corp",
+		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
+		Tier:         "premium",
+		ValidDays:    365,
+	})
+	require.NoError(t, err)
+
+	// Load v1 license - should work
+	err = manager.LoadLicense(licenseV1)
+	require.NoError(t, err)
+	assert.Equal(t, "cust_v1", manager.GetLicense().CustomerID)
+
+	// Load v2 license - should also work (key rotation)
+	err = manager.LoadLicense(licenseV2)
+	require.NoError(t, err)
+	assert.Equal(t, "cust_v2", manager.GetLicense().CustomerID)
+	assert.True(t, manager.GetLicense().HasFeature(FeatureLDAP))
+}
+
+func TestKeyRotation(t *testing.T) {
+	t.Parallel()
+
+	// Simulate key rotation scenario:
+	// 1. v1 is the old key
+	// 2. v2 is the new key
+	// 3. Both old and new licenses should work
+
+	privateKeyV1, publicKeyV1, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	privateKeyV2, publicKeyV2, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Create manager with both keys
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"v1": publicKeyV1,
+		"v2": publicKeyV2,
+	})
+	require.NoError(t, err)
+
+	// Old customer with v1 license
+	generatorV1, err := NewGeneratorWithKeyID(privateKeyV1, "v1")
+	require.NoError(t, err)
+
+	oldLicense, err := generatorV1.Generate(LicenseRequest{
+		CustomerID:   "old_customer",
+		CustomerName: "Old Customer Inc",
+		Features:     []Feature{FeatureAuditLog},
+		Tier:         "standard",
+		ValidDays:    30,
+	})
+	require.NoError(t, err)
+
+	// New customer with v2 license (signed after key rotation)
+	generatorV2, err := NewGeneratorWithKeyID(privateKeyV2, "v2")
+	require.NoError(t, err)
+
+	newLicense, err := generatorV2.Generate(LicenseRequest{
+		CustomerID:   "new_customer",
+		CustomerName: "New Customer Inc",
+		Features:     []Feature{FeatureAuditLog, FeatureKMS},
+		Tier:         "enterprise",
+		ValidDays:    365,
+	})
+	require.NoError(t, err)
+
+	// Both licenses should validate
+	err = manager.LoadLicense(oldLicense)
+	require.NoError(t, err)
+	assert.Equal(t, "old_customer", manager.GetLicense().CustomerID)
+
+	err = manager.LoadLicense(newLicense)
+	require.NoError(t, err)
+	assert.Equal(t, "new_customer", manager.GetLicense().CustomerID)
+}
+
+func TestNewManagerWithKeys_RejectsUnknownKeyID(t *testing.T) {
+	t.Parallel()
+
+	// Generate two different key pairs
+	privateKeyUnknown, _, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	_, publicKeyV1, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Create manager with only v1 key
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"v1": publicKeyV1,
+	})
+	require.NoError(t, err)
+
+	// Create generator with unknown key ID
+	generatorUnknown, err := NewGeneratorWithKeyID(privateKeyUnknown, "v999")
+	require.NoError(t, err)
+
+	unknownLicense, err := generatorUnknown.Generate(LicenseRequest{
+		CustomerID:   "unknown_cust",
+		CustomerName: "Unknown Corp",
+		Features:     []Feature{FeatureAuditLog},
+		ValidDays:    30,
+	})
+	require.NoError(t, err)
+
+	// Should fail because v999 key is not in the manager
+	err = manager.LoadLicense(unknownLicense)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown key ID")
+}
+
+func TestNewManagerWithKeys_EmptyKeysSkipped(t *testing.T) {
+	t.Parallel()
+
+	_, publicKeyV1, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Create manager with v1 key and nil v2 key (placeholder)
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"v1": publicKeyV1,
+		"v2": nil, // Placeholder for future key
+	})
+	require.NoError(t, err)
+	require.NotNil(t, manager)
+}
+
+func TestNewManagerWithKeys_RequiresAtLeastOneKey(t *testing.T) {
+	t.Parallel()
+
+	// Empty map
+	_, err := NewManagerWithKeys(map[string][]byte{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one public key")
+
+	// All nil keys
+	_, err = NewManagerWithKeys(map[string][]byte{
+		"v1": nil,
+		"v2": nil,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no valid public keys")
+}
+
+func TestHasProductionKeys(t *testing.T) {
+	// Save original value
+	original := ProductionPublicKeys["v1"]
+	defer func() {
+		ProductionPublicKeys["v1"] = original
+	}()
+
+	// Test with nil key (default state)
+	ProductionPublicKeys["v1"] = nil
+	assert.False(t, HasProductionKeys())
+
+	// Test with empty key
+	ProductionPublicKeys["v1"] = []byte{}
+	assert.False(t, HasProductionKeys())
+
+	// Test with actual key
+	_, publicKey, err := GenerateKeyPair()
+	require.NoError(t, err)
+	ProductionPublicKeys["v1"] = publicKey
+	assert.True(t, HasProductionKeys())
+}
+
+func TestGeneratorWithKeyID(t *testing.T) {
+	t.Parallel()
+
+	privateKey, publicKey, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Test with custom key ID
+	generator, err := NewGeneratorWithKeyID(privateKey, "custom-key-id")
+	require.NoError(t, err)
+
+	licenseKey, err := generator.Generate(LicenseRequest{
+		CustomerID:   "test",
+		CustomerName: "Test",
+		Features:     []Feature{FeatureAuditLog},
+		ValidDays:    30,
+	})
+	require.NoError(t, err)
+
+	// Create manager that expects the custom key ID
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"custom-key-id": publicKey,
+	})
+	require.NoError(t, err)
+
+	err = manager.LoadLicense(licenseKey)
+	require.NoError(t, err)
+	assert.Equal(t, "test", manager.GetLicense().CustomerID)
+}
+
+func TestGeneratorWithKeyID_DefaultsToV1(t *testing.T) {
+	t.Parallel()
+
+	privateKey, publicKey, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Test with empty key ID - should default to "v1"
+	generator, err := NewGeneratorWithKeyID(privateKey, "")
+	require.NoError(t, err)
+
+	licenseKey, err := generator.Generate(LicenseRequest{
+		CustomerID:   "test",
+		CustomerName: "Test",
+		Features:     []Feature{FeatureAuditLog},
+		ValidDays:    30,
+	})
+	require.NoError(t, err)
+
+	// Create manager with v1 key - should work
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"v1": publicKey,
+	})
+	require.NoError(t, err)
+
+	err = manager.LoadLicense(licenseKey)
+	require.NoError(t, err)
+}
+
+func TestDefaultKeyIDUsedWhenNoKidHeader(t *testing.T) {
+	t.Parallel()
+
+	privateKey, publicKey, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Use the old NewGenerator which uses DefaultKeyID
+	generator, err := NewGenerator(privateKey)
+	require.NoError(t, err)
+
+	licenseKey, err := generator.Generate(LicenseRequest{
+		CustomerID:   "test",
+		CustomerName: "Test",
+		Features:     []Feature{FeatureAuditLog},
+		ValidDays:    30,
+	})
+	require.NoError(t, err)
+
+	// Create multi-key manager - should use default key ID (v1)
+	manager, err := NewManagerWithKeys(map[string][]byte{
+		"v1": publicKey,
+	})
+	require.NoError(t, err)
+
+	err = manager.LoadLicense(licenseKey)
+	require.NoError(t, err)
+	assert.Equal(t, "test", manager.GetLicense().CustomerID)
 }

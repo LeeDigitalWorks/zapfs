@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"zapfs/proto/metadata_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"github.com/stretchr/testify/require"
 )

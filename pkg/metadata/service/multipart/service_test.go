@@ -6,12 +6,12 @@ import (
 	"errors"
 	"testing"
 
-	dbmocks "zapfs/mocks/db"
-	mpmocks "zapfs/mocks/multipart"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/service/multipart"
-	"zapfs/pkg/metadata/service/storage"
-	"zapfs/pkg/types"
+	dbmocks "github.com/LeeDigitalWorks/zapfs/mocks/db"
+	mpmocks "github.com/LeeDigitalWorks/zapfs/mocks/multipart"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

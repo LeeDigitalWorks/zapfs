@@ -5,8 +5,8 @@
 package mocks
 
 import (
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/filter"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
 
 	mock "github.com/stretchr/testify/mock"
 )

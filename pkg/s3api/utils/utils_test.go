@@ -3,7 +3,7 @@ package utils_test
 import (
 	"testing"
 
-	"zapfs/pkg/s3api/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/utils"
 )
 
 func TestUtis_ValidateBucketName(t *testing.T) {

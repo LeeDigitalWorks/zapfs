@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"time"
 
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 )
 
 // TaskWorkerConfig configures the task worker.

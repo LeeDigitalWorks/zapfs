@@ -5,12 +5,12 @@ import (
 	"errors"
 	"sync"
 
-	zctx "zapfs/pkg/context"
-	pool "zapfs/pkg/grpc/pool"
-	"zapfs/pkg/logger"
-	"zapfs/proto/file_pb"
-	"zapfs/proto/manager_pb"
-	"zapfs/proto/metadata_pb"
+	zctx "github.com/LeeDigitalWorks/zapfs/pkg/context"
+	pool "github.com/LeeDigitalWorks/zapfs/pkg/grpc/pool"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"

@@ -3,7 +3,7 @@ package filter
 import (
 	"time"
 
-	"zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

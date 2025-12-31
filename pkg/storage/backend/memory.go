@@ -7,7 +7,7 @@ import (
 	"io"
 	"sync"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // StorageTypeMemory is used for testing

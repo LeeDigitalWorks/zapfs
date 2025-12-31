@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/cache"
-	"zapfs/pkg/logger"
-	"zapfs/proto/common_pb"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
 
 // TargetCache caches file server locations and their backend info to reduce

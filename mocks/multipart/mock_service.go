@@ -6,7 +6,7 @@ package mocks
 
 import (
 	"context"
-	"zapfs/pkg/metadata/service/multipart"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
 
 	mock "github.com/stretchr/testify/mock"
 )

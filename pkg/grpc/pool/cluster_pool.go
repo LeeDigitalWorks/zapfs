@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

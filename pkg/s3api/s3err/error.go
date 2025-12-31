@@ -108,6 +108,8 @@ const (
 	ErrNoSuchTagSet
 	ErrOwnershipControlsNotFoundError
 	ErrReplicationConfigurationNotFoundError
+	ErrNoSuchConfiguration                      // For analytics, metrics, inventory, intelligent tiering
+	ErrNoSuchPublicAccessBlockConfiguration
 
 	// Object Lock
 	ErrNoSuchObjectLockConfiguration
@@ -508,6 +510,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrReplicationConfigurationNotFoundError: {
 		Code:           "ReplicationConfigurationNotFoundError",
 		Description:    "The replication configuration was not found.",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrNoSuchConfiguration: {
+		Code:           "NoSuchConfiguration",
+		Description:    "The specified configuration does not exist.",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrNoSuchPublicAccessBlockConfiguration: {
+		Code:           "NoSuchPublicAccessBlockConfiguration",
+		Description:    "The public access block configuration was not found.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 

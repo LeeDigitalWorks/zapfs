@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	_ "github.com/go-sql-driver/mysql" // MySQL driver for Vitess
 	"github.com/google/uuid"

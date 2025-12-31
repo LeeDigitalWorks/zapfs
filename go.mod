@@ -1,4 +1,4 @@
-module zapfs
+module github.com/LeeDigitalWorks/zapfs
 
 go 1.24.0
 

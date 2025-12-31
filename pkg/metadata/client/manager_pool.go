@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"zapfs/pkg/grpc/pool"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/grpc/pool"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"google.golang.org/grpc"
 )

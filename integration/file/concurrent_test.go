@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
 
 	"github.com/stretchr/testify/assert"
 )

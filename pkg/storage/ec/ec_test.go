@@ -6,9 +6,9 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"zapfs/pkg/storage/backend"
-	"zapfs/pkg/storage/index"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

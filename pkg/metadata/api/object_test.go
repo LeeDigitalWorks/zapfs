@@ -14,15 +14,15 @@ import (
 	"strings"
 	"testing"
 
-	clientmocks "zapfs/mocks/client"
+	clientmocks "github.com/LeeDigitalWorks/zapfs/mocks/client"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
-	"zapfs/proto/common_pb"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/google/uuid"
 

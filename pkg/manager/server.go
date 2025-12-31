@@ -15,11 +15,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/logger"
-	"zapfs/proto/common_pb"
-	"zapfs/proto/iam_pb"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/google/btree"
 )

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"zapfs/pkg/debug"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/google/uuid"
 )

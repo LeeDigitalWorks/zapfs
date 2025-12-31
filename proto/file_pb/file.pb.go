@@ -13,7 +13,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
-	common_pb "zapfs/proto/common_pb"
+	common_pb "github.com/LeeDigitalWorks/zapfs/proto/common_pb"
 )
 
 const (

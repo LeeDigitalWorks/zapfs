@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // Registry holds registered backend factories

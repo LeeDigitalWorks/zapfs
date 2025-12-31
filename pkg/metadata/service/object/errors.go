@@ -3,7 +3,7 @@ package object
 import (
 	"fmt"
 
-	"zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
 
 // ErrorCode represents a domain-level error code

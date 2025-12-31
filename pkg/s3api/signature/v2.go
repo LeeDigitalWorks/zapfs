@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
 
 // AWS Signature Version 2 implementation following:

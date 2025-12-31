@@ -3,8 +3,8 @@ package api
 import (
 	"context"
 
-	"zapfs/pkg/metadata/service/object"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // crrHookAdapter adapts api.CRRHook to implement object.CRRHook interface.

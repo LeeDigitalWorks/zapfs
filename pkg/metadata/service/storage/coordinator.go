@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/taskqueue"
-	"zapfs/pkg/taskqueue/handlers"
-	"zapfs/pkg/types"
-	"zapfs/pkg/utils"
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue/handlers"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
 
 // Coordinator manages interaction with file servers and the manager.

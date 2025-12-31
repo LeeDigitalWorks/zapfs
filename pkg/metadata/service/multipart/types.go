@@ -1,7 +1,7 @@
 package multipart
 
 import (
-	"zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
 
 // Error codes for multipart operations

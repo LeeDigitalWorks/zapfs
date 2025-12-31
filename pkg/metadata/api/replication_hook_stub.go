@@ -5,7 +5,7 @@ package api
 import (
 	"context"
 
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // CRRHook is a stub for community edition.

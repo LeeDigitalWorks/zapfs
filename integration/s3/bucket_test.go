@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"zapfs/integration/testutil"
+	"github.com/LeeDigitalWorks/zapfs/integration/testutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"

@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"zapfs/pkg/cache"
-	"zapfs/pkg/logger"
-	"zapfs/proto/iam_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

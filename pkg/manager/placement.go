@@ -1,7 +1,7 @@
 package manager
 
 import (
-	"zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
 
 // selectReplicationTargets selects file services for storing replicas

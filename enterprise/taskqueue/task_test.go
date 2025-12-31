@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
 func TestNewReplicationTask(t *testing.T) {

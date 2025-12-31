@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	mocks "zapfs/mocks/iam"
-	iampkg "zapfs/pkg/iam"
-	"zapfs/pkg/s3api/s3err"
+	mocks "github.com/LeeDigitalWorks/zapfs/mocks/iam"
+	iampkg "github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

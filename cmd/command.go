@@ -4,9 +4,9 @@ import (
 	"os"
 	"time"
 
-	"zapfs/enterprise/license"
-	"zapfs/pkg/debug"
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
+	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"

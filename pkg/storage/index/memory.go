@@ -58,12 +58,22 @@ func (m *MemoryIndexer[K, V]) Stream(filter func(value V) bool) <-chan V {
 	ch := make(chan V)
 	go func() {
 		defer close(ch)
+
+		// Collect matching values under lock first to avoid holding
+		// the lock while sending to channel (which could deadlock if
+		// the consumer tries to call Delete/Put while we're blocked on send)
 		m.mu.RLock()
-		defer m.mu.RUnlock()
+		var values []V
 		for _, v := range m.data {
 			if filter(v) {
-				ch <- v
+				values = append(values, v)
 			}
+		}
+		m.mu.RUnlock()
+
+		// Send values without holding the lock
+		for _, v := range values {
+			ch <- v
 		}
 	}()
 	return ch

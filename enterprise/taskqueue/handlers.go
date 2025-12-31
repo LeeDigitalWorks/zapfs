@@ -1,11 +1,15 @@
 //go:build enterprise
 
+// Copyright 2025 ZapInvest, Inc. All rights reserved.
+// Use of this source code is governed by the ZapFS Enterprise License
+// that can be found in the LICENSE.enterprise file.
+
 // Package taskqueue provides enterprise task handlers.
 // Core taskqueue functionality is in pkg/taskqueue.
 package taskqueue
 
 import (
-	"zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
 // Enterprise task types (requires license)

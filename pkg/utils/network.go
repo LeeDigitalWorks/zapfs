@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 )
 
 const (

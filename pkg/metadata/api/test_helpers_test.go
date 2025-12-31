@@ -4,16 +4,16 @@ import (
 	"context"
 	"testing"
 
-	cachemocks "zapfs/mocks/cache"
-	clientmocks "zapfs/mocks/client"
-	"zapfs/pkg/cache"
-	"zapfs/pkg/iam"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/db/memory"
-	"zapfs/pkg/metadata/filter"
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
+	cachemocks "github.com/LeeDigitalWorks/zapfs/mocks/cache"
+	clientmocks "github.com/LeeDigitalWorks/zapfs/mocks/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/memory"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // TestServerOption configures a test server

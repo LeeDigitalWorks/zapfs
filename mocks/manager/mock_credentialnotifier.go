@@ -5,8 +5,8 @@
 package mocks
 
 import (
-	"zapfs/pkg/iam"
-	"zapfs/proto/iam_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
 
 	mock "github.com/stretchr/testify/mock"
 )

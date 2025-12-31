@@ -4,7 +4,7 @@ import (
 	"io"
 	"time"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // PutObjectRequest contains parameters for storing an object

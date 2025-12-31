@@ -5,8 +5,8 @@ import (
 	"encoding/gob"
 	"os"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"

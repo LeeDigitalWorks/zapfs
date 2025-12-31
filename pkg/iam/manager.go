@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 )
 
 // Manager provides fast credential lookups with in-memory caching.

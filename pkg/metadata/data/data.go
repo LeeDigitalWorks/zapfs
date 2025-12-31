@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
 )
 
 type Data struct {

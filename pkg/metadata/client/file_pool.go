@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"zapfs/pkg/grpc/pool"
-	"zapfs/proto/file_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/grpc/pool"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"google.golang.org/grpc"
 )

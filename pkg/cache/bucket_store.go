@@ -5,7 +5,7 @@ import (
 	"hash/maphash"
 	"sync"
 
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // BucketStore wraps a Cache to provide PolicyStore and ACLStore interfaces

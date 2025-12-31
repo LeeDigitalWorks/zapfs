@@ -24,15 +24,15 @@ import (
 	"context"
 	"os"
 
-	enttaskqueue "zapfs/enterprise/taskqueue"
-	"zapfs/pkg/metadata/service/bucket"
-	"zapfs/pkg/metadata/service/config"
-	"zapfs/pkg/metadata/service/encryption"
-	"zapfs/pkg/metadata/service/multipart"
-	"zapfs/pkg/metadata/service/object"
-	"zapfs/pkg/metadata/service/storage"
-	"zapfs/pkg/taskqueue"
-	"zapfs/pkg/taskqueue/handlers"
+	enttaskqueue "github.com/LeeDigitalWorks/zapfs/enterprise/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue/handlers"
 )
 
 // Service provides a unified interface for all metadata operations.

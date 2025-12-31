@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/metadata/client"
-	"zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
 // GCDecrementPayload is the task payload for GC decrement operations.

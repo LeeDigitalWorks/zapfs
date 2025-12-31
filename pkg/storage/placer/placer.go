@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 // Placer selects backends for storing data

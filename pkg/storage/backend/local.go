@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
 func init() {

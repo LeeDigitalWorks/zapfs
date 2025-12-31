@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"zapfs/pkg/metadata/filter"
-	"zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
 
 	"github.com/google/go-cmp/cmp"
 )

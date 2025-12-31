@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"zapfs/pkg/s3api/s3types"
-	"zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

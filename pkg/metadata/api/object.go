@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/metadata/data"
-	"zapfs/pkg/metadata/service/object"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // PutObjectHandler stores an object.
@@ -735,4 +735,81 @@ func (s *MetadataServer) DeleteObjectsHandler(d *data.Data, w http.ResponseWrite
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)
+}
+
+// ============================================================================
+// Not Yet Implemented Object Operations
+// ============================================================================
+
+// GetObjectAttributesHandler returns object attributes without full GET.
+// GET /{bucket}/{key}?attributes
+//
+// Returns subset of HeadObject info based on x-amz-object-attributes header.
+func (s *MetadataServer) GetObjectAttributesHandler(d *data.Data, w http.ResponseWriter) {
+	// TODO: Implement object attributes
+	// Implementation steps:
+	// 1. Parse x-amz-object-attributes header (comma-separated list):
+	//    - ETag, Checksum, ObjectParts, StorageClass, ObjectSize
+	// 2. Get object metadata from service layer
+	// 3. Build GetObjectAttributesResponse with only requested attributes
+	// 4. For multipart objects, include ObjectParts with PartsCount
+	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectAttributes.html
+
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+}
+
+// PostObjectHandler handles form-based uploads (browser uploads).
+// POST /{bucket}
+//
+// Allows uploading objects via HTML form with policy-based authorization.
+func (s *MetadataServer) PostObjectHandler(d *data.Data, w http.ResponseWriter) {
+	// TODO: Implement POST object (form-based upload)
+	// Implementation steps:
+	// 1. Parse multipart/form-data request
+	// 2. Extract policy field and validate signature
+	// 3. Validate conditions in policy (bucket, key, content-length-range, etc.)
+	// 4. Extract file content from "file" field
+	// 5. Store object using service layer
+	// 6. Return success-action-redirect or success-action-status
+	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPOST.html
+
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+}
+
+// GetObjectTorrentHandler returns torrent file for an object.
+// GET /{bucket}/{key}?torrent
+//
+// Legacy AWS feature - not commonly used.
+func (s *MetadataServer) GetObjectTorrentHandler(d *data.Data, w http.ResponseWriter) {
+	// Torrent support is a legacy AWS feature
+	// Not planned for implementation
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+}
+
+// SelectObjectContentHandler performs S3 Select queries on objects.
+// POST /{bucket}/{key}?select&select-type=2
+//
+// Complex feature requiring SQL parsing - not planned for initial release.
+func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.ResponseWriter) {
+	// S3 Select requires SQL parsing for CSV/JSON/Parquet
+	// Complex feature - not planned for initial release
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+}
+
+// WriteGetObjectResponseHandler writes Lambda response for Object Lambda.
+// POST /WriteGetObjectResponse
+//
+// AWS Lambda-specific feature - not applicable to ZapFS.
+func (s *MetadataServer) WriteGetObjectResponseHandler(d *data.Data, w http.ResponseWriter) {
+	// Lambda@Edge specific feature - not applicable
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+}
+
+// CreateSessionHandler creates an S3 Express session.
+// GET /{bucket}?session
+//
+// S3 Express One Zone specific feature - not applicable to ZapFS.
+func (s *MetadataServer) CreateSessionHandler(d *data.Data, w http.ResponseWriter) {
+	// S3 Express One Zone specific - not applicable
+	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 }

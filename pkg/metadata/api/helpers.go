@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"zapfs/pkg/logger"
-	"zapfs/pkg/s3api/s3consts"
-	"zapfs/pkg/s3api/s3err"
-	"zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 
-	"zapfs/enterprise/license"
+	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
 )
 
 // parseRangeHeader parses the HTTP Range header and returns offset and length.
@@ -329,6 +329,27 @@ func checkReplicationLicense() bool {
 func checkKMSLicense() bool {
 	mgr := license.GetManager()
 	return mgr != nil && mgr.CheckFeature(license.FeatureKMS) == nil
+}
+
+// checkLifecycleLicense checks if lifecycle feature is licensed.
+// Lifecycle rules, intelligent tiering, and object restore require this license.
+func checkLifecycleLicense() bool {
+	mgr := license.GetManager()
+	return mgr != nil && mgr.CheckFeature(license.FeatureLifecycle) == nil
+}
+
+// checkObjectLockLicense checks if object lock feature is licensed.
+// S3 Object Lock (WORM) compliance requires this license.
+func checkObjectLockLicense() bool {
+	mgr := license.GetManager()
+	return mgr != nil && mgr.CheckFeature(license.FeatureObjectLock) == nil
+}
+
+// checkAuditLogLicense checks if audit log feature is licensed.
+// Bucket logging and audit trails require this license.
+func checkAuditLogLicense() bool {
+	mgr := license.GetManager()
+	return mgr != nil && mgr.CheckFeature(license.FeatureAuditLog) == nil
 }
 
 // validateReplicationConfig validates a replication configuration.

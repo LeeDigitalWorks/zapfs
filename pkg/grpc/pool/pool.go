@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"

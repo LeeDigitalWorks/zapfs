@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	configmocks "zapfs/mocks/config"
-	dbmocks "zapfs/mocks/db"
-	"zapfs/pkg/metadata/db"
-	"zapfs/pkg/metadata/service/config"
-	"zapfs/pkg/s3api/s3types"
+	configmocks "github.com/LeeDigitalWorks/zapfs/mocks/config"
+	dbmocks "github.com/LeeDigitalWorks/zapfs/mocks/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

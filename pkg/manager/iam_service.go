@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"zapfs/pkg/iam"
-	"zapfs/pkg/logger"
-	"zapfs/proto/iam_pb"
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

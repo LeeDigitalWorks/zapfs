@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
 	"github.com/google/uuid"
 )

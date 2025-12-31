@@ -1,7 +1,7 @@
 package store
 
 import (
-	"zapfs/pkg/debug"
+	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

@@ -2,7 +2,7 @@ package proto
 
 import (
 	"strconv"
-	"zapfs/pkg/utils"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 type ServerAddress string

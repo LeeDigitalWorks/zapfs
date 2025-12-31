@@ -6,8 +6,18 @@ import (
 	"sync"
 	"time"
 
-	"zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 )
+
+// recordQueueDepth updates queue depth metrics from stats
+func recordQueueDepth(stats *QueueStats) {
+	if stats == nil {
+		return
+	}
+	QueueDepth.WithLabelValues("pending").Set(float64(stats.Pending))
+	QueueDepth.WithLabelValues("running").Set(float64(stats.Running))
+	QueueDepth.WithLabelValues("failed").Set(float64(stats.Failed))
+}
 
 // Worker polls the queue and executes tasks.
 type Worker struct {
@@ -116,10 +126,15 @@ func (w *Worker) processOne(ctx context.Context, types []TaskType) {
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
 			logger.Error().Err(err).Msg("taskqueue: dequeue failed")
+			DequeueErrors.Inc()
 		}
 		return
 	}
 	if task == nil {
+		// Periodically update queue depth metrics even when idle
+		if stats, err := w.queue.Stats(ctx); err == nil {
+			recordQueueDepth(stats)
+		}
 		return
 	}
 
@@ -130,6 +145,7 @@ func (w *Worker) processOne(ctx context.Context, types []TaskType) {
 			Str("type", string(task.Type)).
 			Msg("taskqueue: no handler for task type")
 		w.queue.Fail(ctx, task.ID, errors.New("no handler registered"))
+		TasksProcessedTotal.WithLabelValues(string(task.Type), "no_handler").Inc()
 		return
 	}
 
@@ -139,20 +155,39 @@ func (w *Worker) processOne(ctx context.Context, types []TaskType) {
 		Int("attempt", task.Attempts).
 		Msg("taskqueue: processing task")
 
-	if err := handler.Handle(ctx, task); err != nil {
+	// Track retries
+	if task.Attempts > 1 {
+		TaskRetries.WithLabelValues(string(task.Type)).Inc()
+	}
+
+	// Process task with timing
+	startTime := time.Now()
+	handleErr := handler.Handle(ctx, task)
+	duration := time.Since(startTime).Seconds()
+
+	TaskProcessingDuration.WithLabelValues(string(task.Type)).Observe(duration)
+
+	if handleErr != nil {
 		logger.Warn().
-			Err(err).
+			Err(handleErr).
 			Str("task_id", task.ID).
 			Str("type", string(task.Type)).
 			Int("attempt", task.Attempts).
 			Msg("taskqueue: task failed")
-		w.queue.Fail(ctx, task.ID, err)
+		w.queue.Fail(ctx, task.ID, handleErr)
+		TasksProcessedTotal.WithLabelValues(string(task.Type), "failed").Inc()
 	} else {
 		logger.Debug().
 			Str("task_id", task.ID).
 			Str("type", string(task.Type)).
 			Msg("taskqueue: task completed")
 		w.queue.Complete(ctx, task.ID)
+		TasksProcessedTotal.WithLabelValues(string(task.Type), "completed").Inc()
+	}
+
+	// Update queue depth after processing
+	if stats, err := w.queue.Stats(ctx); err == nil {
+		recordQueueDepth(stats)
 	}
 }
 
