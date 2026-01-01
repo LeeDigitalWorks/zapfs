@@ -784,17 +784,109 @@ func (s *MetadataServer) DeleteObjectsHandler(d *data.Data, w http.ResponseWrite
 // GET /{bucket}/{key}?attributes
 //
 // Returns subset of HeadObject info based on x-amz-object-attributes header.
+// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectAttributes.html
 func (s *MetadataServer) GetObjectAttributesHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement object attributes
-	// Implementation steps:
-	// 1. Parse x-amz-object-attributes header (comma-separated list):
-	//    - ETag, Checksum, ObjectParts, StorageClass, ObjectSize
-	// 2. Get object metadata from service layer
-	// 3. Build GetObjectAttributesResponse with only requested attributes
-	// 4. For multipart objects, include ObjectParts with PartsCount
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectAttributes.html
+	ctx := d.Ctx
+	bucket := d.S3Info.Bucket
+	key := d.S3Info.Key
 
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parse x-amz-object-attributes header (required)
+	attrsHeader := d.Req.Header.Get(s3consts.XAmzObjectAttributes)
+	if attrsHeader == "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	// Parse requested attributes
+	requestedAttrs := parseObjectAttributes(attrsHeader)
+	if len(requestedAttrs) == 0 {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	// Check expected bucket owner header if provided
+	if bucket != "" {
+		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+		if exists {
+			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
+				writeXMLErrorResponse(w, d, *errCode)
+				return
+			}
+		}
+	}
+
+	// Get object metadata
+	result, err := s.svc.Objects().HeadObject(ctx, bucket, key)
+	if err != nil {
+		s.handleObjectError(w, d, err)
+		return
+	}
+
+	// Build response with only requested attributes
+	resp := s3types.GetObjectAttributesResponse{
+		Xmlns: "http://s3.amazonaws.com/doc/2006-03-01/",
+	}
+
+	for attr := range requestedAttrs {
+		switch attr {
+		case "ETag":
+			// Strip any quotes from ETag
+			etag := strings.Trim(result.Metadata.ETag, "\"")
+			resp.ETag = etag
+		case "Checksum":
+			// Checksum data is not currently stored in ObjectRef
+			// This will be nil/omitted until checksum storage is implemented
+		case "ObjectParts":
+			// Extract parts count from ETag format for multipart uploads
+			// Multipart ETags have format: "etag-N" where N is parts count
+			etag := strings.Trim(result.Metadata.ETag, "\"")
+			if idx := strings.LastIndex(etag, "-"); idx > 0 {
+				if partsCount, err := strconv.Atoi(etag[idx+1:]); err == nil && partsCount > 0 {
+					resp.ObjectParts = &s3types.ObjectAttributesParts{
+						TotalPartsCount: partsCount,
+					}
+				}
+			}
+		case "StorageClass":
+			storageClass := result.Metadata.StorageClass
+			if storageClass == "" {
+				storageClass = "STANDARD"
+			}
+			resp.StorageClass = storageClass
+		case "ObjectSize":
+			size := int64(result.Metadata.Size)
+			resp.ObjectSize = &size
+		}
+	}
+
+	// Set Last-Modified header
+	w.Header().Set("Last-Modified", result.Metadata.LastModified.Format(http.TimeFormat))
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+
+	xml.NewEncoder(w).Encode(resp)
+}
+
+// parseObjectAttributes parses the x-amz-object-attributes header into a set of attribute names.
+// Valid values: ETag, Checksum, ObjectParts, StorageClass, ObjectSize
+func parseObjectAttributes(header string) map[string]struct{} {
+	validAttrs := map[string]struct{}{
+		"ETag":         {},
+		"Checksum":     {},
+		"ObjectParts":  {},
+		"StorageClass": {},
+		"ObjectSize":   {},
+	}
+
+	result := make(map[string]struct{})
+	for _, attr := range strings.Split(header, ",") {
+		attr = strings.TrimSpace(attr)
+		if _, valid := validAttrs[attr]; valid {
+			result[attr] = struct{}{}
+		}
+	}
+	return result
 }
 
 // PostObjectHandler handles form-based uploads (browser uploads).

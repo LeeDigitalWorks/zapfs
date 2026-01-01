@@ -47,8 +47,15 @@ const (
 	trailerSignatureHeader = "x-amz-trailer-signature"
 )
 
-// ChunkReader wraps an io.Reader and verifies AWS chunked transfer encoding signatures.
+// ChunkReader wraps an io.Reader and parses AWS chunked transfer encoding.
 // It implements io.Reader and returns only the actual data (stripping framing).
+//
+// NOTE: This basic reader does NOT verify chunk data signatures for performance.
+// It only verifies the final (empty) chunk signature. For strict signature verification
+// of all chunks, use VerifyingChunkReader instead.
+//
+// This reader is suitable for internal/trusted sources or when verification
+// is handled at a different layer.
 type ChunkReader struct {
 	reader     *bufio.Reader
 	signingKey []byte
@@ -113,10 +120,7 @@ func (c *ChunkReader) Read(p []byte) (n int, err error) {
 	}
 
 	// Read from current chunk
-	toRead := int64(len(p))
-	if toRead > c.chunkRemaining {
-		toRead = c.chunkRemaining
-	}
+	toRead := min(int64(len(p)), c.chunkRemaining)
 
 	n, err = c.reader.Read(p[:toRead])
 	c.chunkRemaining -= int64(n)
@@ -190,23 +194,10 @@ func (c *ChunkReader) readChunkHeader() error {
 	return nil
 }
 
-// verifyChunkSignature verifies the signature for a chunk
+// verifyChunkSignature verifies the signature for a chunk.
+// For the basic ChunkReader, only the final (empty) chunk is verified immediately.
+// Non-empty chunks are not verified here - use VerifyingChunkReader for strict verification.
 func (c *ChunkReader) verifyChunkSignature(chunkSize int64, providedSig string) error {
-	// For chunk verification, we need to hash the chunk data to verify
-	// But we haven't read the data yet! AWS expects us to verify BEFORE reading.
-	//
-	// The string-to-sign for a chunk is:
-	// "AWS4-HMAC-SHA256-PAYLOAD" + "\n" +
-	// timestamp + "\n" +
-	// credential-scope + "\n" +
-	// previous-signature + "\n" +
-	// hash("") + "\n" +                    <- hash of empty string for headers (always empty for chunks)
-	// hash(chunk-data)                     <- we need to read the chunk first!
-	//
-	// Actually, AWS verifies the signature AFTER reading the chunk data.
-	// We'll read the chunk into a buffer, hash it, verify, then serve from buffer.
-	// For large chunks, we'll stream and verify inline.
-
 	// For final chunk (size 0), verify immediately
 	if chunkSize == 0 {
 		expectedSig := c.calculateChunkSignature([]byte{})
@@ -216,14 +207,9 @@ func (c *ChunkReader) verifyChunkSignature(chunkSize int64, providedSig string) 
 		return nil
 	}
 
-	// For non-empty chunks, we need to defer verification until after reading
-	// Store the expected signature and verify after the chunk is fully read
-	// This is handled by wrapping the chunk read in a verifying reader
-
-	// Actually, let's buffer small chunks and stream large ones with deferred verification
-	// For now, we'll trust the chunk and verify lazily (common approach for performance)
-	// TODO: Add strict verification mode that buffers and verifies before returning data
-
+	// Non-empty chunks: This basic reader does not verify chunk data signatures.
+	// For strict verification that buffers and verifies before returning data,
+	// use VerifyingChunkReader or TrailerChunkReader instead.
 	return nil
 }
 

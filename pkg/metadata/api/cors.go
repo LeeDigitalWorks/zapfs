@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
@@ -109,26 +110,12 @@ func (s *MetadataServer) DeleteBucketCorsHandler(d *data.Data, w http.ResponseWr
 
 // OptionsPreflightHandler handles CORS preflight OPTIONS requests.
 // OPTIONS /{bucket}/{key}
+//
+// See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html
 func (s *MetadataServer) OptionsPreflightHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Full CORS preflight implementation
-	// Implementation steps:
-	// 1. Get Origin header from request
-	// 2. Get Access-Control-Request-Method header
-	// 3. Get Access-Control-Request-Headers header (optional)
-	// 4. Load bucket CORS configuration
-	// 5. Find matching CORS rule by origin and method
-	// 6. If match found, set response headers:
-	//    - Access-Control-Allow-Origin
-	//    - Access-Control-Allow-Methods
-	//    - Access-Control-Allow-Headers
-	//    - Access-Control-Expose-Headers
-	//    - Access-Control-Max-Age
-	//    - Access-Control-Allow-Credentials (if configured)
-	// 7. If no match, return 403 Forbidden
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html
-
 	origin := d.Req.Header.Get("Origin")
 	requestMethod := d.Req.Header.Get("Access-Control-Request-Method")
+	requestHeaders := d.Req.Header.Get("Access-Control-Request-Headers")
 
 	// Origin header is required for preflight
 	if origin == "" {
@@ -157,39 +144,68 @@ func (s *MetadataServer) OptionsPreflightHandler(d *data.Data, w http.ResponseWr
 
 	// Find matching CORS rule
 	for _, rule := range cors.Rules {
-		if matchCORSOrigin(rule.AllowedOrigins, origin) && matchCORSMethod(rule.AllowedMethods, requestMethod) {
-			// Set CORS response headers
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", joinStrings(rule.AllowedMethods))
+		if !matchCORSOrigin(rule.AllowedOrigins, origin) {
+			continue
+		}
+		if !matchCORSMethod(rule.AllowedMethods, requestMethod) {
+			continue
+		}
+		if !matchCORSHeaders(rule.AllowedHeaders, requestHeaders) {
+			continue
+		}
 
-			if len(rule.AllowedHeaders) > 0 {
+		// Match found - set CORS response headers
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", joinStrings(rule.AllowedMethods))
+
+		// Return the requested headers if they're allowed
+		if requestHeaders != "" && len(rule.AllowedHeaders) > 0 {
+			// If rule allows all headers (*), echo back the requested headers
+			if hasWildcard(rule.AllowedHeaders) {
+				w.Header().Set("Access-Control-Allow-Headers", requestHeaders)
+			} else {
 				w.Header().Set("Access-Control-Allow-Headers", joinStrings(rule.AllowedHeaders))
 			}
-
-			if len(rule.ExposeHeaders) > 0 {
-				w.Header().Set("Access-Control-Expose-Headers", joinStrings(rule.ExposeHeaders))
-			}
-
-			if rule.MaxAgeSeconds > 0 {
-				w.Header().Set("Access-Control-Max-Age", itoa(rule.MaxAgeSeconds))
-			}
-
-			// Vary header for caching
-			w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
-			w.WriteHeader(http.StatusOK)
-			return
 		}
+
+		if len(rule.ExposeHeaders) > 0 {
+			w.Header().Set("Access-Control-Expose-Headers", joinStrings(rule.ExposeHeaders))
+		}
+
+		if rule.MaxAgeSeconds > 0 {
+			w.Header().Set("Access-Control-Max-Age", itoa(rule.MaxAgeSeconds))
+		}
+
+		// Vary header for caching
+		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+		w.WriteHeader(http.StatusOK)
+		return
 	}
 
 	// No matching rule
 	w.WriteHeader(http.StatusForbidden)
 }
 
-// matchCORSOrigin checks if origin matches any allowed origin pattern
+// matchCORSOrigin checks if origin matches any allowed origin pattern.
+// Supports exact match, "*" wildcard, and wildcard patterns like "*.example.com" or "http://*.example.com".
 func matchCORSOrigin(allowed []string, origin string) bool {
-	for _, a := range allowed {
-		if a == "*" || a == origin {
+	for _, pattern := range allowed {
+		if pattern == "*" {
 			return true
+		}
+		if pattern == origin {
+			return true
+		}
+		// Handle wildcard patterns with "*" anywhere in the pattern
+		if idx := strings.Index(pattern, "*"); idx >= 0 {
+			prefix := pattern[:idx]   // e.g., "http://" or ""
+			suffix := pattern[idx+1:] // e.g., ".example.com"
+			if strings.HasPrefix(origin, prefix) && strings.HasSuffix(origin, suffix) {
+				// Ensure there's something in the wildcard part
+				if len(origin) > len(prefix)+len(suffix) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -205,16 +221,73 @@ func matchCORSMethod(allowed []string, method string) bool {
 	return false
 }
 
-// joinStrings joins strings with comma separator
-func joinStrings(s []string) string {
-	result := ""
-	for i, v := range s {
-		if i > 0 {
-			result += ", "
+// matchCORSHeaders checks if all requested headers are allowed.
+// Returns true if requestHeaders is empty or all headers are allowed.
+// AllowedHeaders can contain "*" to allow all headers.
+func matchCORSHeaders(allowedHeaders []string, requestHeaders string) bool {
+	// No headers requested - always allowed
+	if requestHeaders == "" {
+		return true
+	}
+
+	// No headers configured in rule - deny if headers were requested
+	if len(allowedHeaders) == 0 {
+		return false
+	}
+
+	// Check if rule allows all headers
+	if hasWildcard(allowedHeaders) {
+		return true
+	}
+
+	// Parse requested headers (comma-separated, case-insensitive)
+	requested := parseHeaderList(requestHeaders)
+
+	// Check each requested header against allowed list
+	for _, reqHeader := range requested {
+		if !headerAllowed(allowedHeaders, reqHeader) {
+			return false
 		}
-		result += v
+	}
+	return true
+}
+
+// hasWildcard checks if the list contains "*"
+func hasWildcard(list []string) bool {
+	for _, v := range list {
+		if v == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// parseHeaderList parses a comma-separated header list into individual headers
+func parseHeaderList(headerList string) []string {
+	var result []string
+	for _, h := range strings.Split(headerList, ",") {
+		trimmed := strings.TrimSpace(h)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
 	}
 	return result
+}
+
+// headerAllowed checks if a header is in the allowed list (case-insensitive)
+func headerAllowed(allowed []string, header string) bool {
+	headerLower := strings.ToLower(header)
+	for _, a := range allowed {
+		if strings.ToLower(a) == headerLower {
+			return true
+		}
+	}
+	return false
+}
+
+// joinStrings joins strings with comma separator
+func joinStrings(s []string) string {
+	return strings.Join(s, ", ")
 }
 
 // itoa converts int to string

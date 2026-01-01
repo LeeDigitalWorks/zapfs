@@ -398,26 +398,76 @@ func getConditionValue(key string, ctx *PolicyEvaluationContext) string {
 	return ""
 }
 
+// matchStringLike implements glob pattern matching for IAM/S3 policy conditions.
+// Supports:
+//   - * matches zero or more characters
+//   - ? matches exactly one character
+//
+// Examples:
+//   - "*.example.com" matches "foo.example.com"
+//   - "user-*" matches "user-123"
+//   - "file?.txt" matches "file1.txt" but not "file10.txt"
+//   - "prefix-*-suffix" matches "prefix-middle-suffix"
 func matchStringLike(pattern, value string) bool {
-	// Simple glob matching with * and ?
+	// Empty pattern only matches empty value
+	if pattern == "" {
+		return value == ""
+	}
+
+	// * matches everything
 	if pattern == "*" {
 		return true
 	}
+
+	// No wildcards - exact match
 	if !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") {
 		return pattern == value
 	}
-	// TODO: Implement proper glob matching
-	if strings.HasPrefix(pattern, "*") && strings.HasSuffix(pattern, "*") {
-		middle := strings.Trim(pattern, "*")
-		return strings.Contains(value, middle)
+
+	// Use dynamic programming for proper glob matching
+	return matchGlob(pattern, value)
+}
+
+// matchGlob implements glob matching using dynamic programming.
+// Time: O(m*n), Space: O(n) where m=len(pattern), n=len(value)
+func matchGlob(pattern, value string) bool {
+	m, n := len(pattern), len(value)
+
+	// dp[j] = true if pattern[0:i] matches value[0:j]
+	// We use rolling array to optimize space from O(m*n) to O(n)
+	dp := make([]bool, n+1)
+	dp[0] = true
+
+	// Handle leading * characters (they can match empty string)
+	for i := 0; i < m && pattern[i] == '*'; i++ {
+		dp[0] = true
 	}
-	if strings.HasPrefix(pattern, "*") {
-		suffix := strings.TrimPrefix(pattern, "*")
-		return strings.HasSuffix(value, suffix)
+
+	for i := 0; i < m; i++ {
+		c := pattern[i]
+
+		switch c {
+		case '*':
+			// * can match empty string (keep dp[j] as is) or extend match
+			// dp[j] = dp[j] (match zero chars) || dp[j-1] (match one more char)
+			for j := 1; j <= n; j++ {
+				dp[j] = dp[j] || dp[j-1]
+			}
+		case '?':
+			// ? must match exactly one character
+			// Traverse right to left to avoid using updated values
+			for j := n; j >= 1; j-- {
+				dp[j] = dp[j-1]
+			}
+			dp[0] = false
+		default:
+			// Regular character - must match exactly
+			for j := n; j >= 1; j-- {
+				dp[j] = dp[j-1] && value[j-1] == c
+			}
+			dp[0] = false
+		}
 	}
-	if strings.HasSuffix(pattern, "*") {
-		prefix := strings.TrimSuffix(pattern, "*")
-		return strings.HasPrefix(value, prefix)
-	}
-	return false
+
+	return dp[n]
 }

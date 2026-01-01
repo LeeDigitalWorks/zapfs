@@ -1682,3 +1682,247 @@ func TestHeadObjectHandler_NonSSEC(t *testing.T) {
 	assert.Empty(t, w.Header().Get(s3consts.XAmzServerSideEncryptionCustomerAlgo))
 	assert.Empty(t, w.Header().Get(s3consts.XAmzServerSideEncryptionCustomerKeyMD5))
 }
+
+func TestGetObjectAttributesHandler(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		bucket         string
+		key            string
+		attrs          string // x-amz-object-attributes header
+		createObject   bool
+		objectSize     uint64
+		objectETag     string
+		storageClass   string
+		expectedCode   int
+		checkResponse  func(t *testing.T, resp s3types.GetObjectAttributesResponse)
+	}{
+		{
+			name:         "missing attributes header",
+			bucket:       "test-bucket",
+			key:          "test.txt",
+			attrs:        "",
+			createObject: false,
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "invalid attributes",
+			bucket:       "test-bucket",
+			key:          "test.txt",
+			attrs:        "InvalidAttr",
+			createObject: false,
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "object not found",
+			bucket:       "test-bucket",
+			key:          "nonexistent.txt",
+			attrs:        "ETag",
+			createObject: false,
+			expectedCode: http.StatusNotFound,
+		},
+		{
+			name:         "request ETag only",
+			bucket:       "test-bucket",
+			key:          "test.txt",
+			attrs:        "ETag",
+			createObject: true,
+			objectSize:   12345,
+			objectETag:   "abc123def456",
+			expectedCode: http.StatusOK,
+			checkResponse: func(t *testing.T, resp s3types.GetObjectAttributesResponse) {
+				assert.Equal(t, "abc123def456", resp.ETag)
+				assert.Nil(t, resp.ObjectSize)
+				assert.Empty(t, resp.StorageClass)
+			},
+		},
+		{
+			name:         "request ObjectSize only",
+			bucket:       "test-bucket",
+			key:          "test.txt",
+			attrs:        "ObjectSize",
+			createObject: true,
+			objectSize:   99999,
+			objectETag:   "someEtag",
+			expectedCode: http.StatusOK,
+			checkResponse: func(t *testing.T, resp s3types.GetObjectAttributesResponse) {
+				assert.Empty(t, resp.ETag)
+				require.NotNil(t, resp.ObjectSize)
+				assert.Equal(t, int64(99999), *resp.ObjectSize)
+			},
+		},
+		{
+			name:         "request StorageClass",
+			bucket:       "test-bucket",
+			key:          "test.txt",
+			attrs:        "StorageClass",
+			createObject: true,
+			objectSize:   100,
+			objectETag:   "etag",
+			storageClass: "GLACIER",
+			expectedCode: http.StatusOK,
+			checkResponse: func(t *testing.T, resp s3types.GetObjectAttributesResponse) {
+				assert.Equal(t, "GLACIER", resp.StorageClass)
+			},
+		},
+		{
+			name:         "request multiple attributes",
+			bucket:       "test-bucket",
+			key:          "test.txt",
+			attrs:        "ETag, ObjectSize, StorageClass",
+			createObject: true,
+			objectSize:   5000,
+			objectETag:   "multi-attr-etag",
+			storageClass: "STANDARD",
+			expectedCode: http.StatusOK,
+			checkResponse: func(t *testing.T, resp s3types.GetObjectAttributesResponse) {
+				assert.Equal(t, "multi-attr-etag", resp.ETag)
+				require.NotNil(t, resp.ObjectSize)
+				assert.Equal(t, int64(5000), *resp.ObjectSize)
+				assert.Equal(t, "STANDARD", resp.StorageClass)
+			},
+		},
+		{
+			name:         "multipart object with ObjectParts",
+			bucket:       "test-bucket",
+			key:          "multipart.txt",
+			attrs:        "ETag, ObjectParts",
+			createObject: true,
+			objectSize:   50000000,
+			objectETag:   "abc123def456-5", // Multipart ETag format
+			expectedCode: http.StatusOK,
+			checkResponse: func(t *testing.T, resp s3types.GetObjectAttributesResponse) {
+				assert.Equal(t, "abc123def456-5", resp.ETag)
+				require.NotNil(t, resp.ObjectParts)
+				assert.Equal(t, 5, resp.ObjectParts.TotalPartsCount)
+			},
+		},
+		{
+			name:         "non-multipart object with ObjectParts requested",
+			bucket:       "test-bucket",
+			key:          "simple.txt",
+			attrs:        "ObjectParts",
+			createObject: true,
+			objectSize:   1000,
+			objectETag:   "simpleEtag", // No dash - not multipart
+			expectedCode: http.StatusOK,
+			checkResponse: func(t *testing.T, resp s3types.GetObjectAttributesResponse) {
+				// ObjectParts should be nil for non-multipart objects
+				assert.Nil(t, resp.ObjectParts)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := newTestServer(t)
+			ctx := context.Background()
+			bucket := tc.bucket + "-" + uuid.New().String()
+
+			// Create bucket
+			err := srv.db.CreateBucket(ctx, &types.BucketInfo{
+				Name:    bucket,
+				OwnerID: "test-owner",
+			})
+			require.NoError(t, err)
+			srv.bucketStore.SetBucket(bucket, s3types.Bucket{
+				Name:    bucket,
+				OwnerID: "test-owner",
+			})
+
+			// Create object if needed
+			if tc.createObject {
+				profileID := tc.storageClass
+				if profileID == "" {
+					profileID = "STANDARD"
+				}
+				err = srv.db.PutObject(ctx, &types.ObjectRef{
+					Bucket:    bucket,
+					Key:       tc.key,
+					Size:      tc.objectSize,
+					ETag:      tc.objectETag,
+					ProfileID: profileID,
+					CreatedAt: 1000000000,
+				})
+				require.NoError(t, err)
+			}
+
+			// Create request
+			req := httptest.NewRequest("GET", "/"+bucket+"/"+tc.key+"?attributes", nil)
+			if tc.attrs != "" {
+				req.Header.Set(s3consts.XAmzObjectAttributes, tc.attrs)
+			}
+			d := createTestData(bucket, tc.key, "test-owner")
+			d.Req = req
+			w := httptest.NewRecorder()
+
+			srv.GetObjectAttributesHandler(d, w)
+
+			assert.Equal(t, tc.expectedCode, w.Code)
+
+			if tc.expectedCode == http.StatusOK && tc.checkResponse != nil {
+				var resp s3types.GetObjectAttributesResponse
+				err := xml.Unmarshal(w.Body.Bytes(), &resp)
+				require.NoError(t, err, "failed to parse response XML: %s", w.Body.String())
+				tc.checkResponse(t, resp)
+			}
+		})
+	}
+}
+
+func TestParseObjectAttributes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		header   string
+		expected map[string]struct{}
+	}{
+		{
+			name:     "single attribute",
+			header:   "ETag",
+			expected: map[string]struct{}{"ETag": {}},
+		},
+		{
+			name:     "multiple attributes",
+			header:   "ETag, ObjectSize, StorageClass",
+			expected: map[string]struct{}{"ETag": {}, "ObjectSize": {}, "StorageClass": {}},
+		},
+		{
+			name:     "all attributes",
+			header:   "ETag,Checksum,ObjectParts,StorageClass,ObjectSize",
+			expected: map[string]struct{}{"ETag": {}, "Checksum": {}, "ObjectParts": {}, "StorageClass": {}, "ObjectSize": {}},
+		},
+		{
+			name:     "with extra spaces",
+			header:   "  ETag  ,  ObjectSize  ",
+			expected: map[string]struct{}{"ETag": {}, "ObjectSize": {}},
+		},
+		{
+			name:     "invalid attributes ignored",
+			header:   "ETag, InvalidAttr, ObjectSize",
+			expected: map[string]struct{}{"ETag": {}, "ObjectSize": {}},
+		},
+		{
+			name:     "all invalid",
+			header:   "foo, bar, baz",
+			expected: map[string]struct{}{},
+		},
+		{
+			name:     "empty",
+			header:   "",
+			expected: map[string]struct{}{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := parseObjectAttributes(tc.header)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}

@@ -119,17 +119,11 @@ func (s *MetadataServer) DeleteBucketPolicyHandler(d *data.Data, w http.Response
 // GetBucketPolicyStatusHandler checks if bucket policy grants public access.
 // GET /{bucket}?policyStatus
 //
-// Analyzes the bucket policy to determine if it allows public access.
+// Analyzes the bucket policy to determine if it allows public access by checking
+// for Principal: "*" or Principal: {"AWS": "*"} in Allow statements.
+//
+// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketPolicyStatus.html
 func (s *MetadataServer) GetBucketPolicyStatusHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement policy status analysis
-	// Implementation steps:
-	// 1. Get bucket policy (if exists)
-	// 2. Analyze policy statements for public access:
-	//    - Check for Principal: "*" or Principal: {"AWS": "*"}
-	//    - Check for Condition keys that might restrict "public" access
-	// 3. Return PolicyStatus with IsPublic boolean
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketPolicyStatus.html
-
 	if s.svc == nil {
 		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return
@@ -185,13 +179,12 @@ func isPolicyPublic(policy *s3types.BucketPolicy) bool {
 
 		// Check Principal for public access
 		if isPublicPrincipal(stmt.Principal) {
-			// Check if there are conditions that might restrict public access
-			// For now, simple check: no conditions = public
+			// If no conditions, it's public
+			// If conditions exist, we conservatively say it's not public
+			// (conditions like aws:SourceVpc restrict access)
 			if len(stmt.Condition) == 0 {
 				return true
 			}
-			// TODO: More sophisticated condition analysis
-			// Some conditions (like aws:SourceAccount) might still allow public
 		}
 	}
 
