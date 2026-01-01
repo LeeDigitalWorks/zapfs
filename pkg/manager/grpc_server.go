@@ -137,12 +137,21 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 		ms.topologyVersion++
 	}
 
+	// Track if we need to update capacity cache
+	capacityUpdated := false
+
 	if req.ServiceType == manager_pb.ServiceType_FILE_SERVICE {
 		if fileMetadata := req.GetFileService(); fileMetadata != nil {
 			if len(fileMetadata.StorageBackends) > 0 {
 				reg.StorageBackends = fileMetadata.StorageBackends
+				capacityUpdated = true
 			}
 		}
+	}
+
+	// Update cached cluster capacity if storage info changed
+	if capacityUpdated {
+		ms.updateClusterCapacity()
 	}
 
 	topologyChanged := reg.LastKnownTopologyVersion < ms.topologyVersion

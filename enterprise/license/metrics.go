@@ -25,12 +25,6 @@ type Metrics struct {
 	// featureEnabled exports each feature's enabled state (1=enabled, 0=disabled)
 	featureEnabled *prometheus.GaugeVec
 
-	// nodeLimitTotal is the maximum number of nodes allowed
-	nodeLimitTotal prometheus.Gauge
-
-	// capacityLimitTB is the maximum capacity in TB allowed
-	capacityLimitTB prometheus.Gauge
-
 	manager *Manager
 }
 
@@ -76,24 +70,6 @@ func NewMetrics(m *Manager) *Metrics {
 			},
 			[]string{"feature"},
 		),
-
-		nodeLimitTotal: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Namespace: "zapfs",
-				Subsystem: "license",
-				Name:      "node_limit_total",
-				Help:      "Maximum number of nodes allowed by license. 0 means unlimited.",
-			},
-		),
-
-		capacityLimitTB: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Namespace: "zapfs",
-				Subsystem: "license",
-				Name:      "capacity_limit_tb",
-				Help:      "Maximum storage capacity in TB allowed by license. 0 means unlimited.",
-			},
-		),
 	}
 
 	return metrics
@@ -106,8 +82,6 @@ func (m *Metrics) Collectors() []prometheus.Collector {
 		m.licenseExpirySeconds,
 		m.licenseValid,
 		m.featureEnabled,
-		m.nodeLimitTotal,
-		m.capacityLimitTB,
 	}
 }
 
@@ -124,8 +98,6 @@ func (m *Metrics) Update() {
 		m.licenseInfo.WithLabelValues("", "", "", "", "community").Set(1)
 		m.licenseExpirySeconds.Set(0)
 		m.licenseValid.Set(0)
-		m.nodeLimitTotal.Set(0)
-		m.capacityLimitTB.Set(0)
 
 		// All features disabled
 		for _, f := range AllFeatures() {
@@ -153,10 +125,6 @@ func (m *Metrics) Update() {
 	} else {
 		m.licenseValid.Set(1)
 	}
-
-	// Limits
-	m.nodeLimitTotal.Set(float64(license.MaxNodes))
-	m.capacityLimitTB.Set(float64(license.MaxCapacityTB))
 
 	// Feature states
 	for _, f := range AllFeatures() {

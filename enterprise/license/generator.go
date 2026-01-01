@@ -50,13 +50,11 @@ func NewGeneratorWithKeyID(privateKeyPEM []byte, keyID string) (*Generator, erro
 
 // LicenseRequest contains the parameters for generating a new license.
 type LicenseRequest struct {
-	CustomerID    string
-	CustomerName  string
-	Features      []Feature
-	MaxNodes      int
-	MaxCapacityTB int
-	Tier          string
-	ValidDays     int
+	CustomerID   string
+	CustomerName string
+	Features     []Feature
+	Tier         string
+	ValidDays    int
 }
 
 // Generate creates a signed license key from the request.
@@ -79,13 +77,11 @@ func (g *Generator) Generate(req LicenseRequest) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			ID:        licenseID,
 		},
-		CustomerID:    req.CustomerID,
-		CustomerName:  req.CustomerName,
-		Features:      req.Features,
-		MaxNodes:      req.MaxNodes,
-		MaxCapacityTB: req.MaxCapacityTB,
-		LicenseID:     licenseID,
-		Tier:          req.Tier,
+		CustomerID:   req.CustomerID,
+		CustomerName: req.CustomerName,
+		Features:     req.Features,
+		LicenseID:    licenseID,
+		Tier:         req.Tier,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

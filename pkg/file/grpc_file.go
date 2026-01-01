@@ -10,6 +10,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
+	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -122,7 +123,7 @@ func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) erro
 
 	logger.Info().
 		Str("object_id", objectID).
-		Uint64("bytes", obj.Size).
+		Str("size", humanize.IBytes(obj.Size)).
 		Str("etag", obj.ETag).
 		Int("chunks", len(obj.ChunkRefs)).
 		Msg("PutObject completed")

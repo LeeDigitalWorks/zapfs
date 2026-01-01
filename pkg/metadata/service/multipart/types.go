@@ -15,6 +15,7 @@ const (
 	ErrCodeEntityTooSmall
 	ErrCodeInvalidArgument
 	ErrCodeInternalError
+	ErrCodePreconditionFailed
 )
 
 // Error represents a multipart service error with an error code
@@ -48,6 +49,8 @@ func (e *Error) ToS3Error() s3err.ErrorCode {
 		return s3err.ErrEntityTooSmall
 	case ErrCodeInvalidArgument:
 		return s3err.ErrInvalidArgument
+	case ErrCodePreconditionFailed:
+		return s3err.ErrPreconditionFailed
 	default:
 		return s3err.ErrInternalError
 	}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -100,13 +101,19 @@ func (s *MetadataServer) UploadPartHandler(d *data.Data, w http.ResponseWriter) 
 		return
 	}
 
+	// Use verified body for streaming signed requests, otherwise use raw body
+	body := io.Reader(d.Req.Body)
+	if d.VerifiedBody != nil {
+		body = d.VerifiedBody
+	}
+
 	// Use the service layer which handles parallel writes to all file servers
 	result, err := s.svc.Multipart().UploadPart(d.Ctx, &multipart.UploadPartRequest{
 		Bucket:        bucket,
 		Key:           key,
 		UploadID:      uploadID,
 		PartNumber:    partNumber,
-		Body:          d.Req.Body,
+		Body:          body,
 		ContentLength: d.Req.ContentLength,
 	})
 	if err != nil {
@@ -432,19 +439,119 @@ func (s *MetadataServer) ListPartsHandler(d *data.Data, w http.ResponseWriter) {
 // UploadPartCopyHandler copies data from an existing object as a part.
 // PUT /{bucket}/{key}?partNumber={partNumber}&uploadId={uploadId}
 // with x-amz-copy-source header
+// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
 func (s *MetadataServer) UploadPartCopyHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement server-side copy for multipart parts
-	// Implementation steps:
-	// 1. Parse x-amz-copy-source header to get source bucket/key
-	// 2. Parse x-amz-copy-source-range for partial copy (optional)
-	// 3. Validate source object exists and caller has access
-	// 4. Validate upload exists
-	// 5. Copy bytes from source to new part via file server
-	// 6. Store part metadata with ETag
-	// 7. Return CopyPartResult with ETag and LastModified
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
+	bucket := d.S3Info.Bucket
+	key := d.S3Info.Key
 
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parse query parameters
+	query := d.Req.URL.Query()
+	uploadID := query.Get("uploadId")
+	partNumberStr := query.Get("partNumber")
+
+	if uploadID == "" || partNumberStr == "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	partNumber, err := strconv.Atoi(partNumberStr)
+	if err != nil || partNumber < 1 || partNumber > 10000 {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	// Parse x-amz-copy-source header
+	copySource := d.Req.Header.Get(s3consts.XAmzCopySource)
+	if copySource == "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	// URL decode the copy source
+	copySource, err = url.QueryUnescape(copySource)
+	if err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	// Parse source bucket/key from copy source header
+	// Format: /bucket/key or bucket/key
+	copySource = strings.TrimPrefix(copySource, "/")
+	parts := strings.SplitN(copySource, "/", 2)
+	if len(parts) != 2 {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+	srcBucket, srcKey := parts[0], parts[1]
+
+	// Parse optional range header
+	sourceRange := d.Req.Header.Get(s3consts.XAmzCopySourceRange)
+
+	// Parse conditional headers
+	var copySourceIfModifiedSince, copySourceIfUnmodifiedSince *int64
+	if v := d.Req.Header.Get(s3consts.XAmzCopySourceIfModifiedSince); v != "" {
+		if t, err := http.ParseTime(v); err == nil {
+			ts := t.Unix()
+			copySourceIfModifiedSince = &ts
+		}
+	}
+	if v := d.Req.Header.Get(s3consts.XAmzCopySourceIfUnmodifiedSince); v != "" {
+		if t, err := http.ParseTime(v); err == nil {
+			ts := t.Unix()
+			copySourceIfUnmodifiedSince = &ts
+		}
+	}
+
+	// Use the service layer
+	result, err := s.svc.Multipart().UploadPartCopy(d.Ctx, &multipart.UploadPartCopyRequest{
+		Bucket:                      bucket,
+		Key:                         key,
+		UploadID:                    uploadID,
+		PartNumber:                  partNumber,
+		SourceBucket:                srcBucket,
+		SourceKey:                   srcKey,
+		SourceRange:                 sourceRange,
+		CopySourceIfMatch:           d.Req.Header.Get(s3consts.XAmzCopySourceIfMatch),
+		CopySourceIfNoneMatch:       d.Req.Header.Get(s3consts.XAmzCopySourceIfNoneMatch),
+		CopySourceIfModifiedSince:   copySourceIfModifiedSince,
+		CopySourceIfUnmodifiedSince: copySourceIfUnmodifiedSince,
+	})
+	if err != nil {
+		var svcErr *multipart.Error
+		if errors.As(err, &svcErr) {
+			writeXMLErrorResponse(w, d, svcErr.ToS3Error())
+		} else {
+			logger.Error().Err(err).Msg("failed to copy part")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		}
+		return
+	}
+
+	// Build XML response
+	type CopyPartResult struct {
+		XMLName      xml.Name `xml:"CopyPartResult"`
+		LastModified string   `xml:"LastModified"`
+		ETag         string   `xml:"ETag"`
+	}
+
+	xmlResult := CopyPartResult{
+		LastModified: time.Unix(0, result.LastModified).UTC().Format(time.RFC3339),
+		ETag:         "\"" + result.ETag + "\"",
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+	xml.NewEncoder(w).Encode(xmlResult)
+
+	logger.Debug().
+		Str("bucket", bucket).
+		Str("key", key).
+		Str("upload_id", uploadID).
+		Int("part_number", partNumber).
+		Str("source_bucket", srcBucket).
+		Str("source_key", srcKey).
+		Msg("part copied")
 }
 
 // ListMultipartUploadsHandler lists in-progress multipart uploads.

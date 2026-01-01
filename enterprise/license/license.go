@@ -9,7 +9,6 @@
 // License keys are cryptographically signed JWT tokens that contain:
 // - Customer identification
 // - Enabled feature flags
-// - Capacity limits (nodes, storage)
 // - Expiration date
 //
 // License validation is performed offline using RSA public key verification.
@@ -40,12 +39,6 @@ type License struct {
 	// Features is the list of enabled enterprise features
 	Features []Feature `json:"features"`
 
-	// MaxNodes is the maximum number of nodes allowed (0 = unlimited)
-	MaxNodes int `json:"max_nodes"`
-
-	// MaxCapacityTB is the maximum storage capacity in TB (0 = unlimited)
-	MaxCapacityTB int `json:"max_capacity_tb"`
-
 	// IssuedAt is when the license was issued
 	IssuedAt time.Time `json:"issued_at"`
 
@@ -55,7 +48,7 @@ type License struct {
 	// LicenseID is the unique identifier for this license
 	LicenseID string `json:"license_id"`
 
-	// Tier is the license tier (e.g., "standard", "premium", "enterprise")
+	// Tier is the license tier (e.g., "starter", "professional", "enterprise")
 	Tier string `json:"tier"`
 }
 
@@ -91,17 +84,8 @@ func (l *License) Validate() error {
 	return nil
 }
 
-// licenseClaims represents the JWT claims in a license key.
-type licenseClaims struct {
-	jwt.RegisteredClaims
-	CustomerID    string    `json:"cid"`
-	CustomerName  string    `json:"cnm"`
-	Features      []Feature `json:"ftr"`
-	MaxNodes      int       `json:"mxn"`
-	MaxCapacityTB int       `json:"mxc"`
-	LicenseID     string    `json:"lid"`
-	Tier          string    `json:"tier"`
-}
+// licenseClaims is an internal alias for the Claims type defined in features.go
+type licenseClaims = Claims
 
 // Manager handles license validation and feature checks.
 // The license field uses atomic.Pointer for lock-free reads and safe hot-reloading.
@@ -119,13 +103,11 @@ type Manager struct {
 
 // Common errors
 var (
-	ErrNoLicense             = errors.New("no license loaded")
-	ErrLicenseExpired        = errors.New("license has expired")
-	ErrInvalidLicense        = errors.New("invalid license")
-	ErrFeatureDisabled       = errors.New("feature not enabled by license")
-	ErrInvalidKey            = errors.New("invalid license key")
-	ErrNodeLimitExceeded     = errors.New("node limit exceeded")
-	ErrCapacityLimitExceeded = errors.New("capacity limit exceeded")
+	ErrNoLicense       = errors.New("no license loaded")
+	ErrLicenseExpired  = errors.New("license has expired")
+	ErrInvalidLicense  = errors.New("invalid license")
+	ErrFeatureDisabled = errors.New("feature not enabled by license")
+	ErrInvalidKey      = errors.New("invalid license key")
 )
 
 // NewManager creates a new license manager with the given RSA public key.
@@ -238,13 +220,11 @@ func (m *Manager) LoadLicense(licenseKey string) error {
 
 	// Convert claims to License
 	license := &License{
-		CustomerID:    claims.CustomerID,
-		CustomerName:  claims.CustomerName,
-		Features:      claims.Features,
-		MaxNodes:      claims.MaxNodes,
-		MaxCapacityTB: claims.MaxCapacityTB,
-		LicenseID:     claims.LicenseID,
-		Tier:          claims.Tier,
+		CustomerID:   claims.CustomerID,
+		CustomerName: claims.CustomerName,
+		Features:     claims.Features,
+		LicenseID:    claims.LicenseID,
+		Tier:         claims.Tier,
 	}
 
 	if claims.IssuedAt != nil {
@@ -385,31 +365,6 @@ func (m *Manager) RequireFeature(feature Feature) {
 	}
 }
 
-// CheckNodeLimit returns nil if adding a node is within limits.
-// This method is lock-free and safe for concurrent access.
-func (m *Manager) CheckNodeLimit(currentNodes int) error {
-	license := m.license.Load()
-	if license == nil {
-		return ErrNoLicense
-	}
-	if license.MaxNodes > 0 && currentNodes >= license.MaxNodes {
-		return fmt.Errorf("%w: limit is %d nodes", ErrNodeLimitExceeded, license.MaxNodes)
-	}
-	return nil
-}
-
-// CheckCapacityLimit returns nil if the capacity is within limits.
-// This method is lock-free and safe for concurrent access.
-func (m *Manager) CheckCapacityLimit(currentCapacityTB int) error {
-	license := m.license.Load()
-	if license == nil {
-		return ErrNoLicense
-	}
-	if license.MaxCapacityTB > 0 && currentCapacityTB >= license.MaxCapacityTB {
-		return fmt.Errorf("%w: limit is %d TB", ErrCapacityLimitExceeded, license.MaxCapacityTB)
-	}
-	return nil
-}
 
 // Info returns license information as a JSON-serializable map.
 // Useful for API endpoints that display license status.
@@ -430,19 +385,17 @@ func (m *Manager) Info() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"licensed":        true,
-		"edition":         "enterprise",
-		"tier":            license.Tier,
-		"customer_id":     license.CustomerID,
-		"customer_name":   license.CustomerName,
-		"license_id":      license.LicenseID,
-		"features":        features,
-		"max_nodes":       license.MaxNodes,
-		"max_capacity_tb": license.MaxCapacityTB,
-		"issued_at":       license.IssuedAt,
-		"expires_at":      license.ExpiresAt,
-		"days_remaining":  license.DaysUntilExpiry(),
-		"expired":         license.IsExpired(),
+		"licensed":       true,
+		"edition":        "enterprise",
+		"tier":           license.Tier,
+		"customer_id":    license.CustomerID,
+		"customer_name":  license.CustomerName,
+		"license_id":     license.LicenseID,
+		"features":       features,
+		"issued_at":      license.IssuedAt,
+		"expires_at":     license.ExpiresAt,
+		"days_remaining": license.DaysUntilExpiry(),
+		"expired":        license.IsExpired(),
 	}
 }
 

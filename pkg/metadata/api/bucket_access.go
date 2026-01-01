@@ -1,11 +1,15 @@
 package api
 
 import (
+	"encoding/xml"
+	"io"
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // ============================================================================
@@ -18,38 +22,64 @@ import (
 //
 // Returns NoSuchPublicAccessBlockConfiguration if not configured.
 func (s *MetadataServer) GetPublicAccessBlockHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement public access block retrieval
-	// Implementation steps:
-	// 1. Load PublicAccessBlockConfiguration from bucket metadata
-	// 2. Return BlockPublicAcls, IgnorePublicAcls, BlockPublicPolicy, RestrictPublicBuckets
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetPublicAccessBlock.html
+	bucket := d.S3Info.Bucket
 
-	// Not configured by default
-	writeXMLErrorResponse(w, d, s3err.ErrNoSuchPublicAccessBlockConfiguration)
+	config, err := s.db.GetPublicAccessBlock(d.Ctx, bucket)
+	if err != nil {
+		if err == db.ErrPublicAccessBlockNotFound {
+			writeXMLErrorResponse(w, d, s3err.ErrNoSuchPublicAccessBlockConfiguration)
+			return
+		}
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+	xml.NewEncoder(w).Encode(config)
 }
 
 // PutPublicAccessBlockHandler sets the public access block configuration.
 // PUT /{bucket}?publicAccessBlock
 func (s *MetadataServer) PutPublicAccessBlockHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement public access block configuration
-	// Implementation steps:
-	// 1. Parse PublicAccessBlockConfiguration XML
-	// 2. Store BlockPublicAcls, IgnorePublicAcls, BlockPublicPolicy, RestrictPublicBuckets
-	// 3. Enforce settings on subsequent ACL/Policy operations
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutPublicAccessBlock.html
+	bucket := d.S3Info.Bucket
 
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parse request body
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, 64*1024)) // 64KB limit
+	if err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	var config s3types.PublicAccessBlockConfig
+	if err := xml.Unmarshal(body, &config); err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Store the configuration
+	if err := s.db.SetPublicAccessBlock(d.Ctx, bucket, &config); err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
 }
 
 // DeletePublicAccessBlockHandler removes the public access block configuration.
 // DELETE /{bucket}?publicAccessBlock
 func (s *MetadataServer) DeletePublicAccessBlockHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement public access block deletion
-	// Implementation steps:
-	// 1. Remove PublicAccessBlockConfiguration from bucket metadata
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeletePublicAccessBlock.html
+	bucket := d.S3Info.Bucket
 
-	// No-op - nothing configured to delete
+	err := s.db.DeletePublicAccessBlock(d.Ctx, bucket)
+	if err != nil && err != db.ErrPublicAccessBlockNotFound {
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Success - return 204 No Content
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -64,42 +94,82 @@ func (s *MetadataServer) DeletePublicAccessBlockHandler(d *data.Data, w http.Res
 //
 // Returns OwnershipControlsNotFoundError if not configured.
 func (s *MetadataServer) GetBucketOwnershipControlsHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement ownership controls retrieval
-	// Implementation steps:
-	// 1. Load OwnershipControls from bucket metadata
-	// 2. Return ObjectOwnership setting (BucketOwnerPreferred, ObjectWriter, BucketOwnerEnforced)
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketOwnershipControls.html
+	bucket := d.S3Info.Bucket
 
-	// Not configured by default
-	writeXMLErrorResponse(w, d, s3err.ErrOwnershipControlsNotFoundError)
+	controls, err := s.db.GetOwnershipControls(d.Ctx, bucket)
+	if err != nil {
+		if err == db.ErrOwnershipControlsNotFound {
+			writeXMLErrorResponse(w, d, s3err.ErrOwnershipControlsNotFoundError)
+			return
+		}
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+	xml.NewEncoder(w).Encode(controls)
 }
 
 // PutBucketOwnershipControlsHandler sets bucket ownership controls.
 // PUT /{bucket}?ownershipControls
 func (s *MetadataServer) PutBucketOwnershipControlsHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement ownership controls configuration
-	// Implementation steps:
-	// 1. Parse OwnershipControls XML
-	// 2. Validate ObjectOwnership value (BucketOwnerPreferred, ObjectWriter, BucketOwnerEnforced)
-	// 3. Store in bucket metadata
-	// 4. Enforce on subsequent object uploads:
-	//    - BucketOwnerPreferred: Bucket owner gets ownership if bucket-owner-full-control ACL
-	//    - ObjectWriter: Uploader owns the object (default S3 behavior)
-	//    - BucketOwnerEnforced: Bucket owner always owns, ACLs disabled
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketOwnershipControls.html
+	bucket := d.S3Info.Bucket
 
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parse request body
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, 64*1024)) // 64KB limit
+	if err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	var controls s3types.OwnershipControls
+	if err := xml.Unmarshal(body, &controls); err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Validate rules
+	if len(controls.Rules) == 0 {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Validate ObjectOwnership value
+	objectOwnership := controls.Rules[0].ObjectOwnership
+	switch objectOwnership {
+	case s3types.ObjectOwnershipBucketOwnerPreferred,
+		s3types.ObjectOwnershipObjectWriter,
+		s3types.ObjectOwnershipBucketOwnerEnforced:
+		// Valid values
+	default:
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Store the configuration
+	if err := s.db.SetOwnershipControls(d.Ctx, bucket, &controls); err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
 }
 
 // DeleteBucketOwnershipControlsHandler removes bucket ownership controls.
 // DELETE /{bucket}?ownershipControls
 func (s *MetadataServer) DeleteBucketOwnershipControlsHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement ownership controls deletion
-	// Implementation steps:
-	// 1. Remove OwnershipControls from bucket metadata
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketOwnershipControls.html
+	bucket := d.S3Info.Bucket
 
-	// No-op - nothing configured to delete
+	err := s.db.DeleteOwnershipControls(d.Ctx, bucket)
+	if err != nil && err != db.ErrOwnershipControlsNotFound {
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Success - return 204 No Content
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
 }

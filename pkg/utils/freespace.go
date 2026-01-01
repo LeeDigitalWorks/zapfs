@@ -27,7 +27,7 @@ func (s FreeSpace) IsLow(freeBytes uint64, freePercent float32) (bool, string) {
 	case AsPercent:
 		return freePercent < s.Percent, fmt.Sprintf("disk free percent %.2f%%, threshold %.2f%%", freePercent, s.Percent)
 	case AsBytes:
-		return freeBytes < s.Bytes, fmt.Sprintf("disk free bytes %d, threshold %d", freeBytes, s.Bytes)
+		return freeBytes < s.Bytes, fmt.Sprintf("disk free %s, threshold %s", humanize.IBytes(freeBytes), humanize.IBytes(s.Bytes))
 	}
 	return false, ""
 }

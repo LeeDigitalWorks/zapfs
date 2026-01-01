@@ -25,6 +25,10 @@ import (
 type Storage interface {
 	WriteObject(ctx context.Context, req *storage.WriteRequest) (*storage.WriteResult, error)
 	DecrementChunkRefCounts(ctx context.Context, chunks []types.ChunkRef) []storage.FailedDecrement
+	// ReadObject streams object data to a writer. Used for UploadPartCopy.
+	ReadObject(ctx context.Context, req *storage.ReadRequest, writer io.Writer) error
+	// ReadObjectRange streams a byte range of object data to a writer.
+	ReadObjectRange(ctx context.Context, req *storage.ReadRangeRequest, writer io.Writer) error
 }
 
 // Config holds configuration for the multipart service
@@ -189,6 +193,293 @@ func (s *serviceImpl) UploadPart(ctx context.Context, req *UploadPartRequest) (*
 	return &UploadPartResult{
 		ETag: etag,
 	}, nil
+}
+
+func (s *serviceImpl) UploadPartCopy(ctx context.Context, req *UploadPartCopyRequest) (*UploadPartCopyResult, error) {
+	// Validate part number
+	if req.PartNumber < 1 || req.PartNumber > 10000 {
+		return nil, &Error{
+			Code:    ErrCodeInvalidArgument,
+			Message: "part number must be between 1 and 10000",
+		}
+	}
+
+	// Verify upload exists
+	upload, err := s.db.GetMultipartUpload(ctx, req.Bucket, req.Key, req.UploadID)
+	if err != nil {
+		if errors.Is(err, db.ErrUploadNotFound) {
+			return nil, &Error{
+				Code:    ErrCodeNoSuchUpload,
+				Message: "upload not found",
+			}
+		}
+		return nil, &Error{
+			Code:    ErrCodeInternalError,
+			Message: "failed to get upload",
+			Err:     err,
+		}
+	}
+
+	// Get source object
+	srcObj, err := s.db.GetObject(ctx, req.SourceBucket, req.SourceKey)
+	if err != nil {
+		if errors.Is(err, db.ErrObjectNotFound) {
+			return nil, &Error{
+				Code:    ErrCodeNoSuchUpload, // S3 uses NoSuchKey but we'll use this for now
+				Message: "source object not found",
+			}
+		}
+		return nil, &Error{
+			Code:    ErrCodeInternalError,
+			Message: "failed to get source object",
+			Err:     err,
+		}
+	}
+
+	if srcObj.IsDeleted() {
+		return nil, &Error{
+			Code:    ErrCodeNoSuchUpload,
+			Message: "source object not found",
+		}
+	}
+
+	// Check copy source conditional headers
+	srcLastModified := srcObj.CreatedAt
+	if !s.checkCopySourceConditionals(req, srcObj.ETag, srcLastModified) {
+		return nil, &Error{
+			Code:    ErrCodePreconditionFailed,
+			Message: "copy source precondition failed",
+		}
+	}
+
+	// Determine range to copy and calculate size
+	var copySize uint64
+	var rangeStart, rangeLength int64
+
+	if req.SourceRange != "" {
+		// Parse range: "bytes=start-end"
+		start, end, err := parseByteRange(req.SourceRange, int64(srcObj.Size))
+		if err != nil {
+			return nil, &Error{
+				Code:    ErrCodeInvalidArgument,
+				Message: "invalid source range: " + err.Error(),
+			}
+		}
+		rangeStart = start
+		rangeLength = end - start + 1
+		copySize = uint64(rangeLength)
+	} else {
+		// Copy entire object
+		copySize = srcObj.Size
+		rangeLength = int64(srcObj.Size)
+	}
+
+	// Get storage profile
+	profile, ok := s.profiles.Get(upload.StorageClass)
+	if !ok {
+		profile, ok = s.profiles.Get(s.defaultProfile)
+	}
+	if !ok || profile == nil {
+		return nil, &Error{
+			Code:    ErrCodeInternalError,
+			Message: "storage profile not found",
+		}
+	}
+
+	// Generate object ID for this part
+	objectID := uuid.New().String()
+
+	// Use io.Pipe to stream data from source to destination while computing MD5
+	pr, pw := io.Pipe()
+	md5Hasher := utils.Md5PoolGetHasher()
+	defer utils.Md5PoolPutHasher(md5Hasher)
+
+	// Writer that computes MD5 hash while writing to pipe
+	hashWriter := io.MultiWriter(pw, md5Hasher)
+
+	// Read source object in a goroutine, write to pipe
+	var readErr error
+	go func() {
+		defer pw.Close()
+		if req.SourceRange != "" {
+			readErr = s.storage.ReadObjectRange(ctx, &storage.ReadRangeRequest{
+				ChunkRefs: srcObj.ChunkRefs,
+				Offset:    uint64(rangeStart),
+				Length:    uint64(rangeLength),
+			}, hashWriter)
+		} else {
+			readErr = s.storage.ReadObject(ctx, &storage.ReadRequest{
+				ChunkRefs: srcObj.ChunkRefs,
+			}, hashWriter)
+		}
+		if readErr != nil {
+			pw.CloseWithError(readErr)
+		}
+	}()
+
+	// Write to storage (reads from pipe)
+	writeResult, err := s.storage.WriteObject(ctx, &storage.WriteRequest{
+		ObjectID:    objectID,
+		Size:        copySize,
+		Body:        pr,
+		Replication: profile.Replication,
+	})
+	if err != nil {
+		// Check if read also failed
+		if readErr != nil {
+			logger.Error().Err(readErr).Msg("failed to read source object for copy")
+		}
+		logger.Error().Err(err).Msg("failed to write part from copy")
+		return nil, &Error{
+			Code:    ErrCodeInternalError,
+			Message: "failed to write part",
+			Err:     err,
+		}
+	}
+
+	// Check if read failed (write succeeded but read had issues)
+	if readErr != nil {
+		logger.Error().Err(readErr).Msg("failed to read source object for copy")
+		return nil, &Error{
+			Code:    ErrCodeInternalError,
+			Message: "failed to read source object",
+			Err:     readErr,
+		}
+	}
+
+	// Compute ETag from the hash
+	etag := hex.EncodeToString(md5Hasher.Sum(nil))
+
+	// Store part metadata
+	now := time.Now()
+	part := &types.MultipartPart{
+		ID:           uuid.New(),
+		UploadID:     req.UploadID,
+		PartNumber:   req.PartNumber,
+		Size:         int64(copySize),
+		ETag:         etag,
+		LastModified: now.UnixNano(),
+		ChunkRefs:    writeResult.ChunkRefs,
+	}
+
+	if err := s.db.PutPart(ctx, part); err != nil {
+		logger.Error().Err(err).Str("object_id", objectID).Msg("failed to store part metadata")
+		return nil, &Error{
+			Code:    ErrCodeInternalError,
+			Message: "failed to store part metadata",
+			Err:     err,
+		}
+	}
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Str("key", req.Key).
+		Str("upload_id", req.UploadID).
+		Int("part_number", req.PartNumber).
+		Uint64("size", copySize).
+		Str("source_bucket", req.SourceBucket).
+		Str("source_key", req.SourceKey).
+		Msg("part copied")
+
+	return &UploadPartCopyResult{
+		ETag:         etag,
+		LastModified: now.UnixNano(),
+	}, nil
+}
+
+// checkCopySourceConditionals checks conditional copy headers.
+func (s *serviceImpl) checkCopySourceConditionals(req *UploadPartCopyRequest, etag string, lastModified int64) bool {
+	// Check If-Match
+	if req.CopySourceIfMatch != "" {
+		// Remove quotes if present
+		match := strings.Trim(req.CopySourceIfMatch, "\"")
+		if match != etag {
+			return false
+		}
+	}
+
+	// Check If-None-Match
+	if req.CopySourceIfNoneMatch != "" {
+		match := strings.Trim(req.CopySourceIfNoneMatch, "\"")
+		if match == etag {
+			return false
+		}
+	}
+
+	// Check If-Modified-Since
+	if req.CopySourceIfModifiedSince != nil {
+		// Convert nanoseconds to seconds for comparison
+		if lastModified/1e9 <= *req.CopySourceIfModifiedSince {
+			return false
+		}
+	}
+
+	// Check If-Unmodified-Since
+	if req.CopySourceIfUnmodifiedSince != nil {
+		if lastModified/1e9 > *req.CopySourceIfUnmodifiedSince {
+			return false
+		}
+	}
+
+	return true
+}
+
+// parseByteRange parses a byte range string like "bytes=0-499" and returns start, end positions.
+func parseByteRange(rangeStr string, objectSize int64) (int64, int64, error) {
+	if !strings.HasPrefix(rangeStr, "bytes=") {
+		return 0, 0, errors.New("range must start with 'bytes='")
+	}
+
+	rangeSpec := strings.TrimPrefix(rangeStr, "bytes=")
+	parts := strings.Split(rangeSpec, "-")
+	if len(parts) != 2 {
+		return 0, 0, errors.New("invalid range format")
+	}
+
+	var start, end int64
+	var err error
+
+	if parts[0] == "" {
+		// Suffix range: -500 means last 500 bytes
+		if parts[1] == "" {
+			return 0, 0, errors.New("invalid range format")
+		}
+		suffixLen, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, errors.New("invalid suffix length")
+		}
+		start = objectSize - suffixLen
+		if start < 0 {
+			start = 0
+		}
+		end = objectSize - 1
+	} else {
+		start, err = strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return 0, 0, errors.New("invalid start position")
+		}
+		if parts[1] == "" {
+			// Range to end: 500- means from byte 500 to end
+			end = objectSize - 1
+		} else {
+			end, err = strconv.ParseInt(parts[1], 10, 64)
+			if err != nil {
+				return 0, 0, errors.New("invalid end position")
+			}
+		}
+	}
+
+	// Validate range
+	if start < 0 || end < 0 || start > end || start >= objectSize {
+		return 0, 0, errors.New("range out of bounds")
+	}
+
+	// Clamp end to object size
+	if end >= objectSize {
+		end = objectSize - 1
+	}
+
+	return start, end, nil
 }
 
 func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadRequest) (*CompleteUploadResult, error) {

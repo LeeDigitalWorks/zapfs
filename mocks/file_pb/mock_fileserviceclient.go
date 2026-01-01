@@ -6,8 +6,8 @@ package mocks
 
 import (
 	"context"
-	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 	mock "github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"

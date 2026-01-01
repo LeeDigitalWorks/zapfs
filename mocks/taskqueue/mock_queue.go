@@ -7,8 +7,8 @@ package mocks
 import (
 	"context"
 	"time"
-	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	mock "github.com/stretchr/testify/mock"
 )
 

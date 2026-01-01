@@ -6,8 +6,8 @@ package mocks
 
 import (
 	"context"
-	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket"
 	mock "github.com/stretchr/testify/mock"
 )
 

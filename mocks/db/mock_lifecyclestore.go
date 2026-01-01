@@ -6,8 +6,8 @@ package mocks
 
 import (
 	"context"
-	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	mock "github.com/stretchr/testify/mock"
 )
 

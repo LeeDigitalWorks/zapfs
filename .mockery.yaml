@@ -23,24 +23,24 @@ template-data:
   unroll-variadic: true
 packages:
   # gRPC Service Clients (from proto-generated code)
-  zapfs/proto/manager_pb:
+  github.com/LeeDigitalWorks/zapfs/proto/manager_pb:
     interfaces:
       ManagerServiceClient:
 
-  zapfs/proto/metadata_pb:
+  github.com/LeeDigitalWorks/zapfs/proto/metadata_pb:
     interfaces:
       MetadataServiceClient:
 
-  zapfs/proto/file_pb:
+  github.com/LeeDigitalWorks/zapfs/proto/file_pb:
     interfaces:
       FileServiceClient:
 
-  zapfs/proto/iam_pb:
+  github.com/LeeDigitalWorks/zapfs/proto/iam_pb:
     interfaces:
       IAMServiceClient:
 
   # IAM Package - credential storage and policy evaluation
-  zapfs/pkg/iam:
+  github.com/LeeDigitalWorks/zapfs/pkg/iam:
     config:
       all: false
     interfaces:
@@ -49,7 +49,7 @@ packages:
       GroupStore:
 
   # Metadata DB Package - database layer
-  zapfs/pkg/metadata/db:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/db:
     config:
       all: false
     interfaces:
@@ -69,7 +69,7 @@ packages:
       TxStore:
 
   # Metadata Filter Package - request processing filters
-  zapfs/pkg/metadata/filter:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter:
     config:
       all: false
     interfaces:
@@ -80,7 +80,7 @@ packages:
       TierStore:
 
   # Metadata Client Package - service client interfaces
-  zapfs/pkg/metadata/client:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/client:
     config:
       all: false
     interfaces:
@@ -88,26 +88,26 @@ packages:
       File:
 
   # Metadata Service Package - business logic layer
-  zapfs/pkg/metadata/service/object:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object:
     config:
       all: false
     interfaces:
       Service:
 
-  zapfs/pkg/metadata/service/bucket:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket:
     config:
       all: false
     interfaces:
       Service:
 
-  zapfs/pkg/metadata/service/multipart:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart:
     config:
       all: false
     interfaces:
       Service:
       Storage:
 
-  zapfs/pkg/metadata/service/config:
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config:
     config:
       all: false
     interfaces:
@@ -115,47 +115,47 @@ packages:
       BucketStore:
 
   # Cache Package - caching layer
-  zapfs/pkg/cache:
+  github.com/LeeDigitalWorks/zapfs/pkg/cache:
     config:
       all: false
     interfaces:
       BucketCacheClient:
 
   # Storage Package - storage backends
-  zapfs/pkg/storage/store:
+  github.com/LeeDigitalWorks/zapfs/pkg/storage/store:
     config:
       all: false
     interfaces:
       Store:
 
-  zapfs/pkg/storage/placer:
+  github.com/LeeDigitalWorks/zapfs/pkg/storage/placer:
     config:
       all: false
     interfaces:
       Placer:
 
-  zapfs/pkg/storage/ec:
+  github.com/LeeDigitalWorks/zapfs/pkg/storage/ec:
     config:
       all: false
     interfaces:
       ErasureCoder:
 
   # Types Package - core type interfaces
-  zapfs/pkg/types:
+  github.com/LeeDigitalWorks/zapfs/pkg/types:
     config:
       all: false
     interfaces:
       BackendStorage:
 
   # Manager Package - cluster management
-  zapfs/pkg/manager:
+  github.com/LeeDigitalWorks/zapfs/pkg/manager:
     config:
       all: false
     interfaces:
       CredentialNotifier:
 
   # Task Queue - core interfaces
-  zapfs/pkg/taskqueue:
+  github.com/LeeDigitalWorks/zapfs/pkg/taskqueue:
     config:
       all: false
     interfaces:

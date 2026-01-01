@@ -7,7 +7,6 @@ package mocks
 import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
-
 	mock "github.com/stretchr/testify/mock"
 )
 

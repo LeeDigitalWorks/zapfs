@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -10,11 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/signature"
+	"github.com/LeeDigitalWorks/zapfs/pkg/usage"
 )
 
 // PutObjectHandler stores an object.
@@ -39,11 +43,17 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		}
 	}
 
+	// Use verified body for streaming signed requests, otherwise use raw body
+	body := io.Reader(d.Req.Body)
+	if d.VerifiedBody != nil {
+		body = d.VerifiedBody
+	}
+
 	// Build service request
 	req := &object.PutObjectRequest{
 		Bucket:        bucket,
 		Key:           key,
-		Body:          d.Req.Body,
+		Body:          body,
 		ContentLength: d.Req.ContentLength,
 		StorageClass:  d.Req.Header.Get(s3consts.XAmzStorageClass),
 		Owner:         d.S3Info.OwnerID,
@@ -103,6 +113,11 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+
+	// Record usage metrics
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "PutObject")
+	s.usageCollector.RecordStorageDelta(d.S3Info.OwnerID, bucket, d.Req.ContentLength, 1, req.StorageClass)
+	s.usageCollector.RecordBandwidth(d.S3Info.OwnerID, bucket, d.Req.ContentLength, usage.DirectionIngress)
 }
 
 // GetObjectHandler retrieves an object.
@@ -234,7 +249,11 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 	}
 
 	// Stream body to response
-	io.Copy(w, result.Body)
+	bytesWritten, _ := io.Copy(w, result.Body)
+
+	// Record usage metrics
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "GetObject")
+	s.usageCollector.RecordBandwidth(d.S3Info.OwnerID, bucket, bytesWritten, usage.DirectionEgress)
 }
 
 func (s *MetadataServer) DeleteObjectHandler(d *data.Data, w http.ResponseWriter) {
@@ -262,6 +281,10 @@ func (s *MetadataServer) DeleteObjectHandler(d *data.Data, w http.ResponseWriter
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
+
+	// Record usage metrics
+	// Note: Storage delta for delete is tracked by service layer / GC
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "DeleteObject")
 }
 
 // ListObjectsHandler lists objects using the V1 API.
@@ -335,6 +358,9 @@ func (s *MetadataServer) ListObjectsHandler(d *data.Data, w http.ResponseWriter)
 	encoder := xml.NewEncoder(w)
 	encoder.Indent("", "  ")
 	encoder.Encode(result)
+
+	// Record usage metrics
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "ListObjects")
 }
 
 // HeadObjectHandler returns object metadata without the body.
@@ -439,6 +465,9 @@ func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) 
 	}
 
 	w.WriteHeader(http.StatusOK)
+
+	// Record usage metrics
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "HeadObject")
 }
 
 // ListObjectsV2Handler lists objects using the V2 API.
@@ -527,6 +556,9 @@ func (s *MetadataServer) ListObjectsV2Handler(d *data.Data, w http.ResponseWrite
 	encoder := xml.NewEncoder(w)
 	encoder.Indent("", "  ")
 	encoder.Encode(result)
+
+	// Record usage metrics
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "ListObjectsV2")
 }
 
 // CopyObjectHandler copies an object within/between buckets.
@@ -641,6 +673,10 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)
+
+	// Record usage metrics
+	// Note: Storage delta for copy requires source object size from service layer
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, destBucket, "CopyObject")
 }
 
 // DeleteObjectsHandler deletes multiple objects in a single request.
@@ -735,6 +771,9 @@ func (s *MetadataServer) DeleteObjectsHandler(d *data.Data, w http.ResponseWrite
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)
+
+	// Record usage metrics
+	s.usageCollector.RecordRequest(d.S3Info.OwnerID, bucket, "DeleteObjects")
 }
 
 // ============================================================================
@@ -762,18 +801,234 @@ func (s *MetadataServer) GetObjectAttributesHandler(d *data.Data, w http.Respons
 // POST /{bucket}
 //
 // Allows uploading objects via HTML form with policy-based authorization.
+// See: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPOST.html
 func (s *MetadataServer) PostObjectHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement POST object (form-based upload)
-	// Implementation steps:
-	// 1. Parse multipart/form-data request
-	// 2. Extract policy field and validate signature
-	// 3. Validate conditions in policy (bucket, key, content-length-range, etc.)
-	// 4. Extract file content from "file" field
-	// 5. Store object using service layer
-	// 6. Return success-action-redirect or success-action-status
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectPOST.html
+	ctx := d.Ctx
+	bucket := d.S3Info.Bucket
 
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parse multipart form (32MB max memory, rest goes to temp files)
+	if err := d.Req.ParseMultipartForm(32 << 20); err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedPOSTRequest)
+		return
+	}
+
+	form := d.Req.MultipartForm
+	if form == nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedPOSTRequest)
+		return
+	}
+
+	// Extract form fields
+	getField := func(name string) string {
+		if vals, ok := form.Value[name]; ok && len(vals) > 0 {
+			return vals[0]
+		}
+		// Try case-insensitive lookup
+		for k, vals := range form.Value {
+			if strings.EqualFold(k, name) && len(vals) > 0 {
+				return vals[0]
+			}
+		}
+		return ""
+	}
+
+	// Build PostFormData from form fields
+	formData := &postFormData{
+		Key:                   getField("key"),
+		Policy:                getField("policy"),
+		Signature:             getField("x-amz-signature"),
+		Algorithm:             getField("x-amz-algorithm"),
+		Date:                  getField("x-amz-date"),
+		Credential:            getField("x-amz-credential"),
+		ACL:                   getField("acl"),
+		ContentType:           getField("Content-Type"),
+		ContentDisposition:    getField("Content-Disposition"),
+		SuccessActionRedirect: getField("success_action_redirect"),
+		Tagging:               getField("tagging"),
+	}
+
+	// Parse success_action_status
+	if statusStr := getField("success_action_status"); statusStr != "" {
+		if status, err := strconv.Atoi(statusStr); err == nil {
+			formData.SuccessActionStatus = status
+		}
+	}
+
+	// Collect x-amz-meta-* fields
+	formData.Metadata = make(map[string]string)
+	for k, vals := range form.Value {
+		if strings.HasPrefix(strings.ToLower(k), "x-amz-meta-") && len(vals) > 0 {
+			metaKey := strings.TrimPrefix(strings.ToLower(k), "x-amz-meta-")
+			formData.Metadata[metaKey] = vals[0]
+		}
+	}
+
+	// Get file from form
+	fileHeaders := form.File["file"]
+	if len(fileHeaders) == 0 {
+		writeXMLErrorResponse(w, d, s3err.ErrMissingFields)
+		return
+	}
+	fileHeader := fileHeaders[0]
+	formData.Filename = fileHeader.Filename
+	formData.FileSize = fileHeader.Size
+
+	// Verify POST policy using the auth filter's IAM manager
+	// Note: The auth filter already validated that this is a POST policy request
+	// and let it through. Now we verify the policy signature and conditions.
+	result, errCode := s.verifyPostPolicy(ctx, formData, bucket)
+	if errCode != s3err.ErrNone {
+		writeXMLErrorResponse(w, d, errCode)
+		return
+	}
+
+	// Open file for reading
+	file, err := fileHeader.Open()
+	if err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+	defer file.Close()
+
+	// Determine content type
+	contentType := formData.ContentType
+	if contentType == "" {
+		contentType = fileHeader.Header.Get("Content-Type")
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// Determine owner ID
+	ownerID := ""
+	if result.Identity != nil && result.Identity.Account != nil {
+		ownerID = result.Identity.Account.ID
+	}
+
+	// Build service request
+	req := &object.PutObjectRequest{
+		Bucket:        bucket,
+		Key:           result.Key,
+		Body:          file,
+		ContentLength: formData.FileSize,
+		Owner:         ownerID,
+	}
+
+	// Store object using service layer
+	putResult, err := s.svc.Objects().PutObject(ctx, req)
+	if err != nil {
+		s.handleObjectError(w, d, err)
+		return
+	}
+
+	// Record usage
+	if s.usageCollector != nil {
+		s.usageCollector.RecordStorageDelta(ownerID, bucket, formData.FileSize, 1, "STANDARD")
+		s.usageCollector.RecordBandwidth(ownerID, bucket, formData.FileSize, usage.DirectionIngress)
+	}
+
+	// Handle response based on success_action_redirect or success_action_status
+	if formData.SuccessActionRedirect != "" {
+		// Redirect to the specified URL with bucket, key, etag as query params
+		redirectURL := formData.SuccessActionRedirect
+		if strings.Contains(redirectURL, "?") {
+			redirectURL += "&"
+		} else {
+			redirectURL += "?"
+		}
+		redirectURL += fmt.Sprintf("bucket=%s&key=%s&etag=%s",
+			url.QueryEscape(bucket),
+			url.QueryEscape(result.Key),
+			url.QueryEscape(putResult.ETag))
+		http.Redirect(w, d.Req, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	// Return based on success_action_status (default 204)
+	status := formData.SuccessActionStatus
+	if status == 0 {
+		status = http.StatusNoContent
+	}
+
+	switch status {
+	case http.StatusOK, http.StatusCreated:
+		// Return XML response
+		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("ETag", "\""+putResult.ETag+"\"")
+		w.WriteHeader(status)
+		response := s3types.PostObjectResponse{
+			Bucket: bucket,
+			Key:    result.Key,
+			ETag:   putResult.ETag,
+		}
+		xml.NewEncoder(w).Encode(response)
+	default:
+		// 204 No Content
+		w.Header().Set("ETag", "\""+putResult.ETag+"\"")
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// postFormData holds parsed POST form fields
+type postFormData struct {
+	Key                   string
+	Policy                string
+	Signature             string
+	Algorithm             string
+	Date                  string
+	Credential            string
+	ACL                   string
+	ContentType           string
+	ContentDisposition    string
+	SuccessActionRedirect string
+	SuccessActionStatus   int
+	Tagging               string
+	Metadata              map[string]string
+	Filename              string
+	FileSize              int64
+}
+
+// postPolicyResult holds the result of policy verification
+type postPolicyResult struct {
+	Identity *iam.Identity
+	Key      string
+}
+
+// verifyPostPolicy verifies the POST policy signature and conditions
+func (s *MetadataServer) verifyPostPolicy(ctx context.Context, form *postFormData, bucket string) (*postPolicyResult, s3err.ErrorCode) {
+	// Get IAM manager from chain (it's in the auth filter)
+	iamManager := s.chain.GetIAMManager()
+	if iamManager == nil {
+		return nil, s3err.ErrInternalError
+	}
+
+	// Create verifier and verify
+	verifier := signature.NewPostPolicyVerifier(iamManager, "us-east-1")
+	sigForm := &signature.PostFormData{
+		Key:                   form.Key,
+		Policy:                form.Policy,
+		Signature:             form.Signature,
+		Algorithm:             form.Algorithm,
+		Date:                  form.Date,
+		Credential:            form.Credential,
+		ACL:                   form.ACL,
+		ContentType:           form.ContentType,
+		SuccessActionRedirect: form.SuccessActionRedirect,
+		SuccessActionStatus:   form.SuccessActionStatus,
+		Metadata:              form.Metadata,
+		Filename:              form.Filename,
+		FileSize:              form.FileSize,
+	}
+
+	result, errCode := verifier.VerifyPostForm(ctx, sigForm, bucket)
+	if errCode != s3err.ErrNone {
+		return nil, errCode
+	}
+
+	return &postPolicyResult{
+		Identity: result.Identity,
+		Key:      result.Key,
+	}, s3err.ErrNone
 }
 
 // GetObjectTorrentHandler returns torrent file for an object.

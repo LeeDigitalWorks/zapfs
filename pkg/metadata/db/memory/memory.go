@@ -32,10 +32,12 @@ type DB struct {
 	websites          map[string]*s3types.WebsiteConfiguration
 	tags              map[string]*s3types.TagSet
 	encrypt           map[string]*s3types.ServerSideEncryptionConfig
-	lifecycle map[string]*s3types.Lifecycle
-	objLock   map[string]*s3types.ObjectLockConfiguration
-	retention map[string]*s3types.ObjectLockRetention
-	legalHold map[string]*s3types.ObjectLockLegalHold
+	lifecycle         map[string]*s3types.Lifecycle
+	objLock           map[string]*s3types.ObjectLockConfiguration
+	retention         map[string]*s3types.ObjectLockRetention
+	legalHold         map[string]*s3types.ObjectLockLegalHold
+	publicAccessBlock map[string]*s3types.PublicAccessBlockConfig
+	ownershipControls map[string]*s3types.OwnershipControls
 }
 
 // New creates a new in-memory database for testing.
@@ -51,10 +53,12 @@ func New() *DB {
 		websites:          make(map[string]*s3types.WebsiteConfiguration),
 		tags:              make(map[string]*s3types.TagSet),
 		encrypt:           make(map[string]*s3types.ServerSideEncryptionConfig),
-		lifecycle: make(map[string]*s3types.Lifecycle),
-		objLock:   make(map[string]*s3types.ObjectLockConfiguration),
-		retention: make(map[string]*s3types.ObjectLockRetention),
-		legalHold: make(map[string]*s3types.ObjectLockLegalHold),
+		lifecycle:         make(map[string]*s3types.Lifecycle),
+		objLock:           make(map[string]*s3types.ObjectLockConfiguration),
+		retention:         make(map[string]*s3types.ObjectLockRetention),
+		legalHold:         make(map[string]*s3types.ObjectLockLegalHold),
+		publicAccessBlock: make(map[string]*s3types.PublicAccessBlockConfig),
+		ownershipControls: make(map[string]*s3types.OwnershipControls),
 	}
 }
 
@@ -813,6 +817,74 @@ func (d *DB) SetObjectLegalHold(ctx context.Context, bucket, key string, legalHo
 	defer d.mu.Unlock()
 
 	d.legalHold[objectKey(bucket, key)] = legalHold
+	return nil
+}
+
+// ============================================================================
+// Public Access Block Operations
+// ============================================================================
+
+func (d *DB) GetPublicAccessBlock(ctx context.Context, bucket string) (*s3types.PublicAccessBlockConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	config, ok := d.publicAccessBlock[bucket]
+	if !ok {
+		return nil, db.ErrPublicAccessBlockNotFound
+	}
+	return config, nil
+}
+
+func (d *DB) SetPublicAccessBlock(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.publicAccessBlock[bucket] = config
+	return nil
+}
+
+func (d *DB) DeletePublicAccessBlock(ctx context.Context, bucket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if _, ok := d.publicAccessBlock[bucket]; !ok {
+		return db.ErrPublicAccessBlockNotFound
+	}
+	delete(d.publicAccessBlock, bucket)
+	return nil
+}
+
+// ============================================================================
+// Ownership Controls Operations
+// ============================================================================
+
+func (d *DB) GetOwnershipControls(ctx context.Context, bucket string) (*s3types.OwnershipControls, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	controls, ok := d.ownershipControls[bucket]
+	if !ok {
+		return nil, db.ErrOwnershipControlsNotFound
+	}
+	return controls, nil
+}
+
+func (d *DB) SetOwnershipControls(ctx context.Context, bucket string, controls *s3types.OwnershipControls) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.ownershipControls[bucket] = controls
+	return nil
+}
+
+func (d *DB) DeleteOwnershipControls(ctx context.Context, bucket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if _, ok := d.ownershipControls[bucket]; !ok {
+		return db.ErrOwnershipControlsNotFound
+	}
+	delete(d.ownershipControls, bucket)
 	return nil
 }
 

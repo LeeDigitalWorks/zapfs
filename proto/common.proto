@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package common_pb;
-option go_package = "zapfs/proto/common_pb";
+option go_package = "github.com/LeeDigitalWorks/zapfs/proto/common_pb";
 
 import "google/protobuf/timestamp.proto";
 

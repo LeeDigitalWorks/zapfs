@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package iam_pb;
 
-option go_package = "zapfs/proto/iam_pb";
+option go_package = "github.com/LeeDigitalWorks/zapfs/proto/iam_pb";
 
 import "google/protobuf/timestamp.proto";
 

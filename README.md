@@ -148,10 +148,23 @@ go build -o zapfs .
 
 ### Enterprise Edition
 
-Enterprise features require the `enterprise` build tag and a valid license key:
+Enterprise features require the `enterprise` build tag and a valid license key.
+
+**Get your license at [zapfs.io](https://zapfs.io)** — Start with a 14-day free trial.
 
 ```bash
 go build -tags enterprise -o zapfs-enterprise .
+```
+
+To activate your license, place the license key file at `/etc/zapfs/license.key` or set the `ZAPFS_LICENSE_KEY` environment variable:
+
+```bash
+# Option 1: File-based
+sudo mkdir -p /etc/zapfs
+sudo cp ~/Downloads/zapfs-license.key /etc/zapfs/license.key
+
+# Option 2: Environment variable
+export ZAPFS_LICENSE_KEY=$(cat ~/Downloads/zapfs-license.key)
 ```
 
 ### Enterprise Features
@@ -169,3 +182,11 @@ go build -tags enterprise -o zapfs-enterprise .
 | Audit Logging | FeatureAuditLog | Compliance audit trails |
 
 See [LICENSE](LICENSE) and [LICENSE.enterprise](LICENSE.enterprise) for details.
+
+## Enterprise Support
+
+For enterprise licensing, support, and custom deployments:
+
+- **Portal**: [zapfs.io](https://zapfs.io) — Manage licenses and subscriptions
+- **Documentation**: [zapfs.io/docs](https://zapfs.io/docs) — Setup guides and API reference
+- **Sales**: [sales@zapfs.io](mailto:sales@zapfs.io) — Enterprise inquiries

@@ -15,6 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dustin/go-humanize"
+
+	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
@@ -23,6 +26,15 @@ import (
 
 	"github.com/google/btree"
 )
+
+// ClusterCapacity holds cached cluster-wide capacity metrics.
+// Updated via heartbeats from file services (30s stale max).
+type ClusterCapacity struct {
+	TotalBytes   uint64    // Sum of all storage backend capacities
+	UsedBytes    uint64    // Sum of all used storage
+	UpdatedAt    time.Time // Last update time
+	FileServices int       // Number of active file services
+}
 
 // ManagerServer is the main manager server that coordinates the ZapFS cluster.
 // It implements both ManagerServiceServer (cluster management) and IAMServiceServer
@@ -52,6 +64,12 @@ type ManagerServer struct {
 
 	// Raft (embedded consensus)
 	raftNode *RaftNode
+
+	// License management for capacity/node limits
+	licenseManager *license.Manager
+
+	// Cached cluster capacity (updated via heartbeats)
+	clusterCapacity ClusterCapacity
 
 	// IAM - centralized credential management
 	iamService   *iam.Service
@@ -93,7 +111,7 @@ const (
 )
 
 // NewManagerServer creates a new manager server with the given configuration
-func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service) (*ManagerServer, error) {
+func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseManager *license.Manager) (*ManagerServer, error) {
 	ms := &ManagerServer{
 		regionID:             regionID,
 		fileServices:         make(map[string]*ServiceRegistration),
@@ -110,6 +128,7 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 		topologyVersion:   1,
 		leaderForwarder:   NewLeaderForwarder(),
 		iamService:        iamService,
+		licenseManager:    licenseManager,
 		iamSubs:           make(map[uint64]chan *iam_pb.CredentialEvent),
 		topoSubs:          make(map[uint64]chan *manager_pb.TopologyEvent),
 		shutdownCh:        make(chan struct{}),
@@ -266,4 +285,81 @@ func deriveServiceID(serviceType manager_pb.ServiceType, location *common_pb.Loc
 	}
 	// Fallback to address for backward compatibility
 	return fmt.Sprintf("%s:%s", serviceType.String(), location.Address)
+}
+
+// ===== CLUSTER CAPACITY & LICENSE ENFORCEMENT =====
+
+// updateClusterCapacity recalculates and caches cluster-wide capacity from file services.
+// Should be called with ms.mu held (write lock).
+func (ms *ManagerServer) updateClusterCapacity() {
+	var totalBytes, usedBytes uint64
+	var activeServices int
+
+	for _, reg := range ms.fileServices {
+		if reg.Status != ServiceActive {
+			continue
+		}
+		activeServices++
+
+		for _, storageBackend := range reg.StorageBackends {
+			for _, backend := range storageBackend.Backends {
+				totalBytes += backend.TotalBytes
+				usedBytes += backend.UsedBytes
+			}
+		}
+	}
+
+	ms.clusterCapacity = ClusterCapacity{
+		TotalBytes:   totalBytes,
+		UsedBytes:    usedBytes,
+		UpdatedAt:    time.Now(),
+		FileServices: activeServices,
+	}
+
+	logger.Debug().
+		Str("total", humanize.IBytes(totalBytes)).
+		Str("used", humanize.IBytes(usedBytes)).
+		Int("file_services", activeServices).
+		Msg("Cluster capacity updated")
+}
+
+// GetClusterCapacity returns the cached cluster capacity metrics.
+// This is O(1) and safe for frequent reads.
+func (ms *ManagerServer) GetClusterCapacity() ClusterCapacity {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.clusterCapacity
+}
+
+// GetActiveFileServiceCount returns the number of active file services.
+func (ms *ManagerServer) GetActiveFileServiceCount() int {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	count := 0
+	for _, reg := range ms.fileServices {
+		if reg.Status == ServiceActive {
+			count++
+		}
+	}
+	return count
+}
+
+// LogClusterCapacity logs the current cluster capacity in human-readable format.
+func (ms *ManagerServer) LogClusterCapacity() {
+	capacity := ms.GetClusterCapacity()
+	freeBytes := capacity.TotalBytes - capacity.UsedBytes
+	usagePercent := float64(0)
+	if capacity.TotalBytes > 0 {
+		usagePercent = float64(capacity.UsedBytes) / float64(capacity.TotalBytes) * 100
+	}
+
+	logger.Info().
+		Str("total", humanize.IBytes(capacity.TotalBytes)).
+		Str("used", humanize.IBytes(capacity.UsedBytes)).
+		Str("free", humanize.IBytes(freeBytes)).
+		Str("usage", fmt.Sprintf("%.1f%%", usagePercent)).
+		Int("file_services", capacity.FileServices).
+		Time("updated_at", capacity.UpdatedAt).
+		Msg("Cluster capacity summary")
 }

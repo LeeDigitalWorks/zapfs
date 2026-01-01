@@ -17,6 +17,8 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
+
+	"github.com/dustin/go-humanize"
 )
 
 // Coordinator manages interaction with file servers and the manager.
@@ -354,7 +356,7 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 	etag := hex.EncodeToString(hash.Sum(nil))
 	logger.Info().
 		Str("object_id", req.ObjectID).
-		Uint64("bytes", bytesWritten).
+		Str("size", humanize.IBytes(bytesWritten)).
 		Str("etag", etag).
 		Int("successful", len(successfulTargets)).
 		Int("failed", len(failedTargets)).
@@ -369,9 +371,11 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 
 // ReadObject reads data from file servers with failover.
 // It tries each chunk reference until one succeeds.
+// Returns nil for empty objects (no chunks to read).
 func (c *Coordinator) ReadObject(ctx context.Context, req *ReadRequest, writer io.Writer) error {
+	// Empty object (size=0) has no chunks - nothing to read
 	if len(req.ChunkRefs) == 0 {
-		return fmt.Errorf("no chunk refs provided")
+		return nil
 	}
 
 	var lastErr error
@@ -403,9 +407,11 @@ func (c *Coordinator) ReadObject(ctx context.Context, req *ReadRequest, writer i
 }
 
 // ReadObjectRange reads a range of bytes from file servers with failover.
+// Returns nil for empty objects (no chunks to read).
 func (c *Coordinator) ReadObjectRange(ctx context.Context, req *ReadRangeRequest, writer io.Writer) error {
+	// Empty object (size=0) has no chunks - nothing to read
 	if len(req.ChunkRefs) == 0 {
-		return fmt.Errorf("no chunk refs provided")
+		return nil
 	}
 
 	var lastErr error
@@ -440,9 +446,11 @@ func (c *Coordinator) ReadObjectRange(ctx context.Context, req *ReadRangeRequest
 
 // ReadObjectToBuffer reads full object data into a buffer.
 // This is used for encrypted objects that need full decryption.
+// Returns empty byte slice for empty objects (no chunks to read).
 func (c *Coordinator) ReadObjectToBuffer(ctx context.Context, chunkRefs []types.ChunkRef) ([]byte, error) {
+	// Empty object (size=0) has no chunks - return empty slice
 	if len(chunkRefs) == 0 {
-		return nil, fmt.Errorf("no chunk refs provided")
+		return []byte{}, nil
 	}
 
 	var lastErr error

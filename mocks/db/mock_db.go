@@ -6,10 +6,10 @@ package mocks
 
 import (
 	"context"
+
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
-
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -862,6 +862,63 @@ func (_c *MockDB_DeleteObjectVersion_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// DeleteOwnershipControls provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteOwnershipControls(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteOwnershipControls")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteOwnershipControls_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteOwnershipControls'
+type MockDB_DeleteOwnershipControls_Call struct {
+	*mock.Call
+}
+
+// DeleteOwnershipControls is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) DeleteOwnershipControls(ctx interface{}, bucket interface{}) *MockDB_DeleteOwnershipControls_Call {
+	return &MockDB_DeleteOwnershipControls_Call{Call: _e.mock.On("DeleteOwnershipControls", ctx, bucket)}
+}
+
+func (_c *MockDB_DeleteOwnershipControls_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_DeleteOwnershipControls_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteOwnershipControls_Call) Return(err error) *MockDB_DeleteOwnershipControls_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteOwnershipControls_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteOwnershipControls_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteParts provides a mock function for the type MockDB
 func (_mock *MockDB) DeleteParts(ctx context.Context, uploadID string) error {
 	ret := _mock.Called(ctx, uploadID)
@@ -915,6 +972,63 @@ func (_c *MockDB_DeleteParts_Call) Return(err error) *MockDB_DeleteParts_Call {
 }
 
 func (_c *MockDB_DeleteParts_Call) RunAndReturn(run func(ctx context.Context, uploadID string) error) *MockDB_DeleteParts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeletePublicAccessBlock provides a mock function for the type MockDB
+func (_mock *MockDB) DeletePublicAccessBlock(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeletePublicAccessBlock")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeletePublicAccessBlock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeletePublicAccessBlock'
+type MockDB_DeletePublicAccessBlock_Call struct {
+	*mock.Call
+}
+
+// DeletePublicAccessBlock is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) DeletePublicAccessBlock(ctx interface{}, bucket interface{}) *MockDB_DeletePublicAccessBlock_Call {
+	return &MockDB_DeletePublicAccessBlock_Call{Call: _e.mock.On("DeletePublicAccessBlock", ctx, bucket)}
+}
+
+func (_c *MockDB_DeletePublicAccessBlock_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_DeletePublicAccessBlock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeletePublicAccessBlock_Call) Return(err error) *MockDB_DeletePublicAccessBlock_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeletePublicAccessBlock_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeletePublicAccessBlock_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2129,6 +2243,74 @@ func (_c *MockDB_GetObjectVersion_Call) RunAndReturn(run func(ctx context.Contex
 	return _c
 }
 
+// GetOwnershipControls provides a mock function for the type MockDB
+func (_mock *MockDB) GetOwnershipControls(ctx context.Context, bucket string) (*s3types.OwnershipControls, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetOwnershipControls")
+	}
+
+	var r0 *s3types.OwnershipControls
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*s3types.OwnershipControls, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *s3types.OwnershipControls); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*s3types.OwnershipControls)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetOwnershipControls_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetOwnershipControls'
+type MockDB_GetOwnershipControls_Call struct {
+	*mock.Call
+}
+
+// GetOwnershipControls is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetOwnershipControls(ctx interface{}, bucket interface{}) *MockDB_GetOwnershipControls_Call {
+	return &MockDB_GetOwnershipControls_Call{Call: _e.mock.On("GetOwnershipControls", ctx, bucket)}
+}
+
+func (_c *MockDB_GetOwnershipControls_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetOwnershipControls_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetOwnershipControls_Call) Return(ownershipControls *s3types.OwnershipControls, err error) *MockDB_GetOwnershipControls_Call {
+	_c.Call.Return(ownershipControls, err)
+	return _c
+}
+
+func (_c *MockDB_GetOwnershipControls_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*s3types.OwnershipControls, error)) *MockDB_GetOwnershipControls_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPart provides a mock function for the type MockDB
 func (_mock *MockDB) GetPart(ctx context.Context, uploadID string, partNumber int) (*types.MultipartPart, error) {
 	ret := _mock.Called(ctx, uploadID, partNumber)
@@ -2199,6 +2381,74 @@ func (_c *MockDB_GetPart_Call) Return(multipartPart *types.MultipartPart, err er
 }
 
 func (_c *MockDB_GetPart_Call) RunAndReturn(run func(ctx context.Context, uploadID string, partNumber int) (*types.MultipartPart, error)) *MockDB_GetPart_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetPublicAccessBlock provides a mock function for the type MockDB
+func (_mock *MockDB) GetPublicAccessBlock(ctx context.Context, bucket string) (*s3types.PublicAccessBlockConfig, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPublicAccessBlock")
+	}
+
+	var r0 *s3types.PublicAccessBlockConfig
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*s3types.PublicAccessBlockConfig, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *s3types.PublicAccessBlockConfig); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*s3types.PublicAccessBlockConfig)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetPublicAccessBlock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPublicAccessBlock'
+type MockDB_GetPublicAccessBlock_Call struct {
+	*mock.Call
+}
+
+// GetPublicAccessBlock is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetPublicAccessBlock(ctx interface{}, bucket interface{}) *MockDB_GetPublicAccessBlock_Call {
+	return &MockDB_GetPublicAccessBlock_Call{Call: _e.mock.On("GetPublicAccessBlock", ctx, bucket)}
+}
+
+func (_c *MockDB_GetPublicAccessBlock_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetPublicAccessBlock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetPublicAccessBlock_Call) Return(publicAccessBlockConfig *s3types.PublicAccessBlockConfig, err error) *MockDB_GetPublicAccessBlock_Call {
+	_c.Call.Return(publicAccessBlockConfig, err)
+	return _c
+}
+
+func (_c *MockDB_GetPublicAccessBlock_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*s3types.PublicAccessBlockConfig, error)) *MockDB_GetPublicAccessBlock_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -3881,6 +4131,132 @@ func (_c *MockDB_SetObjectTagging_Call) Return(err error) *MockDB_SetObjectTaggi
 }
 
 func (_c *MockDB_SetObjectTagging_Call) RunAndReturn(run func(ctx context.Context, bucket string, key string, tagSet *s3types.TagSet) error) *MockDB_SetObjectTagging_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetOwnershipControls provides a mock function for the type MockDB
+func (_mock *MockDB) SetOwnershipControls(ctx context.Context, bucket string, controls *s3types.OwnershipControls) error {
+	ret := _mock.Called(ctx, bucket, controls)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetOwnershipControls")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *s3types.OwnershipControls) error); ok {
+		r0 = returnFunc(ctx, bucket, controls)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetOwnershipControls_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetOwnershipControls'
+type MockDB_SetOwnershipControls_Call struct {
+	*mock.Call
+}
+
+// SetOwnershipControls is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - controls *s3types.OwnershipControls
+func (_e *MockDB_Expecter) SetOwnershipControls(ctx interface{}, bucket interface{}, controls interface{}) *MockDB_SetOwnershipControls_Call {
+	return &MockDB_SetOwnershipControls_Call{Call: _e.mock.On("SetOwnershipControls", ctx, bucket, controls)}
+}
+
+func (_c *MockDB_SetOwnershipControls_Call) Run(run func(ctx context.Context, bucket string, controls *s3types.OwnershipControls)) *MockDB_SetOwnershipControls_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *s3types.OwnershipControls
+		if args[2] != nil {
+			arg2 = args[2].(*s3types.OwnershipControls)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetOwnershipControls_Call) Return(err error) *MockDB_SetOwnershipControls_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetOwnershipControls_Call) RunAndReturn(run func(ctx context.Context, bucket string, controls *s3types.OwnershipControls) error) *MockDB_SetOwnershipControls_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetPublicAccessBlock provides a mock function for the type MockDB
+func (_mock *MockDB) SetPublicAccessBlock(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig) error {
+	ret := _mock.Called(ctx, bucket, config)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetPublicAccessBlock")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *s3types.PublicAccessBlockConfig) error); ok {
+		r0 = returnFunc(ctx, bucket, config)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetPublicAccessBlock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetPublicAccessBlock'
+type MockDB_SetPublicAccessBlock_Call struct {
+	*mock.Call
+}
+
+// SetPublicAccessBlock is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - config *s3types.PublicAccessBlockConfig
+func (_e *MockDB_Expecter) SetPublicAccessBlock(ctx interface{}, bucket interface{}, config interface{}) *MockDB_SetPublicAccessBlock_Call {
+	return &MockDB_SetPublicAccessBlock_Call{Call: _e.mock.On("SetPublicAccessBlock", ctx, bucket, config)}
+}
+
+func (_c *MockDB_SetPublicAccessBlock_Call) Run(run func(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig)) *MockDB_SetPublicAccessBlock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *s3types.PublicAccessBlockConfig
+		if args[2] != nil {
+			arg2 = args[2].(*s3types.PublicAccessBlockConfig)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetPublicAccessBlock_Call) Return(err error) *MockDB_SetPublicAccessBlock_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetPublicAccessBlock_Call) RunAndReturn(run func(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig) error) *MockDB_SetPublicAccessBlock_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -378,3 +378,59 @@ func hmacSHA256(key, data []byte) []byte {
 func constantTimeCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
+
+// StreamingAuthResult contains the authentication result and signing context
+// needed for verifying chunked upload signatures.
+type StreamingAuthResult struct {
+	Identity      *iam.Identity
+	SigningKey    []byte // Derived signing key for chunk verification
+	SeedSignature string // Initial request signature (seed for chunk chain)
+	Timestamp     string // ISO8601 timestamp from request
+	Region        string
+	Service       string
+}
+
+// VerifyStreamingRequest verifies the initial request signature for streaming uploads
+// and returns the signing context needed for chunk-level verification.
+func (v *V4Verifier) VerifyStreamingRequest(r *http.Request) (*StreamingAuthResult, s3err.ErrorCode) {
+	// 1. Extract authentication info
+	auth, err := v.extractAuthInfo(r)
+	if err != nil {
+		return nil, s3err.ErrAccessDenied
+	}
+
+	// 2. Lookup credentials by access key
+	identity, credential, found := v.iamManager.LookupByAccessKey(r.Context(), auth.accessKey)
+	if !found {
+		return nil, s3err.ErrInvalidAccessKeyID
+	}
+
+	// 3. Build canonical request
+	canonicalReq, err := v.buildCanonicalRequest(r, auth.signedHeaders)
+	if err != nil {
+		return nil, s3err.ErrSignatureDoesNotMatch
+	}
+
+	// 4. Build string to sign
+	stringToSign := v.buildStringToSign(auth, canonicalReq)
+
+	// 5. Derive signing key
+	signingKey := v.deriveSigningKey(credential.SecretKey, auth.date, auth.region, auth.service)
+
+	// 6. Calculate expected signature
+	expectedSig := v.calculateSignature(signingKey, stringToSign)
+
+	// 7. Compare signatures (constant time)
+	if !constantTimeCompare(auth.signature, expectedSig) {
+		return nil, s3err.ErrSignatureDoesNotMatch
+	}
+
+	return &StreamingAuthResult{
+		Identity:      identity,
+		SigningKey:    signingKey,
+		SeedSignature: auth.signature,
+		Timestamp:     auth.timestamp,
+		Region:        auth.region,
+		Service:       auth.service,
+	}, s3err.ErrNone
+}

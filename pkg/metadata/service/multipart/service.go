@@ -14,6 +14,9 @@ type Service interface {
 	// UploadPart uploads a part of a multipart upload.
 	UploadPart(ctx context.Context, req *UploadPartRequest) (*UploadPartResult, error)
 
+	// UploadPartCopy copies data from an existing object as a part.
+	UploadPartCopy(ctx context.Context, req *UploadPartCopyRequest) (*UploadPartCopyResult, error)
+
 	// CompleteUpload completes a multipart upload by assembling parts.
 	CompleteUpload(ctx context.Context, req *CompleteUploadRequest) (*CompleteUploadResult, error)
 
@@ -60,6 +63,30 @@ type UploadPartRequest struct {
 // UploadPartResult contains the result of uploading a part
 type UploadPartResult struct {
 	ETag string
+}
+
+// UploadPartCopyRequest contains parameters for copying a part from an existing object
+type UploadPartCopyRequest struct {
+	Bucket       string
+	Key          string
+	UploadID     string
+	PartNumber   int
+	SourceBucket string
+	SourceKey    string
+	// SourceRange is optional, format: "bytes=start-end" (inclusive)
+	// If empty, copy the entire source object
+	SourceRange string
+	// Conditional copy headers
+	CopySourceIfMatch           string
+	CopySourceIfNoneMatch       string
+	CopySourceIfModifiedSince   *int64 // Unix timestamp
+	CopySourceIfUnmodifiedSince *int64 // Unix timestamp
+}
+
+// UploadPartCopyResult contains the result of copying a part
+type UploadPartCopyResult struct {
+	ETag         string
+	LastModified int64 // Unix nanoseconds
 }
 
 // CompleteUploadRequest contains parameters for completing a multipart upload

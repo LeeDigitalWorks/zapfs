@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package usage_pb;
+option go_package = "github.com/LeeDigitalWorks/zapfs/proto/usage_pb";
+
+import "google/protobuf/timestamp.proto";
+
+// UsageReportingService provides usage metrics for billing and analytics.
+// This is an enterprise feature requiring FeatureAdvancedMetrics or FeatureMultiTenancy license.
+service UsageReportingService {
+    // RequestReport queues an async usage report generation job.
+    rpc RequestReport(ReportRequest) returns (ReportJob);
+
+    // GetReport retrieves the status or result of a report job.
+    rpc GetReport(GetReportRequest) returns (GetReportResponse);
+
+    // GetCurrentUsage returns real-time usage estimate without report generation.
+    rpc GetCurrentUsage(CurrentUsageRequest) returns (CurrentUsage);
+
+    // StreamUsageUpdates streams real-time usage updates for dashboards.
+    rpc StreamUsageUpdates(StreamUsageRequest) returns (stream UsageUpdate);
+
+    // ListReports lists recent report jobs for an owner.
+    rpc ListReports(ListReportsRequest) returns (ListReportsResponse);
+}
+
+// ReportRequest specifies parameters for generating a usage report.
+message ReportRequest {
+    string owner_id = 1;
+    string month = 2;           // Format: "2025-01"
+    bool include_daily = 3;     // Include per-day breakdown in response
+}
+
+// ReportJob represents an async report generation job.
+message ReportJob {
+    string job_id = 1;
+    string status = 2;          // "pending", "processing", "completed", "failed"
+    int32 progress_pct = 3;
+    int32 estimated_seconds = 4;
+    google.protobuf.Timestamp created_at = 5;
+}
+
+// GetReportRequest retrieves a specific report job.
+message GetReportRequest {
+    string job_id = 1;
+}
+
+// GetReportResponse contains the report job status and result if completed.
+message GetReportResponse {
+    string job_id = 1;
+    string status = 2;
+    int32 progress_pct = 3;
+    string error_message = 4;   // Populated if status is "failed"
+    UsageReport report = 5;     // Populated if status is "completed"
+}
+
+// CurrentUsageRequest requests real-time usage for an owner.
+message CurrentUsageRequest {
+    string owner_id = 1;
+}
+
+// CurrentUsage contains real-time usage estimates.
+message CurrentUsage {
+    string owner_id = 1;
+    google.protobuf.Timestamp as_of = 2;
+    int64 storage_bytes = 3;
+    int64 object_count = 4;
+    repeated BucketSnapshot buckets = 5;
+    int64 mtd_requests = 6;         // Month-to-date request count
+    int64 mtd_bandwidth_egress = 7; // Month-to-date egress bytes
+}
+
+// BucketSnapshot contains current usage for a single bucket.
+message BucketSnapshot {
+    string bucket = 1;
+    int64 storage_bytes = 2;
+    int64 object_count = 3;
+}
+
+// StreamUsageRequest specifies which usage updates to stream.
+message StreamUsageRequest {
+    string owner_id = 1;
+    repeated string buckets = 2; // Filter to specific buckets (empty = all)
+}
+
+// UsageUpdate represents a single usage event for streaming.
+message UsageUpdate {
+    google.protobuf.Timestamp timestamp = 1;
+    string bucket = 2;
+    string event_type = 3;      // "storage", "request", "bandwidth"
+    int64 delta = 4;            // Change amount
+    string operation = 5;       // e.g., "PutObject", "GetObject"
+}
+
+// UsageReport is the complete usage report for a billing period.
+message UsageReport {
+    string report_id = 1;
+    string owner_id = 2;
+    google.protobuf.Timestamp period_start = 3;
+    google.protobuf.Timestamp period_end = 4;
+    google.protobuf.Timestamp generated_at = 5;
+    UsageSummary summary = 6;
+    repeated BucketUsage buckets = 7;
+}
+
+// UsageSummary contains aggregated totals across all buckets.
+message UsageSummary {
+    int64 storage_bytes_avg = 1;    // Average storage over period
+    int64 storage_bytes_max = 2;    // Peak storage during period
+    int64 object_count_avg = 3;     // Average object count
+    map<string, int64> storage_by_class = 4; // e.g., "STANDARD" -> bytes
+    RequestCounts requests = 5;
+    int64 bandwidth_ingress = 6;
+    int64 bandwidth_egress = 7;
+}
+
+// BucketUsage contains usage for a single bucket.
+message BucketUsage {
+    string bucket = 1;
+    int64 storage_bytes_avg = 2;
+    int64 storage_bytes_max = 3;
+    int64 object_count_avg = 4;
+    map<string, int64> storage_by_class = 5;
+    RequestCounts requests = 6;
+    int64 bandwidth_ingress = 7;
+    int64 bandwidth_egress = 8;
+    repeated DailyUsage daily = 9;  // Populated if include_daily=true
+}
+
+// RequestCounts breaks down requests by operation type.
+message RequestCounts {
+    int64 get = 1;
+    int64 put = 2;
+    int64 delete = 3;
+    int64 list = 4;
+    int64 head = 5;
+    int64 copy = 6;
+    int64 other = 7;
+    int64 total = 8;
+}
+
+// DailyUsage contains usage for a single day.
+message DailyUsage {
+    string date = 1;            // Format: "2025-01-15"
+    int64 storage_bytes = 2;
+    int64 object_count = 3;
+    RequestCounts requests = 4;
+    int64 bandwidth_ingress = 5;
+    int64 bandwidth_egress = 6;
+}
+
+// ListReportsRequest requests recent report jobs.
+message ListReportsRequest {
+    string owner_id = 1;
+    int32 limit = 2;            // Max reports to return (default: 10)
+}
+
+// ListReportsResponse contains recent report jobs.
+message ListReportsResponse {
+    repeated ReportJob reports = 1;
+}

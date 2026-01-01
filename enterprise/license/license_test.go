@@ -32,13 +32,11 @@ func TestLicenseGeneration(t *testing.T) {
 
 	// Generate a license
 	licenseKey, err := generator.Generate(LicenseRequest{
-		CustomerID:    "cust_123",
-		CustomerName:  "Acme Corp",
-		Features:      []Feature{FeatureAuditLog, FeatureLDAP, FeatureKMS},
-		MaxNodes:      10,
-		MaxCapacityTB: 100,
-		Tier:          "premium",
-		ValidDays:     365,
+		CustomerID:   "cust_123",
+		CustomerName: "Acme Corp",
+		Features:     []Feature{FeatureAuditLog, FeatureLDAP, FeatureKMS},
+		Tier:         "premium",
+		ValidDays:    365,
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, licenseKey)
@@ -54,8 +52,6 @@ func TestLicenseGeneration(t *testing.T) {
 	assert.Equal(t, "cust_123", license.CustomerID)
 	assert.Equal(t, "Acme Corp", license.CustomerName)
 	assert.Equal(t, "premium", license.Tier)
-	assert.Equal(t, 10, license.MaxNodes)
-	assert.Equal(t, 100, license.MaxCapacityTB)
 	assert.Len(t, license.Features, 3)
 	assert.True(t, license.HasFeature(FeatureAuditLog))
 	assert.True(t, license.HasFeature(FeatureLDAP))
@@ -145,46 +141,6 @@ func TestFeatureCheck(t *testing.T) {
 	// Check disabled features
 	assert.ErrorIs(t, manager.CheckFeature(FeatureKMS), ErrFeatureDisabled)
 	assert.ErrorIs(t, manager.CheckFeature(FeatureMultiRegion), ErrFeatureDisabled)
-}
-
-func TestNodeAndCapacityLimits(t *testing.T) {
-	t.Parallel()
-
-	privateKeyPEM, publicKeyPEM, err := GenerateKeyPair()
-	require.NoError(t, err)
-
-	generator, err := NewGenerator(privateKeyPEM)
-	require.NoError(t, err)
-
-	manager, err := NewManager(publicKeyPEM)
-	require.NoError(t, err)
-
-	// Load license with limits
-	licenseKey, err := generator.Generate(LicenseRequest{
-		CustomerID:    "cust_123",
-		CustomerName:  "Limited Corp",
-		Features:      []Feature{FeatureAuditLog},
-		MaxNodes:      5,
-		MaxCapacityTB: 50,
-		Tier:          "standard",
-		ValidDays:     30,
-	})
-	require.NoError(t, err)
-
-	err = manager.LoadLicense(licenseKey)
-	require.NoError(t, err)
-
-	// Check node limits
-	assert.NoError(t, manager.CheckNodeLimit(0))
-	assert.NoError(t, manager.CheckNodeLimit(4))
-	assert.ErrorIs(t, manager.CheckNodeLimit(5), ErrNodeLimitExceeded)
-	assert.ErrorIs(t, manager.CheckNodeLimit(10), ErrNodeLimitExceeded)
-
-	// Check capacity limits
-	assert.NoError(t, manager.CheckCapacityLimit(0))
-	assert.NoError(t, manager.CheckCapacityLimit(49))
-	assert.ErrorIs(t, manager.CheckCapacityLimit(50), ErrCapacityLimitExceeded)
-	assert.ErrorIs(t, manager.CheckCapacityLimit(100), ErrCapacityLimitExceeded)
 }
 
 func TestLicenseInfo(t *testing.T) {
@@ -409,7 +365,6 @@ func TestConcurrentAccess(t *testing.T) {
 		CustomerID:   "concurrent_test",
 		CustomerName: "Concurrent Corp",
 		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
-		MaxNodes:     100,
 		Tier:         "enterprise",
 		ValidDays:    365,
 	})
@@ -434,7 +389,6 @@ func TestConcurrentAccess(t *testing.T) {
 					_ = license.CustomerID
 					_ = manager.IsLicensed()
 					_ = manager.CheckFeature(FeatureAuditLog)
-					_ = manager.CheckNodeLimit(50)
 					readCount.Add(1)
 				}
 			}

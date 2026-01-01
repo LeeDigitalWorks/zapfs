@@ -370,7 +370,7 @@ func maskDSN(dsn string) string {
 	return "***"
 }
 
-func startMetadataGRPCServer(opts MetadataServerOpts, ms metadata_pb.MetadataServiceServer) *grpc.Server {
+func startMetadataGRPCServer(opts MetadataServerOpts, ms *api.MetadataServer) *grpc.Server {
 	listener, err := utils.NewListener(utils.JoinHostPort(opts.IP, opts.GRPCPort), 0)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to create gRPC listener")
@@ -380,6 +380,13 @@ func startMetadataGRPCServer(opts MetadataServerOpts, ms metadata_pb.MetadataSer
 	grpcServer := proto.NewGRPCServer(grpcOpts...)
 	reflection.Register(grpcServer)
 	metadata_pb.RegisterMetadataServiceServer(grpcServer, ms)
+
+	// Register usage reporting gRPC service
+	api.RegisterUsageService(grpcServer, api.UsageServiceConfig{
+		Store:     ms.UsageStore(),
+		Collector: ms.UsageCollector(),
+		Config:    ms.UsageConfig(),
+	})
 
 	go func() {
 		logger.Info().Str("grpc_addr", utils.JoinHostPort(opts.IP, opts.GRPCPort)).Msg("Starting metadata gRPC server")

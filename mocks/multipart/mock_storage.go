@@ -6,9 +6,10 @@ package mocks
 
 import (
 	"context"
+	"io"
+
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
-
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -94,6 +95,132 @@ func (_c *MockStorage_DecrementChunkRefCounts_Call) Return(failedDecrements []st
 }
 
 func (_c *MockStorage_DecrementChunkRefCounts_Call) RunAndReturn(run func(ctx context.Context, chunks []types.ChunkRef) []storage.FailedDecrement) *MockStorage_DecrementChunkRefCounts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReadObject provides a mock function for the type MockStorage
+func (_mock *MockStorage) ReadObject(ctx context.Context, req *storage.ReadRequest, writer io.Writer) error {
+	ret := _mock.Called(ctx, req, writer)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReadObject")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *storage.ReadRequest, io.Writer) error); ok {
+		r0 = returnFunc(ctx, req, writer)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockStorage_ReadObject_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReadObject'
+type MockStorage_ReadObject_Call struct {
+	*mock.Call
+}
+
+// ReadObject is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *storage.ReadRequest
+//   - writer io.Writer
+func (_e *MockStorage_Expecter) ReadObject(ctx interface{}, req interface{}, writer interface{}) *MockStorage_ReadObject_Call {
+	return &MockStorage_ReadObject_Call{Call: _e.mock.On("ReadObject", ctx, req, writer)}
+}
+
+func (_c *MockStorage_ReadObject_Call) Run(run func(ctx context.Context, req *storage.ReadRequest, writer io.Writer)) *MockStorage_ReadObject_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *storage.ReadRequest
+		if args[1] != nil {
+			arg1 = args[1].(*storage.ReadRequest)
+		}
+		var arg2 io.Writer
+		if args[2] != nil {
+			arg2 = args[2].(io.Writer)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockStorage_ReadObject_Call) Return(err error) *MockStorage_ReadObject_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockStorage_ReadObject_Call) RunAndReturn(run func(ctx context.Context, req *storage.ReadRequest, writer io.Writer) error) *MockStorage_ReadObject_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReadObjectRange provides a mock function for the type MockStorage
+func (_mock *MockStorage) ReadObjectRange(ctx context.Context, req *storage.ReadRangeRequest, writer io.Writer) error {
+	ret := _mock.Called(ctx, req, writer)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReadObjectRange")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *storage.ReadRangeRequest, io.Writer) error); ok {
+		r0 = returnFunc(ctx, req, writer)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockStorage_ReadObjectRange_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReadObjectRange'
+type MockStorage_ReadObjectRange_Call struct {
+	*mock.Call
+}
+
+// ReadObjectRange is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *storage.ReadRangeRequest
+//   - writer io.Writer
+func (_e *MockStorage_Expecter) ReadObjectRange(ctx interface{}, req interface{}, writer interface{}) *MockStorage_ReadObjectRange_Call {
+	return &MockStorage_ReadObjectRange_Call{Call: _e.mock.On("ReadObjectRange", ctx, req, writer)}
+}
+
+func (_c *MockStorage_ReadObjectRange_Call) Run(run func(ctx context.Context, req *storage.ReadRangeRequest, writer io.Writer)) *MockStorage_ReadObjectRange_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *storage.ReadRangeRequest
+		if args[1] != nil {
+			arg1 = args[1].(*storage.ReadRangeRequest)
+		}
+		var arg2 io.Writer
+		if args[2] != nil {
+			arg2 = args[2].(io.Writer)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockStorage_ReadObjectRange_Call) Return(err error) *MockStorage_ReadObjectRange_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockStorage_ReadObjectRange_Call) RunAndReturn(run func(ctx context.Context, req *storage.ReadRangeRequest, writer io.Writer) error) *MockStorage_ReadObjectRange_Call {
 	_c.Call.Return(run)
 	return _c
 }

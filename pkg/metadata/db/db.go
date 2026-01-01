@@ -95,6 +95,12 @@ type DB interface {
 	// Object Lock operations
 	ObjectLockStore
 
+	// Public Access Block operations
+	PublicAccessBlockStore
+
+	// Ownership Controls operations
+	OwnershipControlsStore
+
 	// Transaction support - executes fn within a transaction.
 	// If fn returns an error, the transaction is rolled back.
 	// If fn returns nil, the transaction is committed.
@@ -383,12 +389,38 @@ type ObjectLockStore interface {
 	SetObjectLegalHold(ctx context.Context, bucket, key string, legalHold *s3types.ObjectLockLegalHold) error
 }
 
+// PublicAccessBlockStore provides operations for public access block configurations
+type PublicAccessBlockStore interface {
+	// GetPublicAccessBlock retrieves the public access block config for a bucket
+	GetPublicAccessBlock(ctx context.Context, bucket string) (*s3types.PublicAccessBlockConfig, error)
+
+	// SetPublicAccessBlock stores the public access block config for a bucket
+	SetPublicAccessBlock(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig) error
+
+	// DeletePublicAccessBlock removes the public access block config for a bucket
+	DeletePublicAccessBlock(ctx context.Context, bucket string) error
+}
+
+// OwnershipControlsStore provides operations for bucket ownership controls
+type OwnershipControlsStore interface {
+	// GetOwnershipControls retrieves the ownership controls for a bucket
+	GetOwnershipControls(ctx context.Context, bucket string) (*s3types.OwnershipControls, error)
+
+	// SetOwnershipControls stores the ownership controls for a bucket
+	SetOwnershipControls(ctx context.Context, bucket string, controls *s3types.OwnershipControls) error
+
+	// DeleteOwnershipControls removes the ownership controls for a bucket
+	DeleteOwnershipControls(ctx context.Context, bucket string) error
+}
+
 // Common Lifecycle/ObjectLock errors
 var (
-	ErrLifecycleNotFound  = fmt.Errorf("lifecycle configuration not found")
-	ErrObjectLockNotFound = fmt.Errorf("object lock configuration not found")
-	ErrRetentionNotFound  = fmt.Errorf("retention not found")
-	ErrLegalHoldNotFound  = fmt.Errorf("legal hold not found")
+	ErrLifecycleNotFound        = fmt.Errorf("lifecycle configuration not found")
+	ErrObjectLockNotFound       = fmt.Errorf("object lock configuration not found")
+	ErrRetentionNotFound        = fmt.Errorf("retention not found")
+	ErrLegalHoldNotFound        = fmt.Errorf("legal hold not found")
+	ErrPublicAccessBlockNotFound = fmt.Errorf("public access block configuration not found")
+	ErrOwnershipControlsNotFound = fmt.Errorf("ownership controls not found")
 )
 
 // ============================================================================

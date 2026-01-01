@@ -3,6 +3,7 @@ package filter
 import (
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -86,4 +87,14 @@ func (c *Chain) Run(d *data.Data) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// GetIAMManager returns the IAM manager from the authentication filter
+func (c *Chain) GetIAMManager() *iam.Manager {
+	for _, f := range c.filters {
+		if authFilter, ok := f.(*AuthenticationFilter); ok {
+			return authFilter.GetIAMManager()
+		}
+	}
+	return nil
 }

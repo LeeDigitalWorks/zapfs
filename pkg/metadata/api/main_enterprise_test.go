@@ -34,8 +34,6 @@ func initTestLicense() {
 		CustomerID:    "test_customer",
 		CustomerName:  "ZapFS Test Suite",
 		Features:      license.AllFeatures(),
-		MaxNodes:      1000,
-		MaxCapacityTB: 10000,
 		Tier:          "enterprise",
 		ValidDays:     365,
 	})

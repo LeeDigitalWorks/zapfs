@@ -7,7 +7,6 @@ package mocks
 import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
-
 	mock "github.com/stretchr/testify/mock"
 )
 

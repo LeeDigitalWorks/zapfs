@@ -14,6 +14,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/placer"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/usage"
 	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -65,6 +66,13 @@ type MetadataServer struct {
 
 	// IAM service for KMS operations (enterprise feature)
 	iamService *iam.Service
+
+	// Usage reporting (enterprise feature)
+	usageConfig     usage.Config
+	usageStore      usage.Store
+	usageCollector  usage.Collector
+	usageAggregator *usage.Aggregator
+	usageReporter   *usage.Reporter
 }
 
 // ServerConfig holds configuration for creating a MetadataServer
@@ -83,6 +91,8 @@ type ServerConfig struct {
 	CRRHook           *CRRHook        // Enterprise: cross-region replication hook
 	IAMService        *iam.Service    // IAM service for KMS operations (enterprise feature)
 	TaskQueue         taskqueue.Queue // Optional: for GC decrement retry and background tasks
+	UsageConfig       usage.Config    // Usage reporting configuration
+	UsageStore        usage.Store     // Usage data store (nil = use NopStore)
 }
 
 func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
@@ -121,6 +131,19 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		svc = nil
 	}
 
+	// Initialize usage reporting
+	usageConfig := cfg.UsageConfig
+	usageConfig.Validate()
+
+	usageStore := cfg.UsageStore
+	if usageStore == nil {
+		usageStore = &usage.NopStore{}
+	}
+
+	usageCollector := usage.NewCollector(usageConfig, usageStore)
+	usageAggregator := usage.NewAggregator(usageConfig, usageStore)
+	usageReporter := usage.NewReporter(usageConfig, usageStore)
+
 	ms := &MetadataServer{
 		ctx:               ctx,
 		cancel:            cancel,
@@ -146,6 +169,11 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 			Help:    "Duration of S3 API requests",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"action", "status_code"}),
+		usageConfig:     usageConfig,
+		usageStore:      usageStore,
+		usageCollector:  usageCollector,
+		usageAggregator: usageAggregator,
+		usageReporter:   usageReporter,
 	}
 
 	// Set CRR hook if provided
@@ -153,6 +181,11 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 
 	// Set IAM service if provided (for KMS operations)
 	ms.iamService = cfg.IAMService
+
+	// Start usage collector, aggregator, and report processor
+	ms.usageCollector.Start(ctx)
+	ms.usageAggregator.Start(ctx)
+	ms.usageReporter.Start(ctx)
 
 	// Register S3 API handlers (both HTTP and gRPC can call these)
 	// Handlers are organized by file location for maintainability.
@@ -344,5 +377,31 @@ func (ms *MetadataServer) Shutdown() error {
 		ms.backendManager.Close()
 	}
 
+	// Stop usage reporting
+	if ms.usageCollector != nil {
+		ms.usageCollector.Stop()
+	}
+	if ms.usageAggregator != nil {
+		ms.usageAggregator.Stop()
+	}
+	if ms.usageReporter != nil {
+		ms.usageReporter.Stop()
+	}
+
 	return nil
+}
+
+// UsageCollector returns the usage collector for recording events.
+func (ms *MetadataServer) UsageCollector() usage.Collector {
+	return ms.usageCollector
+}
+
+// UsageStore returns the usage store for querying usage data.
+func (ms *MetadataServer) UsageStore() usage.Store {
+	return ms.usageStore
+}
+
+// UsageConfig returns the usage configuration.
+func (ms *MetadataServer) UsageConfig() usage.Config {
+	return ms.usageConfig
 }

@@ -3,8 +3,19 @@
 // that can be found in the LICENSE.enterprise file.
 
 // Package license provides enterprise license types.
-// This file has NO build constraints so types can be imported by zapfs-portal.
 package license
+
+import "github.com/golang-jwt/jwt/v5"
+
+// Claims represents the JWT claims in a license key.
+type Claims struct {
+	jwt.RegisteredClaims
+	CustomerID   string    `json:"cid"`
+	CustomerName string    `json:"cnm"`
+	Features     []Feature `json:"ftr"`
+	LicenseID    string    `json:"lid"`
+	Tier         string    `json:"tier"`
+}
 
 // DefaultKeyID is the default key ID used for signing new licenses.
 // This should be updated when rotating to a new key.

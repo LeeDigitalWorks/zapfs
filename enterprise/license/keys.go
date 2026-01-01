@@ -13,7 +13,7 @@ package license
 // 1. Generate new key pair (e.g., v2)
 // 2. Add v2 public key to this map
 // 3. Release new ZapFS binary
-// 4. Start signing new licenses with v2 (update DefaultKeyID in portal)
+// 4. Start signing new licenses with v2 (update DefaultKeyID)
 // 5. Old licenses (signed with v1) continue to work
 // 6. Eventually remove v1 when all licenses have been renewed
 //

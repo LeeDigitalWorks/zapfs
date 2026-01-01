@@ -6,8 +6,8 @@ package mocks
 
 import (
 	"context"
-	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	mock "github.com/stretchr/testify/mock"
 )
 

@@ -25,6 +25,8 @@ const (
 
 type AuthenticationFilter struct {
 	v4Verifier *signature.V4Verifier
+	v2Verifier *signature.V2Verifier
+	iamManager *iam.Manager
 	allowAnon  bool // Allow anonymous access (for public buckets)
 
 	// Metrics
@@ -46,6 +48,8 @@ func WithAllowAnonymous(allow bool) AuthFilterOption {
 func NewAuthenticationFilter(iamManager *iam.Manager, opts ...AuthFilterOption) *AuthenticationFilter {
 	f := &AuthenticationFilter{
 		v4Verifier: signature.NewV4Verifier(iamManager),
+		v2Verifier: signature.NewV2Verifier(iamManager),
+		iamManager: iamManager,
 		allowAnon:  false,
 		metricAuthTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "auth_filter_total",
@@ -61,6 +65,11 @@ func NewAuthenticationFilter(iamManager *iam.Manager, opts ...AuthFilterOption) 
 		opt(f)
 	}
 	return f
+}
+
+// GetIAMManager returns the IAM manager for policy verification
+func (f *AuthenticationFilter) GetIAMManager() *iam.Manager {
+	return f.iamManager
 }
 
 // Metrics returns the Prometheus collectors for registration
@@ -141,87 +150,89 @@ func (f *AuthenticationFilter) Run(d *data.Data) (Response, error) {
 		// AWS Signature V4 with chunked transfer encoding (aws-chunked)
 		// Each chunk has its own signature that must be verified.
 		//
-		// TODO: Implement streaming signature verification:
-		// 1. Verify initial request signature (same as V4)
-		// 2. Create a ChunkVerifier that wraps the request body
-		// 3. For each chunk, verify: chunk-signature = HMAC-SHA256(signing-key, string-to-sign)
-		//    where string-to-sign = "AWS4-HMAC-SHA256-PAYLOAD" + "\n" +
-		//                           date + "\n" + credential-scope + "\n" +
-		//                           previous-signature + "\n" +
-		//                           hash("") + "\n" + hash(chunk-data)
-		// 4. Store ChunkVerifier in data.Data for handler to use
-		//
 		// See: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
-		identity, errCode := f.v4Verifier.VerifyRequest(d.Req)
+		streamResult, errCode := f.v4Verifier.VerifyStreamingRequest(d.Req)
 		if errCode != s3err.ErrNone {
 			f.recordResult(f.errorToResult(errCode), authTypeStr)
 			return nil, errCode
 		}
-		d.Identity = identity
+		d.Identity = streamResult.Identity
+
+		// Create ChunkReader to verify each chunk's signature as data is read
+		chunkReader := signature.NewVerifyingChunkReader(signature.ChunkReaderConfig{
+			Body:          d.Req.Body,
+			SigningKey:    streamResult.SigningKey,
+			SeedSignature: streamResult.SeedSignature,
+			Timestamp:     streamResult.Timestamp,
+			Region:        streamResult.Region,
+			Service:       streamResult.Service,
+		})
+		d.VerifiedBody = chunkReader
 		f.recordResult(authResultSuccess, authTypeStr)
-		// TODO: d.ChunkVerifier = signature.NewChunkVerifier(...)
 
 	case signature.AuthTypeStreamingSignedTrailer:
 		// AWS Signature V4 with chunked encoding AND trailing checksums
-		//
-		// TODO: Implement streaming with trailer verification:
-		// 1. Same as StreamingSigned above
-		// 2. Additionally verify trailing headers (x-amz-checksum-*)
-		// 3. Trailer signature covers: previous-signature + trailing-headers
+		// Each chunk has its own signature, plus trailing headers (checksums)
+		// with their own signature at the end.
 		//
 		// See: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming-trailers.html
-		identity, errCode := f.v4Verifier.VerifyRequest(d.Req)
+		streamResult, errCode := f.v4Verifier.VerifyStreamingRequest(d.Req)
 		if errCode != s3err.ErrNone {
 			f.recordResult(f.errorToResult(errCode), authTypeStr)
 			return nil, errCode
 		}
-		d.Identity = identity
+		d.Identity = streamResult.Identity
+
+		// Create TrailerChunkReader to verify chunk signatures AND trailing checksums
+		chunkReader := signature.NewTrailerChunkReader(signature.ChunkReaderConfig{
+			Body:          d.Req.Body,
+			SigningKey:    streamResult.SigningKey,
+			SeedSignature: streamResult.SeedSignature,
+			Timestamp:     streamResult.Timestamp,
+			Region:        streamResult.Region,
+			Service:       streamResult.Service,
+		})
+		d.VerifiedBody = chunkReader
 		f.recordResult(authResultSuccess, authTypeStr)
 
 	case signature.AuthTypeV2, signature.AuthTypePresignedV2:
 		// AWS Signature V2 (deprecated but some old clients still use it)
-		//
-		// TODO: Implement V2 signature verification if needed:
-		// 1. Parse Authorization header: "AWS AWSAccessKeyId:Signature"
-		// 2. Build StringToSign = HTTP-Verb + "\n" + Content-MD5 + "\n" +
-		//                         Content-Type + "\n" + Date + "\n" +
-		//                         CanonicalizedAmzHeaders + CanonicalizedResource
-		// 3. Calculate: Base64(HMAC-SHA1(SecretKey, StringToSign))
-		// 4. Compare with provided signature
-		//
-		// See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html
-		f.recordResult(authResultUnsupportedAuth, authTypeStr)
-		return nil, s3err.ErrSignatureVersionNotSupported
+		// Supported for compatibility with legacy SDKs and tools like s3cmd
+		identity, errCode := f.v2Verifier.VerifyRequest(d.Req)
+		if errCode != s3err.ErrNone {
+			f.recordResult(f.errorToResult(errCode), authTypeStr)
+			return nil, errCode
+		}
+		d.Identity = identity
+		f.recordResult(authResultSuccess, authTypeStr)
 
 	case signature.AuthTypePostPolicy:
-		// Browser-based uploads using POST with policy document
+		// Browser-based uploads using POST with policy document.
+		// Policy verification is handled in PostObjectHandler since we need
+		// to parse the multipart form first to extract the policy and signature.
 		//
-		// TODO: Implement POST policy verification:
-		// 1. Parse multipart form to extract: policy, x-amz-signature, x-amz-credential
-		// 2. Base64-decode and parse JSON policy document
-		// 3. Verify policy conditions (bucket, key prefix, content-type, size limits, etc.)
-		// 4. Verify expiration timestamp
-		// 5. Calculate signature over base64-encoded policy
-		// 6. Compare with provided x-amz-signature
-		//
-		// Note: This is typically handled in the POST object handler itself
-		// since we need to parse the multipart form first.
-		//
-		// See: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-post-example.html
+		// See: pkg/metadata/api/object.go - PostObjectHandler
+		// See: pkg/s3api/signature/post_policy.go - PostPolicyVerifier
 		f.recordResult(authResultSuccess, authTypeStr)
 		return Next{}, nil
 
 	case signature.AuthTypeStreamingUnsignedTrailer:
-		// Unsigned payload with trailing checksums (x-amz-content-sha256: UNSIGNED-PAYLOAD)
+		// Unsigned payload (x-amz-content-sha256: UNSIGNED-PAYLOAD)
 		//
-		// TODO: Decide policy for unsigned payloads:
-		// - Some operations allow UNSIGNED-PAYLOAD (e.g., when using HTTPS)
-		// - Still need to verify trailing checksum if present
-		// - May want to allow based on bucket policy or server config
+		// AWS allows UNSIGNED-PAYLOAD when:
+		// - Request headers are signed with V4 (provides authentication)
+		// - Only the body is unsigned (useful for large uploads where SHA256 is expensive)
+		// - TLS is used (provides transport-level integrity)
 		//
-		// For now, reject unsigned payloads for security
-		f.recordResult(authResultAccessDenied, authTypeStr)
-		return nil, s3err.ErrAccessDenied
+		// We verify the request signature treating UNSIGNED-PAYLOAD as the content hash.
+		// The signature covers all signed headers including x-amz-content-sha256.
+		identity, errCode := f.v4Verifier.VerifyRequest(d.Req)
+		if errCode != s3err.ErrNone {
+			f.recordResult(f.errorToResult(errCode), authTypeStr)
+			return nil, errCode
+		}
+		d.Identity = identity
+		f.recordResult(authResultSuccess, authTypeStr)
 	}
 
 	// Populate S3Info.OwnerID from authenticated identity

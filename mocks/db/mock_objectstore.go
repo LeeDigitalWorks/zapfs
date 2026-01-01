@@ -6,9 +6,9 @@ package mocks
 
 import (
 	"context"
+
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
-
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
 )

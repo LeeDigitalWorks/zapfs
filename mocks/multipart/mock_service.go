@@ -6,8 +6,8 @@ package mocks
 
 import (
 	"context"
-	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -443,6 +443,74 @@ func (_c *MockService_UploadPart_Call) Return(uploadPartResult *multipart.Upload
 }
 
 func (_c *MockService_UploadPart_Call) RunAndReturn(run func(ctx context.Context, req *multipart.UploadPartRequest) (*multipart.UploadPartResult, error)) *MockService_UploadPart_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UploadPartCopy provides a mock function for the type MockService
+func (_mock *MockService) UploadPartCopy(ctx context.Context, req *multipart.UploadPartCopyRequest) (*multipart.UploadPartCopyResult, error) {
+	ret := _mock.Called(ctx, req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UploadPartCopy")
+	}
+
+	var r0 *multipart.UploadPartCopyResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *multipart.UploadPartCopyRequest) (*multipart.UploadPartCopyResult, error)); ok {
+		return returnFunc(ctx, req)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *multipart.UploadPartCopyRequest) *multipart.UploadPartCopyResult); ok {
+		r0 = returnFunc(ctx, req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*multipart.UploadPartCopyResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *multipart.UploadPartCopyRequest) error); ok {
+		r1 = returnFunc(ctx, req)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockService_UploadPartCopy_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UploadPartCopy'
+type MockService_UploadPartCopy_Call struct {
+	*mock.Call
+}
+
+// UploadPartCopy is a helper method to define mock.On call
+//   - ctx context.Context
+//   - req *multipart.UploadPartCopyRequest
+func (_e *MockService_Expecter) UploadPartCopy(ctx interface{}, req interface{}) *MockService_UploadPartCopy_Call {
+	return &MockService_UploadPartCopy_Call{Call: _e.mock.On("UploadPartCopy", ctx, req)}
+}
+
+func (_c *MockService_UploadPartCopy_Call) Run(run func(ctx context.Context, req *multipart.UploadPartCopyRequest)) *MockService_UploadPartCopy_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *multipart.UploadPartCopyRequest
+		if args[1] != nil {
+			arg1 = args[1].(*multipart.UploadPartCopyRequest)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockService_UploadPartCopy_Call) Return(uploadPartCopyResult *multipart.UploadPartCopyResult, err error) *MockService_UploadPartCopy_Call {
+	_c.Call.Return(uploadPartCopyResult, err)
+	return _c
+}
+
+func (_c *MockService_UploadPartCopy_Call) RunAndReturn(run func(ctx context.Context, req *multipart.UploadPartCopyRequest) (*multipart.UploadPartCopyResult, error)) *MockService_UploadPartCopy_Call {
 	_c.Call.Return(run)
 	return _c
 }

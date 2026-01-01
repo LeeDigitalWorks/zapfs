@@ -14,14 +14,12 @@ import (
 
 // Common errors
 var (
-	ErrNoLicense             = errors.New("enterprise license required")
-	ErrLicenseExpired        = errors.New("license has expired")
-	ErrInvalidLicense        = errors.New("invalid license")
-	ErrFeatureDisabled       = errors.New("feature not enabled by license")
-	ErrInvalidKey            = errors.New("invalid license key")
-	ErrNodeLimitExceeded     = errors.New("node limit exceeded")
-	ErrCapacityLimitExceeded = errors.New("capacity limit exceeded")
-	ErrCommunityEdition      = errors.New("enterprise features not available in community edition")
+	ErrNoLicense        = errors.New("enterprise license required")
+	ErrLicenseExpired   = errors.New("license has expired")
+	ErrInvalidLicense   = errors.New("invalid license")
+	ErrFeatureDisabled  = errors.New("feature not enabled by license")
+	ErrInvalidKey       = errors.New("invalid license key")
+	ErrCommunityEdition = errors.New("enterprise features not available in community edition")
 )
 
 // License is a stub for community edition.
@@ -67,16 +65,6 @@ func (m *Manager) CheckFeature(_ Feature) error {
 // RequireFeature panics in community edition.
 func (m *Manager) RequireFeature(feature Feature) {
 	panic("enterprise feature " + string(feature) + " not available in community edition")
-}
-
-// CheckNodeLimit always succeeds in community edition (no limits).
-func (m *Manager) CheckNodeLimit(_ int) error {
-	return nil
-}
-
-// CheckCapacityLimit always succeeds in community edition (no limits).
-func (m *Manager) CheckCapacityLimit(_ int) error {
-	return nil
 }
 
 // Info returns community edition info.
