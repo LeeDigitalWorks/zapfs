@@ -304,6 +304,36 @@ services:
     command:
       - --default-authentication-plugin=mysql_native_password
 
+  # ===========================================================================
+  # Redis (Optional - for distributed rate limiting)
+  # ===========================================================================
+  # Enable this service when running multiple metadata replicas to coordinate
+  # rate limits across all instances. When disabled, each metadata server
+  # enforces limits locally.
+  #
+  # To enable Redis rate limiting:
+  #   1. Uncomment the redis service below
+  #   2. Add to metadata command:
+  #      - --rate_limit_redis_enabled=true
+  #      - --rate_limit_redis_addr=redis:6379
+  #
+  redis:
+    image: redis:7-alpine
+    profiles:
+      - redis  # Only start with: docker compose --profile redis up
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - zapfs-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    command: redis-server --appendonly yes
+
 # ===========================================================================
 # Networks & Volumes
 # ===========================================================================
@@ -319,3 +349,4 @@ volumes:
   file-1-data:
   file-2-data:
   mysql-data:
+  redis-data:

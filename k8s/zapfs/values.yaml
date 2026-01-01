@@ -135,6 +135,21 @@ metadata:
     #   Vitess:  "zapfs:password@tcp(vtgate:3306)/zapfs@primary"
     #   SQLite:  "/data/metadata.db" (with driver: sqlite)
 
+  # Rate limiting configuration
+  rateLimit:
+    enabled: true
+    burstMultiplier: 2  # Allow 2x burst above rate limit
+
+    # Redis for distributed rate limiting across multiple metadata replicas
+    # Required when running multiple metadata servers to coordinate limits
+    redis:
+      enabled: false
+      addr: "redis:6379"  # Redis service address
+      password: ""
+      db: 0
+      poolSize: 10
+      failOpen: true  # Allow requests when Redis is unavailable
+
   # TLS configuration
   tls:
     enabled: false

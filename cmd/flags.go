@@ -39,6 +39,15 @@ func (f *FlagLoader) Int(flagName string) int {
 	return viper.GetInt(flagName)
 }
 
+// Int64 returns CLI flag value if explicitly set, otherwise viper value.
+func (f *FlagLoader) Int64(flagName string) int64 {
+	if f.cmd.Flags().Changed(flagName) {
+		val, _ := f.cmd.Flags().GetInt64(flagName)
+		return val
+	}
+	return viper.GetInt64(flagName)
+}
+
 // Bool returns CLI flag value if explicitly set, otherwise viper value.
 func (f *FlagLoader) Bool(flagName string) bool {
 	if f.cmd.Flags().Changed(flagName) {

@@ -34,3 +34,16 @@ db_driver = "memory"
 db_dsn = ""
 db_max_open_conns = 25
 db_max_idle_conns = 5
+
+# Rate Limiting
+rate_limit_enabled = true
+rate_limit_burst_multiplier = 2
+
+# Redis for distributed rate limiting (optional)
+# Enable this when running multiple metadata servers to coordinate rate limits
+rate_limit_redis_enabled = false
+rate_limit_redis_addr = "localhost:6379"
+rate_limit_redis_password = ""
+rate_limit_redis_db = 0
+rate_limit_redis_pool_size = 10
+rate_limit_redis_fail_open = true

@@ -1,10 +1,11 @@
 package filter
 
 import (
+	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -12,7 +13,31 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
+	"github.com/rs/zerolog/log"
 )
+
+// sharedTimeNano provides a cached time value updated every millisecond.
+// Avoids syscall overhead of time.Now() on every rate limit check.
+var sharedTimeNano atomic.Int64
+
+func init() {
+	// Initialize with current time
+	sharedTimeNano.Store(time.Now().UnixNano())
+
+	// Update shared time every millisecond
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		for t := range ticker.C {
+			sharedTimeNano.Store(t.UnixNano())
+		}
+	}()
+}
+
+// nowNano returns the current time in nanoseconds.
+// Uses cached value for performance, accurate to ~1ms.
+func nowNano() int64 {
+	return sharedTimeNano.Load()
+}
 
 // RateLimitFilter implements request rate limiting and bandwidth throttling
 // with support for tiered limits.
@@ -24,6 +49,7 @@ import (
 // 4. Global, per-bucket, per-user, and per-IP limits
 //
 // The filter uses token bucket algorithm for smooth rate limiting.
+// Per-key limiters use ShardedMap for reduced lock contention.
 type RateLimitFilter struct {
 	// Global limits
 	globalReadLimiter    *TokenBucket
@@ -32,10 +58,13 @@ type RateLimitFilter struct {
 	globalReadBWLimiter  *TokenBucket
 	globalWriteBWLimiter *TokenBucket
 
-	// Per-key limiters (bucket, user, IP)
-	bucketLimiters sync.Map // bucket -> *tieredLimiters
-	userLimiters   sync.Map // userID -> *tieredLimiters
-	ipLimiters     sync.Map // IP -> *limiters
+	// Per-key limiters using sharded maps for better performance
+	bucketLimiters *utils.ShardedMap[*tieredLimiters] // bucket -> *tieredLimiters
+	userLimiters   *utils.ShardedMap[*tieredLimiters] // userID -> *tieredLimiters
+	ipLimiters     *utils.ShardedMap[*limiters]       // IP -> *limiters
+
+	// Redis limiter for distributed rate limiting (optional)
+	redisLimiter *RedisRateLimiter
 
 	// Tier configuration
 	tierConfig *utils.TierConfig
@@ -64,6 +93,11 @@ type RateLimitConfig struct {
 
 	// CleanupInterval for removing stale per-key limiters
 	CleanupInterval time.Duration
+
+	// Redis configuration for distributed rate limiting (optional)
+	// When enabled, per-bucket and per-user limits are enforced via Redis
+	// for coordination across multiple metadata servers.
+	Redis RedisRateLimitConfig `mapstructure:"redis"`
 }
 
 // tieredLimiters holds rate and bandwidth limiters for a single entity with tier support
@@ -122,8 +156,11 @@ func NewRateLimitFilter(config RateLimitConfig, tierConfig *utils.TierConfig) *R
 	}
 
 	f := &RateLimitFilter{
-		config:     config,
-		tierConfig: tierConfig,
+		config:         config,
+		tierConfig:     tierConfig,
+		bucketLimiters: utils.NewShardedMap[*tieredLimiters](),
+		userLimiters:   utils.NewShardedMap[*tieredLimiters](),
+		ipLimiters:     utils.NewShardedMap[*limiters](),
 	}
 
 	burst := config.BurstMultiplier
@@ -148,6 +185,17 @@ func NewRateLimitFilter(config RateLimitConfig, tierConfig *utils.TierConfig) *R
 		f.globalWriteBWLimiter = NewTokenBucket(config.GlobalWriteBytesPS, config.GlobalWriteBytesPS*burst)
 	}
 
+	// Initialize Redis limiter if enabled
+	if config.Redis.Enabled {
+		redisLimiter, err := NewRedisRateLimiter(config.Redis)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to initialize Redis rate limiter, falling back to local only")
+		} else {
+			f.redisLimiter = redisLimiter
+			log.Info().Str("addr", config.Redis.Addr).Msg("Redis rate limiter initialized")
+		}
+	}
+
 	// Start cleanup goroutine
 	if config.CleanupInterval > 0 {
 		go f.cleanupLoop()
@@ -167,6 +215,7 @@ func (f *RateLimitFilter) Run(d *data.Data) (Response, error) {
 
 	// Determine operation type from the S3 action
 	opType := d.S3Info.Action.OperationType()
+	opName := opType.String()
 
 	// Extract request metadata
 	bucket := d.S3Info.Bucket
@@ -180,13 +229,15 @@ func (f *RateLimitFilter) Run(d *data.Data) (Response, error) {
 
 	// Check global rate limits by operation type
 	if err := f.checkGlobalLimits(opType, contentLength); err != nil {
+		RateLimitRequestsTotal.WithLabelValues(opName, "rejected").Inc()
 		return nil, err
 	}
 
 	// Check per-bucket limits (tiered)
 	if bucket != "" {
 		tier := f.getBucketTier(bucket)
-		if err := f.checkBucketLimits(bucket, tier, opType, contentLength); err != nil {
+		if err := f.checkBucketLimits(d.Ctx, bucket, tier, opType, contentLength); err != nil {
+			RateLimitRequestsTotal.WithLabelValues(opName, "rejected").Inc()
 			return nil, err
 		}
 	}
@@ -202,7 +253,8 @@ func (f *RateLimitFilter) Run(d *data.Data) (Response, error) {
 	}
 	if userID != "" {
 		tier := f.getUserTier(userID)
-		if err := f.checkUserLimits(userID, tier, opType, contentLength); err != nil {
+		if err := f.checkUserLimits(d.Ctx, userID, tier, opType, contentLength); err != nil {
+			RateLimitRequestsTotal.WithLabelValues(opName, "rejected").Inc()
 			return nil, err
 		}
 	}
@@ -210,33 +262,43 @@ func (f *RateLimitFilter) Run(d *data.Data) (Response, error) {
 	// Check per-IP limits (especially important for anonymous requests)
 	if clientIP != "" {
 		if err := f.checkIPLimits(clientIP, opType, contentLength); err != nil {
+			RateLimitRequestsTotal.WithLabelValues(opName, "rejected").Inc()
 			return nil, err
 		}
 	}
 
+	// All checks passed
+	RateLimitRequestsTotal.WithLabelValues(opName, "allowed").Inc()
 	return Next{}, nil
 }
 
 // checkGlobalLimits checks global rate and bandwidth limits
 func (f *RateLimitFilter) checkGlobalLimits(opType s3action.OperationType, contentLength int64) error {
+	opName := opType.String()
+
 	// Check operation-specific rate limit
 	switch opType {
 	case s3action.OpRead:
 		if f.globalReadLimiter != nil && !f.globalReadLimiter.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("global", opName).Inc()
 			return s3err.ErrSlowDown
 		}
 	case s3action.OpWrite:
 		if f.globalWriteLimiter != nil && !f.globalWriteLimiter.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("global", opName).Inc()
 			return s3err.ErrSlowDown
 		}
 		// Check write bandwidth for uploads
 		if f.globalWriteBWLimiter != nil && contentLength > 0 {
 			if !f.globalWriteBWLimiter.Take(contentLength) {
+				RateLimitRejectionsTotal.WithLabelValues("global", "write_bw").Inc()
 				return s3err.ErrSlowDown
 			}
+			RateLimitBandwidthBytes.WithLabelValues("write").Add(float64(contentLength))
 		}
 	case s3action.OpList:
 		if f.globalListLimiter != nil && !f.globalListLimiter.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("global", opName).Inc()
 			return s3err.ErrSlowDown
 		}
 	}
@@ -255,7 +317,7 @@ func (f *RateLimitFilter) getBucketTier(bucket string) string {
 
 // getUserTier returns the tier for a user
 // TODO: This should look up user tier from IAM or billing system
-func (f *RateLimitFilter) getUserTier(userID string) string {
+func (f *RateLimitFilter) getUserTier(_ string) string {
 	// For now, use default tier for all users
 	// In production, this would query the IAM system or billing database
 	return f.tierConfig.DefaultTier
@@ -282,23 +344,38 @@ func (f *RateLimitFilter) getTierLimits(tierName string) utils.RateLimitTier {
 }
 
 // checkBucketLimits checks per-bucket tiered limits
-func (f *RateLimitFilter) checkBucketLimits(bucket, tier string, opType s3action.OperationType, contentLength int64) error {
-	tl := f.getOrCreateTieredLimiters(&f.bucketLimiters, bucket, tier)
+func (f *RateLimitFilter) checkBucketLimits(ctx context.Context, bucket, tier string, opType s3action.OperationType, contentLength int64) error {
+	opName := opType.String()
+	tierLimits := f.getTierLimits(tier)
+
+	// Check Redis first for distributed rate limiting
+	if f.redisLimiter != nil {
+		if err := f.checkBucketLimitsRedis(ctx, bucket, opType, tierLimits, contentLength); err != nil {
+			return err
+		}
+	}
+
+	// Also check local limits (acts as per-node protection and backup)
+	tl := f.getOrCreateTieredLimiters(f.bucketLimiters, bucket, tier)
 
 	switch opType {
 	case s3action.OpRead:
 		if tl.readRPS != nil && !tl.readRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("bucket", opName).Inc()
 			return s3err.ErrSlowDown
 		}
 	case s3action.OpWrite:
 		if tl.writeRPS != nil && !tl.writeRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("bucket", opName).Inc()
 			return s3err.ErrSlowDown
 		}
 		if tl.writeBW != nil && contentLength > 0 && !tl.writeBW.Take(contentLength) {
+			RateLimitRejectionsTotal.WithLabelValues("bucket", "write_bw").Inc()
 			return s3err.ErrSlowDown
 		}
 	case s3action.OpList:
 		if tl.listRPS != nil && !tl.listRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("bucket", opName).Inc()
 			return s3err.ErrSlowDown
 		}
 	}
@@ -306,26 +383,118 @@ func (f *RateLimitFilter) checkBucketLimits(bucket, tier string, opType s3action
 	return nil
 }
 
+// checkBucketLimitsRedis checks bucket limits using Redis
+func (f *RateLimitFilter) checkBucketLimitsRedis(ctx context.Context, bucket string, opType s3action.OperationType, tier utils.RateLimitTier, _ int64) error {
+	opName := opType.String()
+
+	var rate, burst int64
+	switch opType {
+	case s3action.OpRead:
+		rate = int64(tier.MaxReadRPS)
+		burst = rate * f.config.BurstMultiplier
+	case s3action.OpWrite:
+		rate = int64(tier.MaxWriteRPS)
+		burst = rate * f.config.BurstMultiplier
+	case s3action.OpList:
+		rate = int64(tier.MaxListRPS)
+		burst = rate * f.config.BurstMultiplier
+	default:
+		return nil
+	}
+
+	if rate <= 0 {
+		return nil // No limit
+	}
+
+	key := fmt.Sprintf("bucket:%s:%s", bucket, opName)
+	result, err := f.redisLimiter.AllowN(ctx, key, 1, rate, burst)
+	if err != nil {
+		// Redis error - fail open or closed based on config
+		log.Warn().Err(err).Str("bucket", bucket).Str("op", opName).Msg("Redis rate limit check failed")
+		return nil // FailOpen is handled in redisLimiter.AllowN
+	}
+
+	if !result.Allowed {
+		RateLimitRejectionsTotal.WithLabelValues("bucket_redis", opName).Inc()
+		return s3err.ErrSlowDown
+	}
+
+	return nil
+}
+
 // checkUserLimits checks per-user tiered limits
-func (f *RateLimitFilter) checkUserLimits(userID, tier string, opType s3action.OperationType, contentLength int64) error {
-	tl := f.getOrCreateTieredLimiters(&f.userLimiters, userID, tier)
+func (f *RateLimitFilter) checkUserLimits(ctx context.Context, userID, tier string, opType s3action.OperationType, contentLength int64) error {
+	opName := opType.String()
+	tierLimits := f.getTierLimits(tier)
+
+	// Check Redis first for distributed rate limiting
+	if f.redisLimiter != nil {
+		if err := f.checkUserLimitsRedis(ctx, userID, opType, tierLimits, contentLength); err != nil {
+			return err
+		}
+	}
+
+	// Also check local limits (acts as per-node protection and backup)
+	tl := f.getOrCreateTieredLimiters(f.userLimiters, userID, tier)
 
 	switch opType {
 	case s3action.OpRead:
 		if tl.readRPS != nil && !tl.readRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("user", opName).Inc()
 			return s3err.ErrTooManyRequests
 		}
 	case s3action.OpWrite:
 		if tl.writeRPS != nil && !tl.writeRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("user", opName).Inc()
 			return s3err.ErrTooManyRequests
 		}
 		if tl.writeBW != nil && contentLength > 0 && !tl.writeBW.Take(contentLength) {
+			RateLimitRejectionsTotal.WithLabelValues("user", "write_bw").Inc()
 			return s3err.ErrRequestBytesExceed
 		}
 	case s3action.OpList:
 		if tl.listRPS != nil && !tl.listRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("user", opName).Inc()
 			return s3err.ErrTooManyRequests
 		}
+	}
+
+	return nil
+}
+
+// checkUserLimitsRedis checks user limits using Redis
+func (f *RateLimitFilter) checkUserLimitsRedis(ctx context.Context, userID string, opType s3action.OperationType, tier utils.RateLimitTier, _ int64) error {
+	opName := opType.String()
+
+	var rate, burst int64
+	switch opType {
+	case s3action.OpRead:
+		rate = int64(tier.MaxReadRPS)
+		burst = rate * f.config.BurstMultiplier
+	case s3action.OpWrite:
+		rate = int64(tier.MaxWriteRPS)
+		burst = rate * f.config.BurstMultiplier
+	case s3action.OpList:
+		rate = int64(tier.MaxListRPS)
+		burst = rate * f.config.BurstMultiplier
+	default:
+		return nil
+	}
+
+	if rate <= 0 {
+		return nil // No limit
+	}
+
+	key := fmt.Sprintf("user:%s:%s", userID, opName)
+	result, err := f.redisLimiter.AllowN(ctx, key, 1, rate, burst)
+	if err != nil {
+		log.Warn().Err(err).Str("user", userID).Str("op", opName).Msg("Redis rate limit check failed")
+		return nil // FailOpen is handled in redisLimiter.AllowN
+	}
+
+	if !result.Allowed {
+		RateLimitRejectionsTotal.WithLabelValues("user_redis", opName).Inc()
+		return s3err.ErrTooManyRequests
 	}
 
 	return nil
@@ -334,24 +503,29 @@ func (f *RateLimitFilter) checkUserLimits(userID, tier string, opType s3action.O
 // checkIPLimits checks per-IP limits
 func (f *RateLimitFilter) checkIPLimits(clientIP string, opType s3action.OperationType, contentLength int64) error {
 	il := f.getOrCreateIPLimiters(clientIP)
+	opName := opType.String()
 
 	switch opType {
 	case s3action.OpRead:
 		if il.readRPS != nil && !il.readRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("ip", opName).Inc()
 			return s3err.ErrTooManyRequests
 		}
 	case s3action.OpWrite:
 		if il.writeRPS != nil && !il.writeRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("ip", opName).Inc()
 			return s3err.ErrTooManyRequests
 		}
 	case s3action.OpList:
 		if il.listRPS != nil && !il.listRPS.Take(1) {
+			RateLimitRejectionsTotal.WithLabelValues("ip", opName).Inc()
 			return s3err.ErrTooManyRequests
 		}
 	}
 
 	// Bandwidth limit applies to all operation types for IP
 	if il.bandwidth != nil && contentLength > 0 && !il.bandwidth.Take(contentLength) {
+		RateLimitRejectionsTotal.WithLabelValues("ip", "bandwidth").Inc()
 		return s3err.ErrRequestBytesExceed
 	}
 
@@ -359,9 +533,8 @@ func (f *RateLimitFilter) checkIPLimits(clientIP string, opType s3action.Operati
 }
 
 // getOrCreateTieredLimiters gets or creates tiered limiters for a key
-func (f *RateLimitFilter) getOrCreateTieredLimiters(m *sync.Map, key, tierName string) *tieredLimiters {
-	if v, ok := m.Load(key); ok {
-		tl := v.(*tieredLimiters)
+func (f *RateLimitFilter) getOrCreateTieredLimiters(m *utils.ShardedMap[*tieredLimiters], key, tierName string) *tieredLimiters {
+	if tl, ok := m.Load(key); ok {
 		tl.lastUsed.Store(time.Now().Unix())
 
 		// Check if tier changed
@@ -402,13 +575,12 @@ func (f *RateLimitFilter) getOrCreateTieredLimiters(m *sync.Map, key, tierName s
 	tl.lastUsed.Store(time.Now().Unix())
 
 	actual, _ := m.LoadOrStore(key, tl)
-	return actual.(*tieredLimiters)
+	return actual
 }
 
 // getOrCreateIPLimiters gets or creates simple limiters for an IP
 func (f *RateLimitFilter) getOrCreateIPLimiters(ip string) *limiters {
-	if v, ok := f.ipLimiters.Load(ip); ok {
-		l := v.(*limiters)
+	if l, ok := f.ipLimiters.Load(ip); ok {
 		l.lastUsed.Store(time.Now().Unix())
 		return l
 	}
@@ -435,7 +607,7 @@ func (f *RateLimitFilter) getOrCreateIPLimiters(ip string) *limiters {
 	l.lastUsed.Store(time.Now().Unix())
 
 	actual, _ := f.ipLimiters.LoadOrStore(ip, l)
-	return actual.(*limiters)
+	return actual
 }
 
 // cleanupLoop periodically removes stale limiters
@@ -445,30 +617,33 @@ func (f *RateLimitFilter) cleanupLoop() {
 
 	for range ticker.C {
 		cutoff := time.Now().Add(-f.config.CleanupInterval * 2).Unix()
-		f.cleanupTieredMap(&f.bucketLimiters, cutoff)
-		f.cleanupTieredMap(&f.userLimiters, cutoff)
-		f.cleanupIPMap(cutoff)
+
+		// Use DeleteIf for efficient cleanup with sharded maps
+		bucketDeleted := f.bucketLimiters.DeleteIf(func(_ string, tl *tieredLimiters) bool {
+			return tl.lastUsed.Load() < cutoff
+		})
+		userDeleted := f.userLimiters.DeleteIf(func(_ string, tl *tieredLimiters) bool {
+			return tl.lastUsed.Load() < cutoff
+		})
+		ipDeleted := f.ipLimiters.DeleteIf(func(_ string, l *limiters) bool {
+			return l.lastUsed.Load() < cutoff
+		})
+
+		// Update metrics for active limiter counts
+		RateLimitActiveLimiters.WithLabelValues("bucket").Set(float64(f.bucketLimiters.Len()))
+		RateLimitActiveLimiters.WithLabelValues("user").Set(float64(f.userLimiters.Len()))
+		RateLimitActiveLimiters.WithLabelValues("ip").Set(float64(f.ipLimiters.Len()))
+
+		_ = bucketDeleted + userDeleted + ipDeleted // avoid unused variable warning
 	}
 }
 
-func (f *RateLimitFilter) cleanupTieredMap(m *sync.Map, cutoff int64) {
-	m.Range(func(key, value any) bool {
-		tl := value.(*tieredLimiters)
-		if tl.lastUsed.Load() < cutoff {
-			m.Delete(key)
-		}
-		return true
-	})
-}
-
-func (f *RateLimitFilter) cleanupIPMap(cutoff int64) {
-	f.ipLimiters.Range(func(key, value any) bool {
-		l := value.(*limiters)
-		if l.lastUsed.Load() < cutoff {
-			f.ipLimiters.Delete(key)
-		}
-		return true
-	})
+// Close shuts down the rate limiter and releases resources.
+func (f *RateLimitFilter) Close() error {
+	if f.redisLimiter != nil {
+		return f.redisLimiter.Close()
+	}
+	return nil
 }
 
 // getClientIP extracts client IP from request
@@ -494,13 +669,13 @@ func getClientIP(r *http.Request) string {
 	return ip
 }
 
-// TokenBucket implements a token bucket rate limiter
+// TokenBucket implements a token bucket rate limiter.
+// Uses lock-free atomic operations for high performance.
 type TokenBucket struct {
 	rate     int64        // Tokens added per second
 	capacity int64        // Maximum tokens (burst size)
 	tokens   atomic.Int64 // Current tokens (scaled by 1000 for precision)
 	lastTime atomic.Int64 // Last refill time (Unix nano)
-	mu       sync.Mutex   // For refill operations
 }
 
 const tokenScale = 1000 // Scale factor for sub-token precision
@@ -532,9 +707,10 @@ func (tb *TokenBucket) Take(n int64) bool {
 	}
 }
 
-// refill adds tokens based on elapsed time
+// refill adds tokens based on elapsed time.
+// Uses shared time source to avoid syscall overhead.
 func (tb *TokenBucket) refill() {
-	now := time.Now().UnixNano()
+	now := nowNano()
 	last := tb.lastTime.Load()
 	elapsed := now - last
 
@@ -548,12 +724,12 @@ func (tb *TokenBucket) refill() {
 		return
 	}
 
-	// Try to update atomically
+	// Try to update atomically - if another goroutine wins, skip this refill
 	if !tb.lastTime.CompareAndSwap(last, now) {
-		return // Another goroutine is refilling
+		return
 	}
 
-	// Add tokens up to capacity
+	// Add tokens up to capacity using CAS loop
 	maxTokens := tb.capacity * tokenScale
 	for {
 		current := tb.tokens.Load()

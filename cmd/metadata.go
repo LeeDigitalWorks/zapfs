@@ -54,6 +54,16 @@ type MetadataServerOpts struct {
 	DBDSN          string
 	DBMaxOpenConns int
 	DBMaxIdleConns int
+
+	// Rate limiting
+	RateLimitEnabled        bool
+	RateLimitBurstMultipler int64
+	RateLimitRedisEnabled   bool
+	RateLimitRedisAddr      string
+	RateLimitRedisPassword  string
+	RateLimitRedisDB        int
+	RateLimitRedisPoolSize  int
+	RateLimitRedisFailOpen  bool
 }
 
 var metadataCmd = &cobra.Command{
@@ -87,6 +97,16 @@ func init() {
 	f.String("db_dsn", "", "Database connection string")
 	f.Int("db_max_open_conns", 25, "Maximum open database connections")
 	f.Int("db_max_idle_conns", 5, "Maximum idle database connections")
+
+	// Rate limiting
+	f.Bool("rate_limit_enabled", true, "Enable request rate limiting")
+	f.Int64("rate_limit_burst_multiplier", 2, "Burst multiplier for rate limiting")
+	f.Bool("rate_limit_redis_enabled", false, "Enable distributed rate limiting via Redis")
+	f.String("rate_limit_redis_addr", "localhost:6379", "Redis address for distributed rate limiting")
+	f.String("rate_limit_redis_password", "", "Redis password")
+	f.Int("rate_limit_redis_db", 0, "Redis database number")
+	f.Int("rate_limit_redis_pool_size", 10, "Redis connection pool size")
+	f.Bool("rate_limit_redis_fail_open", true, "Allow requests when Redis is unavailable")
 
 	viper.BindPFlags(f)
 }
@@ -147,8 +167,28 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		ACLStore:     bucketStore,
 		IAMEvaluator: iamService.Evaluator(),
 	}))
-	if !env.IsLocal() {
-		chain.AddFilter(filter.NewRateLimitFilter(filter.DefaultRateLimitConfig(), utils.LoadTierConfig()))
+	if opts.RateLimitEnabled && !env.IsLocal() {
+		rateLimitCfg := filter.DefaultRateLimitConfig()
+		rateLimitCfg.BurstMultiplier = opts.RateLimitBurstMultipler
+
+		// Configure Redis for distributed rate limiting
+		if opts.RateLimitRedisEnabled {
+			rateLimitCfg.Redis = filter.RedisRateLimitConfig{
+				Enabled:  true,
+				Addr:     opts.RateLimitRedisAddr,
+				Password: opts.RateLimitRedisPassword,
+				DB:       opts.RateLimitRedisDB,
+				PoolSize: opts.RateLimitRedisPoolSize,
+				FailOpen: opts.RateLimitRedisFailOpen,
+				KeyTTL:   time.Hour,
+			}
+			logger.Info().
+				Str("redis_addr", opts.RateLimitRedisAddr).
+				Bool("fail_open", opts.RateLimitRedisFailOpen).
+				Msg("distributed rate limiting enabled via Redis")
+		}
+
+		chain.AddFilter(filter.NewRateLimitFilter(rateLimitCfg, utils.LoadTierConfig()))
 	}
 
 	// Storage infrastructure
@@ -230,6 +270,15 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		DBDSN:          f.String("db_dsn"),
 		DBMaxOpenConns: f.Int("db_max_open_conns"),
 		DBMaxIdleConns: f.Int("db_max_idle_conns"),
+		// Rate limiting
+		RateLimitEnabled:        f.Bool("rate_limit_enabled"),
+		RateLimitBurstMultipler: f.Int64("rate_limit_burst_multiplier"),
+		RateLimitRedisEnabled:   f.Bool("rate_limit_redis_enabled"),
+		RateLimitRedisAddr:      f.String("rate_limit_redis_addr"),
+		RateLimitRedisPassword:  f.String("rate_limit_redis_password"),
+		RateLimitRedisDB:        f.Int("rate_limit_redis_db"),
+		RateLimitRedisPoolSize:  f.Int("rate_limit_redis_pool_size"),
+		RateLimitRedisFailOpen:  f.Bool("rate_limit_redis_fail_open"),
 	}
 }
 

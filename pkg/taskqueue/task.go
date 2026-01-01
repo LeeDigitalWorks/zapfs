@@ -36,7 +36,48 @@ const (
 	TaskTypeGCDecrement TaskType = "gc_decrement" // RefCount decrements
 	TaskTypeCleanup     TaskType = "cleanup"      // Object/version cleanup
 	TaskTypeLifecycle   TaskType = "lifecycle"    // Lifecycle transitions
+	TaskTypeEvent       TaskType = "event"        // S3 event notification
 )
+
+// EventPayload is the payload for TaskTypeEvent tasks.
+// Contains S3 event metadata for delivery to notification destinations.
+type EventPayload struct {
+	// EventName is the S3 event type (e.g., "s3:ObjectCreated:Put").
+	EventName string `json:"event_name"`
+
+	// Bucket is the bucket name where the event occurred.
+	Bucket string `json:"bucket"`
+
+	// Key is the object key (empty for bucket-level events).
+	Key string `json:"key"`
+
+	// Size is the object size in bytes (for object events).
+	Size int64 `json:"size"`
+
+	// ETag is the object's entity tag.
+	ETag string `json:"etag"`
+
+	// VersionID is the object version (if versioning enabled).
+	VersionID string `json:"version_id,omitempty"`
+
+	// OwnerID is the bucket/object owner's canonical user ID.
+	OwnerID string `json:"owner_id"`
+
+	// RequestID is the original S3 request ID.
+	RequestID string `json:"request_id"`
+
+	// SourceIP is the client IP that made the request.
+	SourceIP string `json:"source_ip"`
+
+	// Timestamp is the event time in Unix milliseconds.
+	Timestamp int64 `json:"timestamp"`
+
+	// Sequencer is used for ordering events on the same object.
+	Sequencer string `json:"sequencer"`
+
+	// UserAgent is the client's user agent string.
+	UserAgent string `json:"user_agent,omitempty"`
+}
 
 // TaskStatus represents the current state of a task.
 type TaskStatus string

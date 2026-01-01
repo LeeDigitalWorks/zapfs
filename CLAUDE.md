@@ -98,3 +98,4 @@ For significant features or architectural changes, write a design plan in `works
 3. **No goroutine leaks** - Use `goleak` in tests for packages that spawn goroutines. Ensure proper cleanup with `defer`, context cancellation, and channel closing
 4. **Test coverage** - Write unit tests for new code. Add integration tests for cross-service functionality. Run `make test-race` to catch data races
 5. **Track TODOs** - Document feature gaps and future work in `workspace/todo.md`
+6. **Metrics** - Add metrics for the new feature and use prometheus to expose them.

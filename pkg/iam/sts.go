@@ -5,8 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"sync"
 	"time"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 // STS errors
@@ -59,14 +60,15 @@ func DefaultSTSConfig() STSConfig {
 type STSService struct {
 	config   STSConfig
 	iamMgr   *Manager
-	sessions sync.Map // sessionToken -> *SessionCredential
+	sessions *utils.ShardedMap[*SessionCredential] // sessionToken -> *SessionCredential
 }
 
 // NewSTSService creates a new STS service
 func NewSTSService(iamMgr *Manager, config STSConfig) *STSService {
 	sts := &STSService{
-		config: config,
-		iamMgr: iamMgr,
+		config:   config,
+		iamMgr:   iamMgr,
+		sessions: utils.NewShardedMap[*SessionCredential](),
 	}
 
 	// Start cleanup goroutine
@@ -156,12 +158,11 @@ func (s *STSService) GetSessionToken(ctx context.Context, callerIdentity *Identi
 
 // ValidateSessionToken validates a session token and returns the session credentials
 func (s *STSService) ValidateSessionToken(ctx context.Context, sessionToken string) (*SessionCredential, error) {
-	value, exists := s.sessions.Load(sessionToken)
+	cred, exists := s.sessions.Load(sessionToken)
 	if !exists {
 		return nil, ErrSessionNotFound
 	}
 
-	cred := value.(*SessionCredential)
 	if cred.IsExpired() {
 		s.sessions.Delete(sessionToken)
 		return nil, ErrSessionExpired
@@ -181,12 +182,8 @@ func (s *STSService) cleanupExpiredSessions() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s.sessions.Range(func(key, value interface{}) bool {
-			cred := value.(*SessionCredential)
-			if cred.IsExpired() {
-				s.sessions.Delete(key)
-			}
-			return true
+		s.sessions.DeleteIf(func(_ string, cred *SessionCredential) bool {
+			return cred.IsExpired()
 		})
 	}
 }

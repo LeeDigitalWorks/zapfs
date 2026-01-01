@@ -3,6 +3,8 @@ package iam
 import (
 	"context"
 	"sync"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 // MemoryStore is an in-memory implementation of CredentialStore
@@ -10,17 +12,29 @@ type MemoryStore struct {
 	mu         sync.RWMutex
 	users      map[string]*Identity // username -> Identity
 	accessKeys map[string]string    // accessKey -> username
+
+	// Bloom filter for fast rejection of invalid access keys.
+	// Reduces lock contention on hot authentication path.
+	accessKeyBloom *utils.BloomFilter
 }
 
 // NewMemoryStore creates a new in-memory credential store
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		users:      make(map[string]*Identity),
-		accessKeys: make(map[string]string),
+		users:          make(map[string]*Identity),
+		accessKeys:     make(map[string]string),
+		accessKeyBloom: utils.NewBloomFilter(1000000, 0.01), // 1M keys, 1% FPR
 	}
 }
 
 func (s *MemoryStore) GetUserByAccessKey(ctx context.Context, accessKey string) (*Identity, *Credential, error) {
+	// Fast path: check Bloom filter first (no lock needed)
+	// If not in Bloom filter, definitely not a valid key
+	if !s.accessKeyBloom.Contains(accessKey) {
+		return nil, nil, ErrAccessKeyNotFound
+	}
+
+	// Slow path: verify in map (Bloom filter may have false positives)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -57,6 +71,7 @@ func (s *MemoryStore) CreateUser(ctx context.Context, identity *Identity) error 
 	// Index all access keys
 	for _, cred := range identity.Credentials {
 		s.accessKeys[cred.AccessKey] = identity.Name
+		s.accessKeyBloom.Add(cred.AccessKey)
 	}
 
 	return nil
@@ -91,9 +106,11 @@ func (s *MemoryStore) UpdateUser(ctx context.Context, identity *Identity) error 
 
 	s.users[identity.Name] = identity
 
-	// Re-index new access keys
+	// Re-index new access keys and add to Bloom filter
+	// Note: Can't remove old keys from Bloom filter, but false positives are acceptable
 	for _, cred := range identity.Credentials {
 		s.accessKeys[cred.AccessKey] = identity.Name
+		s.accessKeyBloom.Add(cred.AccessKey)
 	}
 
 	return nil
@@ -145,6 +162,7 @@ func (s *MemoryStore) CreateAccessKey(ctx context.Context, username string, cred
 
 	identity.Credentials = append(identity.Credentials, cred)
 	s.accessKeys[cred.AccessKey] = username
+	s.accessKeyBloom.Add(cred.AccessKey)
 
 	return nil
 }
