@@ -33,3 +33,7 @@ go.work.sum
 
 workspace/
 zapfs
+zapfs-enterprise
+
+# Air hot reload temp directory
+tmp/

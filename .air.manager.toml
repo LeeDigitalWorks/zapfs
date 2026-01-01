@@ -1,0 +1,58 @@
+# Air config for Manager service hot reload
+# Used by docker-compose.dev.yml
+
+root = "/app"
+tmp_dir = "/tmp/air-manager"
+
+[build]
+# Build command (disable VCS stamping for Docker builds)
+cmd = "go build -buildvcs=false -o /tmp/air-manager/zapfs ."
+
+# Binary location
+bin = "/tmp/air-manager/zapfs"
+
+# Use wrapper script to run binary with args from ZAPFS_ARGS env var
+full_bin = "/usr/local/bin/run-manager.sh"
+
+# Watch these extensions
+include_ext = ["go", "toml"]
+
+# Exclude directories
+exclude_dir = [
+    "tmp",
+    "vendor",
+    "mocks",
+    "integration",
+    "docker",
+    "proto/*_pb",
+    ".git",
+    "workspace",
+]
+
+# Exclude test files
+exclude_regex = ["_test.go$", "_mock.go$"]
+
+# Delay before rebuilding (ms)
+delay = 1000
+
+# Stop old binary before building
+stop_on_error = false
+
+# Send interrupt signal before kill
+send_interrupt = true
+
+# Kill delay after interrupt (ms)
+kill_delay = 500
+
+[log]
+time = true
+main_only = false
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = false

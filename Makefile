@@ -115,7 +115,7 @@ proto:
 	cd proto && make protoc
 
 # =============================================================================
-# Docker
+# Docker (Production)
 # =============================================================================
 
 docker-up:
@@ -129,3 +129,28 @@ docker-logs:
 
 docker-rebuild:
 	cd docker && docker compose build && docker compose up -d
+
+# =============================================================================
+# Docker (Development with Hot Reload)
+# =============================================================================
+
+# Start development environment with hot reload
+# First build takes longer; subsequent builds are fast due to caching
+docker-dev:
+	cd docker && docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# Start in detached mode
+docker-dev-d:
+	cd docker && docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+# View logs in dev mode
+docker-dev-logs:
+	cd docker && docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
+
+# Stop dev environment
+docker-dev-down:
+	cd docker && docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+
+# Rebuild dev images (clears go caches)
+docker-dev-rebuild:
+	cd docker && docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache

@@ -95,7 +95,7 @@ services:
       - "8060:8060"  # IAM Admin API
     volumes:
       - manager-1-data:/data
-      - ../cmd/config:/config:ro  # Mount config directory
+      - ../cmd/config:/etc/zapfs:ro  # Mount config directory
     networks:
       - zapfs-net
     healthcheck:
@@ -188,7 +188,7 @@ services:
       - --grpc_port=8083
       - --debug_port=8085
       - --db_driver=mysql
-      - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs
+      - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
       - --manager_addr=manager-1:8050
       # IAM mode: "remote" syncs from manager, "local" uses config file
       # - --iam_mode=remote

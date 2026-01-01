@@ -63,6 +63,14 @@ var (
 		Name:      "dequeue_errors_total",
 		Help:      "Total number of dequeue errors",
 	})
+
+	// DeadlockRetries tracks deadlock retry attempts
+	DeadlockRetries = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "zapfs",
+		Subsystem: "taskqueue",
+		Name:      "deadlock_retries_total",
+		Help:      "Total number of deadlock retry attempts",
+	})
 )
 
 func init() {
@@ -74,5 +82,6 @@ func init() {
 		QueueDepth,
 		WorkerActive,
 		DequeueErrors,
+		DeadlockRetries,
 	)
 }

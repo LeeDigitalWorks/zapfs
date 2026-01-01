@@ -4,9 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+const (
+	// maxDeadlockRetries is the maximum number of retry attempts for deadlock errors
+	maxDeadlockRetries = 3
+	// baseDeadlockBackoff is the base backoff duration for deadlock retries
+	baseDeadlockBackoff = 10 * time.Millisecond
 )
 
 // DBQueue is a database-backed implementation of Queue.
@@ -75,7 +84,43 @@ func (q *DBQueue) Enqueue(ctx context.Context, task *Task) error {
 	return err
 }
 
+// isDeadlockError checks if the error is a MySQL deadlock error (Error 1213)
+func isDeadlockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// MySQL error 1213: Deadlock found when trying to get lock
+	errStr := err.Error()
+	return strings.Contains(errStr, "Error 1213") || strings.Contains(errStr, "Deadlock")
+}
+
 func (q *DBQueue) Dequeue(ctx context.Context, workerID string, taskTypes ...TaskType) (*Task, error) {
+	// Retry with exponential backoff on deadlock errors
+	var lastErr error
+	for attempt := range maxDeadlockRetries {
+		task, err := q.dequeueOnce(ctx, workerID, taskTypes...)
+		if err == nil {
+			return task, nil
+		}
+		if !isDeadlockError(err) {
+			return nil, err
+		}
+		lastErr = err
+		DeadlockRetries.Inc()
+
+		// Exponential backoff with jitter: 10-20ms, 20-40ms, 40-80ms
+		backoff := baseDeadlockBackoff * time.Duration(1<<attempt)
+		jitter := time.Duration(rand.Int63n(int64(backoff)))
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff + jitter):
+		}
+	}
+	return nil, lastErr
+}
+
+func (q *DBQueue) dequeueOnce(ctx context.Context, workerID string, taskTypes ...TaskType) (*Task, error) {
 	// Use SELECT ... FOR UPDATE SKIP LOCKED for concurrent workers
 	// This is MySQL 8.0+ / MariaDB 10.6+ / Vitess feature
 

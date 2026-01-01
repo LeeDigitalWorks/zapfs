@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 	"time"
 
@@ -378,13 +379,68 @@ func (c *Coordinator) ReadObject(ctx context.Context, req *ReadRequest, writer i
 		return nil
 	}
 
-	var lastErr error
-	for _, chunkRef := range req.ChunkRefs {
-		if chunkRef.FileServerAddr == "" {
+	// Group chunk refs by ChunkID (replicas have the same ChunkID)
+	// For multipart objects, different parts have different ChunkIDs
+	chunkGroups := groupChunksByID(req.ChunkRefs)
+
+	// Read each unique chunk in offset order and write to output
+	for _, group := range chunkGroups {
+		if err := c.readChunkGroup(ctx, group, writer); err != nil {
+			logger.Error().Err(err).
+				Str("chunk_id", string(group.chunkID)).
+				Msg("ReadObject: failed to read chunk group")
+			return err
+		}
+	}
+
+	return nil
+}
+
+// chunkGroup represents a set of replicas for a single chunk
+type chunkGroup struct {
+	chunkID  types.ChunkID
+	offset   uint64
+	replicas []types.ChunkRef
+}
+
+// groupChunksByID groups chunk refs by ChunkID and sorts by offset.
+// Each group represents replicas of the same chunk data.
+func groupChunksByID(refs []types.ChunkRef) []chunkGroup {
+	// Build map of ChunkID -> replicas
+	groupMap := make(map[types.ChunkID]*chunkGroup)
+	for _, ref := range refs {
+		if ref.FileServerAddr == "" {
 			continue
 		}
+		g, exists := groupMap[ref.ChunkID]
+		if !exists {
+			g = &chunkGroup{
+				chunkID:  ref.ChunkID,
+				offset:   ref.Offset,
+				replicas: make([]types.ChunkRef, 0, 1),
+			}
+			groupMap[ref.ChunkID] = g
+		}
+		g.replicas = append(g.replicas, ref)
+	}
 
-		_, err := c.fileClientPool.GetObject(ctx, chunkRef.FileServerAddr, string(chunkRef.ChunkID), func(chunk []byte) error {
+	// Convert map to slice and sort by offset
+	groups := make([]chunkGroup, 0, len(groupMap))
+	for _, g := range groupMap {
+		groups = append(groups, *g)
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].offset < groups[j].offset
+	})
+
+	return groups
+}
+
+// readChunkGroup reads data from one of the replicas in the group (with failover)
+func (c *Coordinator) readChunkGroup(ctx context.Context, group chunkGroup, writer io.Writer) error {
+	var lastErr error
+	for _, replica := range group.replicas {
+		_, err := c.fileClientPool.GetObject(ctx, replica.FileServerAddr, string(replica.ChunkID), func(chunk []byte) error {
 			_, writeErr := writer.Write(chunk)
 			return writeErr
 		})
@@ -395,18 +451,20 @@ func (c *Coordinator) ReadObject(ctx context.Context, req *ReadRequest, writer i
 
 		lastErr = err
 		logger.Warn().Err(err).
-			Str("file_server", chunkRef.FileServerAddr).
-			Str("chunk_id", string(chunkRef.ChunkID)).
-			Msg("failed to read from file server, trying next")
+			Str("file_server", replica.FileServerAddr).
+			Str("chunk_id", string(replica.ChunkID)).
+			Msg("failed to read from file server, trying next replica")
 	}
 
 	if lastErr != nil {
-		return fmt.Errorf("failed to read from any file server: %w", lastErr)
+		return fmt.Errorf("failed to read chunk %s from any replica: %w", group.chunkID, lastErr)
 	}
-	return fmt.Errorf("no file servers available")
+	return fmt.Errorf("no replicas available for chunk %s", group.chunkID)
 }
 
 // ReadObjectRange reads a range of bytes from file servers with failover.
+// For multi-chunk objects (e.g., multipart uploads), it reads from all chunks
+// that overlap with the requested range and concatenates the results.
 // Returns nil for empty objects (no chunks to read).
 func (c *Coordinator) ReadObjectRange(ctx context.Context, req *ReadRangeRequest, writer io.Writer) error {
 	// Empty object (size=0) has no chunks - nothing to read
@@ -414,13 +472,45 @@ func (c *Coordinator) ReadObjectRange(ctx context.Context, req *ReadRangeRequest
 		return nil
 	}
 
-	var lastErr error
-	for _, chunkRef := range req.ChunkRefs {
-		if chunkRef.FileServerAddr == "" {
-			continue
+	// Group chunk refs by ChunkID and sort by offset
+	chunkGroups := groupChunksByID(req.ChunkRefs)
+
+	// Calculate the requested range end
+	rangeStart := req.Offset
+	rangeEnd := req.Offset + req.Length
+
+	// Read from each chunk that overlaps with the requested range
+	for _, group := range chunkGroups {
+		chunkStart := group.offset
+		chunkEnd := group.offset + group.replicas[0].Size
+
+		// Check if this chunk overlaps with requested range
+		if chunkEnd <= rangeStart || chunkStart >= rangeEnd {
+			continue // No overlap
 		}
 
-		_, err := c.fileClientPool.GetObjectRange(ctx, chunkRef.FileServerAddr, string(chunkRef.ChunkID), req.Offset, req.Length, func(chunk []byte) error {
+		// Calculate the overlapping region
+		overlapStart := max(chunkStart, rangeStart)
+		overlapEnd := min(chunkEnd, rangeEnd)
+
+		// Calculate local offset and length within this chunk
+		localOffset := overlapStart - chunkStart
+		localLength := overlapEnd - overlapStart
+
+		// Read the overlapping portion from this chunk
+		if err := c.readChunkGroupRange(ctx, group, localOffset, localLength, writer); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// readChunkGroupRange reads a range from one of the replicas in the group (with failover)
+func (c *Coordinator) readChunkGroupRange(ctx context.Context, group chunkGroup, offset, length uint64, writer io.Writer) error {
+	var lastErr error
+	for _, replica := range group.replicas {
+		_, err := c.fileClientPool.GetObjectRange(ctx, replica.FileServerAddr, string(replica.ChunkID), offset, length, func(chunk []byte) error {
 			_, writeErr := writer.Write(chunk)
 			return writeErr
 		})
@@ -431,21 +521,22 @@ func (c *Coordinator) ReadObjectRange(ctx context.Context, req *ReadRangeRequest
 
 		lastErr = err
 		logger.Warn().Err(err).
-			Str("file_server", chunkRef.FileServerAddr).
-			Str("chunk_id", string(chunkRef.ChunkID)).
-			Uint64("offset", req.Offset).
-			Uint64("length", req.Length).
-			Msg("failed to read range from file server, trying next")
+			Str("file_server", replica.FileServerAddr).
+			Str("chunk_id", string(replica.ChunkID)).
+			Uint64("offset", offset).
+			Uint64("length", length).
+			Msg("failed to read range from file server, trying next replica")
 	}
 
 	if lastErr != nil {
-		return fmt.Errorf("failed to read range from any file server: %w", lastErr)
+		return fmt.Errorf("failed to read chunk %s range from any replica: %w", group.chunkID, lastErr)
 	}
-	return fmt.Errorf("no file servers available")
+	return fmt.Errorf("no replicas available for chunk %s", group.chunkID)
 }
 
 // ReadObjectToBuffer reads full object data into a buffer.
 // This is used for encrypted objects that need full decryption.
+// For multi-chunk objects, it reads all chunks and concatenates them.
 // Returns empty byte slice for empty objects (no chunks to read).
 func (c *Coordinator) ReadObjectToBuffer(ctx context.Context, chunkRefs []types.ChunkRef) ([]byte, error) {
 	// Empty object (size=0) has no chunks - return empty slice
@@ -453,14 +544,28 @@ func (c *Coordinator) ReadObjectToBuffer(ctx context.Context, chunkRefs []types.
 		return []byte{}, nil
 	}
 
-	var lastErr error
-	for _, chunkRef := range chunkRefs {
-		if chunkRef.FileServerAddr == "" {
-			continue
-		}
+	// Group chunk refs by ChunkID and sort by offset
+	chunkGroups := groupChunksByID(chunkRefs)
 
+	// Read each unique chunk in order
+	var result []byte
+	for _, group := range chunkGroups {
+		data, err := c.readChunkGroupToBuffer(ctx, group)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, data...)
+	}
+
+	return result, nil
+}
+
+// readChunkGroupToBuffer reads data from one of the replicas in the group into a buffer
+func (c *Coordinator) readChunkGroupToBuffer(ctx context.Context, group chunkGroup) ([]byte, error) {
+	var lastErr error
+	for _, replica := range group.replicas {
 		var data []byte
-		_, err := c.fileClientPool.GetObject(ctx, chunkRef.FileServerAddr, string(chunkRef.ChunkID), func(chunk []byte) error {
+		_, err := c.fileClientPool.GetObject(ctx, replica.FileServerAddr, string(replica.ChunkID), func(chunk []byte) error {
 			data = append(data, chunk...)
 			return nil
 		})
@@ -471,15 +576,15 @@ func (c *Coordinator) ReadObjectToBuffer(ctx context.Context, chunkRefs []types.
 
 		lastErr = err
 		logger.Warn().Err(err).
-			Str("file_server", chunkRef.FileServerAddr).
-			Str("chunk_id", string(chunkRef.ChunkID)).
-			Msg("failed to read from file server, trying next")
+			Str("file_server", replica.FileServerAddr).
+			Str("chunk_id", string(replica.ChunkID)).
+			Msg("failed to read from file server, trying next replica")
 	}
 
 	if lastErr != nil {
-		return nil, fmt.Errorf("failed to read from any file server: %w", lastErr)
+		return nil, fmt.Errorf("failed to read chunk %s from any replica: %w", group.chunkID, lastErr)
 	}
-	return nil, fmt.Errorf("no file servers available")
+	return nil, fmt.Errorf("no replicas available for chunk %s", group.chunkID)
 }
 
 // CacheStats returns statistics about the target cache.
@@ -534,7 +639,7 @@ func (c *Coordinator) DecrementChunkRefCounts(ctx context.Context, chunks []type
 			continue
 		}
 
-		// Check individual results
+		// Check individual results - only log failures
 		for _, r := range results {
 			if !r.Success {
 				logger.Debug().
@@ -547,11 +652,6 @@ func (c *Coordinator) DecrementChunkRefCounts(ctx context.Context, chunks []type
 					FileServerAddr: addr,
 					Error:          r.Error,
 				})
-			} else {
-				logger.Debug().
-					Str("chunk_id", r.ChunkID).
-					Uint32("new_ref_count", r.NewRefCount).
-					Msg("decremented chunk ref count")
 			}
 		}
 	}

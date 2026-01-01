@@ -8,6 +8,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,10 +104,9 @@ func TestMultipartUpload(t *testing.T) {
 				require.NoError(t, err)
 				defer getResp.Body.Close()
 
-				retrieved := make([]byte, len(allData))
-				_, err = getResp.Body.Read(retrieved)
-				// Note: may get EOF, which is fine
-				assert.Equal(t, allData, retrieved[:len(allData)])
+				retrieved, err := io.ReadAll(getResp.Body)
+				require.NoError(t, err)
+				assert.Equal(t, allData, retrieved)
 			},
 		},
 		{
@@ -353,9 +353,9 @@ func TestUploadPartCopy(t *testing.T) {
 				require.NoError(t, err)
 				defer getResp.Body.Close()
 
-				destData := make([]byte, len(sourceData))
-				n, _ := getResp.Body.Read(destData)
-				assert.Equal(t, sourceData, destData[:n])
+				destData, err := io.ReadAll(getResp.Body)
+				require.NoError(t, err)
+				assert.Equal(t, sourceData, destData)
 			},
 		},
 		{
@@ -432,9 +432,9 @@ func TestUploadPartCopy(t *testing.T) {
 				require.NoError(t, err)
 				defer getResp.Body.Close()
 
-				destData := make([]byte, len(sourceData))
-				n, _ := getResp.Body.Read(destData)
-				assert.Equal(t, sourceData, destData[:n])
+				destData, err := io.ReadAll(getResp.Body)
+				require.NoError(t, err)
+				assert.Equal(t, sourceData, destData)
 			},
 			skipShort: true,
 		},

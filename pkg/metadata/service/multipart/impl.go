@@ -546,9 +546,10 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 			}
 		}
 
-		// Adjust chunk offsets
+		// Adjust chunk offsets to be relative to the start of the combined object
+		// Each chunk's offset within the part must be added to the cumulative offset
 		for _, ref := range part.ChunkRefs {
-			ref.Offset = uint64(totalSize)
+			ref.Offset = ref.Offset + uint64(totalSize)
 			allChunkRefs = append(allChunkRefs, ref)
 		}
 

@@ -1,0 +1,200 @@
+# =============================================================================
+# Development Override for Hot Reload
+# =============================================================================
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Or use the Makefile target:
+#   make docker-dev
+#
+# This override file:
+#   - Uses Dockerfile.dev with Go toolchain and Air
+#   - Mounts source code for live rebuilds
+#   - Automatically rebuilds and restarts on code changes
+#
+# First build may take longer as dependencies are downloaded.
+# Subsequent builds are fast due to Go module and build caching.
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Manager Cluster with Hot Reload
+  # ===========================================================================
+
+  manager-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050
+      - --debug_port=8055
+      - --admin_port=8060
+      - --raft_dir=/data/raft
+      - --raft_addr=manager-1:8051
+      - --bootstrap
+      - --node_id=manager-1
+    volumes:
+      - ..:/app:cached                    # Mount source code
+      - manager-1-data:/data
+      - go-mod-cache:/go/pkg/mod          # Cache Go modules
+      - go-build-cache:/root/.cache/go-build  # Cache builds
+      - ../cmd/config:/etc/zapfs:ro        # Mount IAM config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  manager-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050
+      - --debug_port=8055
+      - --admin_port=8060
+      - --raft_dir=/data/raft
+      - --raft_addr=manager-2:8051
+      - --join=manager-1:8050
+      - --node_id=manager-2
+    volumes:
+      - ..:/app:cached
+      - manager-2-data:/data
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - ../cmd/config:/etc/zapfs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  manager-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050
+      - --debug_port=8055
+      - --admin_port=8060
+      - --raft_dir=/data/raft
+      - --raft_addr=manager-3:8051
+      - --join=manager-1:8050
+      - --node_id=manager-3
+    volumes:
+      - ..:/app:cached
+      - manager-3-data:/data
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - ../cmd/config:/etc/zapfs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  # ===========================================================================
+  # Metadata Service with Hot Reload
+  # ===========================================================================
+
+  metadata:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    command:
+      - metadata
+      - --ip=0.0.0.0
+      - --http_port=8082
+      - --grpc_port=8083
+      - --debug_port=8085
+      - --db_driver=mysql
+      - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
+      - --manager_addr=manager-1:8050
+    environment:
+      LOG_LEVEL: debug
+    volumes:
+      - ..:/app:cached
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - ../cmd/config:/etc/zapfs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8085/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  # ===========================================================================
+  # File Servers with Hot Reload
+  # ===========================================================================
+
+  file-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    command:
+      - file
+      - --bind_addr=0.0.0.0:8081
+      - --http_port=8080
+      - --debug_port=8010
+      - --index_path=/data/index
+      - --node_id=file-1
+      - --advertise_addr=file-1:8081
+      - --manager_addr=manager-1:8050
+      - --gc_interval=1m
+      - --gc_grace_period=5m
+    volumes:
+      - ..:/app:cached
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8010/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  file-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    command:
+      - file
+      - --bind_addr=0.0.0.0:8091
+      - --http_port=8090
+      - --debug_port=8011
+      - --index_path=/data/index
+      - --node_id=file-2
+      - --advertise_addr=file-2:8091
+      - --manager_addr=manager-1:8050
+      - --gc_interval=1m
+      - --gc_grace_period=5m
+    volumes:
+      - ..:/app:cached
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8011/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+# ===========================================================================
+# Shared Volumes for Go Caching
+# ===========================================================================
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

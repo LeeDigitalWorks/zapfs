@@ -265,6 +265,11 @@ func (s *serviceImpl) GetBucketPolicy(ctx context.Context, bucket string) (*s3ty
 		return nil, &Error{Code: ErrCodeNoSuchBucketPolicy, Message: "no policy configured"}
 	}
 
+	// Bucket exists but may have nil policy (e.g., after deletion)
+	if policy == nil {
+		return nil, &Error{Code: ErrCodeNoSuchBucketPolicy, Message: "no policy configured"}
+	}
+
 	return policy, nil
 }
 

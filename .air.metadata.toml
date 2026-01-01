@@ -1,0 +1,44 @@
+# Air config for Metadata service hot reload
+# Used by docker-compose.dev.yml
+
+root = "/app"
+tmp_dir = "/tmp/air-metadata"
+
+[build]
+# Build command (disable VCS stamping for Docker builds)
+cmd = "go build -buildvcs=false -o /tmp/air-metadata/zapfs ."
+bin = "/tmp/air-metadata/zapfs"
+full_bin = "/usr/local/bin/run-metadata.sh"
+
+include_ext = ["go", "toml"]
+
+exclude_dir = [
+    "tmp",
+    "vendor",
+    "mocks",
+    "integration",
+    "docker",
+    "proto/*_pb",
+    ".git",
+    "workspace",
+]
+
+exclude_regex = ["_test.go$", "_mock.go$"]
+
+delay = 1000
+stop_on_error = false
+send_interrupt = true
+kill_delay = 500
+
+[log]
+time = true
+main_only = false
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = false

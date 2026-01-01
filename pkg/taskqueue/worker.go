@@ -3,6 +3,7 @@ package taskqueue
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -106,16 +107,23 @@ func (w *Worker) Stop() {
 func (w *Worker) work(ctx context.Context, types []TaskType) {
 	defer w.wg.Done()
 
-	ticker := time.NewTicker(w.pollInterval)
-	defer ticker.Stop()
+	// Use jittered polling to prevent thundering herd
+	// Jitter is up to 25% of the poll interval
+	jitterMax := w.pollInterval / 4
 
 	for {
+		// Calculate next poll time with jitter
+		jitter := time.Duration(rand.Int63n(int64(jitterMax)))
+		timer := time.NewTimer(w.pollInterval + jitter)
+
 		select {
 		case <-w.stopCh:
+			timer.Stop()
 			return
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			w.processOne(ctx, types)
 		}
 	}

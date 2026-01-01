@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# Development Dockerfile with Hot Reload
+# =============================================================================
+#
+# This Dockerfile is for development only - it includes the Go toolchain
+# and uses Air for automatic rebuilds when source files change.
+#
+# Usage with docker-compose.dev.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Or use the Makefile target:
+#   make docker-dev
+#
+# =============================================================================
+
+FROM golang:1.25-alpine
+
+# Install development dependencies
+RUN apk add --no-cache git ca-certificates tzdata wget curl
+
+# Install Air for hot reload
+# https://github.com/air-verse/air
+RUN go install github.com/air-verse/air@latest
+
+# Create non-root user (but we'll run as root in dev for simplicity)
+RUN addgroup -g 1000 zapfs && \
+    adduser -u 1000 -G zapfs -s /bin/sh -D zapfs
+
+# Create data directories
+RUN mkdir -p /data/chunks /data/metadata /data/raft && \
+    chown -R zapfs:zapfs /data
+
+# Create app directory
+WORKDIR /app
+
+# Copy entrypoint and runner scripts
+COPY docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
+COPY docker/run-manager.sh /usr/local/bin/run-manager.sh
+COPY docker/run-metadata.sh /usr/local/bin/run-metadata.sh
+COPY docker/run-file.sh /usr/local/bin/run-file.sh
+RUN chmod +x /usr/local/bin/dev-entrypoint.sh /usr/local/bin/run-*.sh
+
+# Set Go environment for faster builds
+ENV CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64 \
+    GO111MODULE=on
+
+# Default environment (same as production)
+ENV HTTP_PORT=8080 \
+    GRPC_PORT=8081 \
+    DATA_DIR=/data
+
+# Use entrypoint script that sets up Air with proper args
+ENTRYPOINT ["/usr/local/bin/dev-entrypoint.sh"]
