@@ -12,6 +12,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -140,18 +141,26 @@ func (r *RemoteCredentialStore) connect(ctx context.Context) error {
 	// Try each manager address
 	var lastErr error
 	for _, addr := range r.managerAddrs {
-		dialCtx, cancel := context.WithTimeout(ctx, r.config.DialTimeout)
-		conn, err := grpc.DialContext(dialCtx, addr,
+		conn, err := grpc.NewClient(addr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
-		cancel()
-
 		if err != nil {
 			lastErr = err
-			logger.Warn().Err(err).Str("addr", addr).Msg("failed to connect to manager")
+			logger.Warn().Err(err).Str("addr", addr).Msg("failed to create client for manager")
 			continue
 		}
+
+		// Trigger connection and wait for it to be ready
+		conn.Connect()
+		dialCtx, cancel := context.WithTimeout(ctx, r.config.DialTimeout)
+		if !waitForReady(dialCtx, conn) {
+			cancel()
+			conn.Close()
+			lastErr = fmt.Errorf("connection timeout")
+			logger.Warn().Str("addr", addr).Msg("failed to connect to manager: timeout")
+			continue
+		}
+		cancel()
 
 		r.conn = conn
 		r.client = iam_pb.NewIAMServiceClient(conn)
@@ -160,6 +169,22 @@ func (r *RemoteCredentialStore) connect(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("failed to connect to any manager: %w", lastErr)
+}
+
+// waitForReady waits for the connection to become ready or the context to be done
+func waitForReady(ctx context.Context, conn *grpc.ClientConn) bool {
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return true
+		}
+		if state == connectivity.TransientFailure || state == connectivity.Shutdown {
+			return false
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			return false // context done
+		}
+	}
 }
 
 // GetUserByAccessKey implements CredentialStore
@@ -531,26 +556,4 @@ func protoToCredential(pb *iam_pb.Credential) (*Identity, *Credential) {
 	}
 
 	return identity, cred
-}
-
-func credentialToProto(identity *Identity, cred *Credential, includeSecret bool) *iam_pb.Credential {
-	pb := &iam_pb.Credential{
-		AccessKey: cred.AccessKey,
-		Username:  identity.Name,
-		Disabled:  identity.Disabled,
-		Status:    cred.Status,
-	}
-
-	if identity.Account != nil {
-		pb.AccountId = identity.Account.ID
-		pb.DisplayName = identity.Account.DisplayName
-		pb.Email = identity.Account.EmailAddress
-	}
-
-	// Only include secret for trusted internal services
-	if includeSecret {
-		pb.SecretKey = cred.SecretKey
-	}
-
-	return pb
 }

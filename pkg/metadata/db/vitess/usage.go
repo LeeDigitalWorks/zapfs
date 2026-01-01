@@ -519,10 +519,6 @@ func nullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
-type dailyScanner interface {
-	Scan(dest ...any) error
-}
-
 func scanDailyUsageRows(rows *sql.Rows) ([]usage.DailyUsage, error) {
 	var result []usage.DailyUsage
 	for rows.Next() {

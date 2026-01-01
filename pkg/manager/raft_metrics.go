@@ -93,8 +93,6 @@ var (
 	})
 )
 
-var raftMetricsOnce sync.Once
-
 func init() {
 	debug.Registry().MustRegister(
 		RaftState,

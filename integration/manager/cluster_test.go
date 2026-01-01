@@ -166,7 +166,8 @@ func TestWriteToAnyNode(t *testing.T) {
 			defer cancel()
 
 			_, err := client.ManagerServiceClient.CreateCollection(ctx, &manager_pb.CreateCollectionRequest{
-				Name: name,
+				Name:  name,
+				Owner: "test-owner",
 			})
 
 			if err != nil {

@@ -389,7 +389,6 @@ type EncryptionMetadata struct {
 	SSECustomerKeyMD5 string // For SSE-C validation
 	SSEKMSKeyID       string // For SSE-KMS
 	SSEKMSContext     string // For SSE-KMS (encryption context JSON)
-	dekCiphertext     string // Encrypted DEK (base64) for SSE-KMS (internal use)
 }
 
 // SSECHeaders contains parsed SSE-C headers from a request

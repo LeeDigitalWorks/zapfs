@@ -328,13 +328,13 @@ func (ms *ManagerServer) RaftListClusterServers(ctx context.Context, req *manage
 		return nil, err
 	}
 
-	leader := ms.raftNode.Leader()
+	leaderAddr := ms.raftNode.Leader()
 	var servers []*manager_pb.RaftListClusterServersResponse_Server
 	for _, srv := range config.Servers {
 		servers = append(servers, &manager_pb.RaftListClusterServersResponse_Server{
 			Id:       string(srv.ID),
 			Address:  string(srv.Address),
-			IsLeader: string(srv.Address) == leader,
+			IsLeader: string(srv.Address) == leaderAddr,
 		})
 	}
 

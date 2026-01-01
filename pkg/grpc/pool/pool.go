@@ -31,7 +31,6 @@ type hostPool[T any] struct {
 	address string
 	conns   []*grpc.ClientConn
 	clients []T
-	index   atomic.Uint64
 	opts    Options
 	factory ClientFactory[T]
 }

@@ -121,13 +121,13 @@ func (f *LifecycleFilter) Validate() error {
 
 	// If And is present, other top-level filters should not be
 	if f.And != nil && criteriaCount > 1 {
-		return fmt.Errorf("And filter cannot be combined with other top-level filter criteria")
+		return fmt.Errorf("and filter cannot be combined with other top-level filter criteria")
 	}
 
 	// Validate And operator if present
 	if f.And != nil {
 		if err := f.And.Validate(); err != nil {
-			return fmt.Errorf("And: %w", err)
+			return fmt.Errorf("and: %w", err)
 		}
 	}
 
@@ -172,7 +172,7 @@ func (a *LifecycleRuleAndOperator) Validate() error {
 	}
 
 	if criteriaCount < 2 {
-		return fmt.Errorf("And operator must have at least 2 filter criteria")
+		return fmt.Errorf("and operator must have at least 2 filter criteria")
 	}
 
 	// Validate tags

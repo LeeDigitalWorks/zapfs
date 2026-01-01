@@ -37,7 +37,10 @@ make proto                    # Compile .proto files (cd proto && make protoc)
 # Quality
 make lint                     # Run golangci-lint
 make fmt                      # Format with goimports
+staticcheck ./...             # Run staticcheck (catches unused code, deprecated APIs, style issues)
 ```
+
+**Note:** Ignore staticcheck warnings in `proto/*_pb/` (auto-generated) and `checkLicense` functions (enterprise feature guards).
 
 ## Architecture
 

@@ -376,23 +376,6 @@ type mockPutObjectStreamFull struct {
 	ctx      context.Context
 }
 
-func newMockPutObjectStream(meta *file_pb.PutObjectMeta, chunks ...[]byte) *mockPutObjectStreamFull {
-	m := &mockPutObjectStreamFull{
-		ctx: context.Background(),
-	}
-	// First message is metadata
-	m.messages = append(m.messages, &file_pb.PutObjectRequest{
-		Payload: &file_pb.PutObjectRequest_Meta{Meta: meta},
-	})
-	// Rest are chunks
-	for _, chunk := range chunks {
-		m.messages = append(m.messages, &file_pb.PutObjectRequest{
-			Payload: &file_pb.PutObjectRequest_Chunk{Chunk: chunk},
-		})
-	}
-	return m
-}
-
 func (m *mockPutObjectStreamFull) Context() context.Context {
 	return m.ctx
 }
@@ -458,23 +441,6 @@ func TestPutObject_EmptyStream(t *testing.T) {
 // GetObject Stream Tests
 // ============================================================================
 
-type mockGetObjectStream struct {
-	mock.Mock
-	file_pb.FileService_GetObjectServer
-	ctx      context.Context
-	received []*file_pb.GetObjectResponse
-}
-
-func (m *mockGetObjectStream) Context() context.Context {
-	return m.ctx
-}
-
-func (m *mockGetObjectStream) Send(resp *file_pb.GetObjectResponse) error {
-	m.received = append(m.received, resp)
-	args := m.Called(resp)
-	return args.Error(0)
-}
-
 func TestGetObject_NotFound(t *testing.T) {
 	t.Parallel()
 
@@ -508,23 +474,6 @@ func TestBatchDeleteObjects_EmptyList(t *testing.T) {
 // ============================================================================
 // GetObjectRange Tests
 // ============================================================================
-
-type mockGetObjectRangeStream struct {
-	mock.Mock
-	file_pb.FileService_GetObjectRangeServer
-	ctx      context.Context
-	received []*file_pb.GetObjectResponse
-}
-
-func (m *mockGetObjectRangeStream) Context() context.Context {
-	return m.ctx
-}
-
-func (m *mockGetObjectRangeStream) Send(resp *file_pb.GetObjectResponse) error {
-	m.received = append(m.received, resp)
-	args := m.Called(resp)
-	return args.Error(0)
-}
 
 func TestGetObjectRange_Validation(t *testing.T) {
 	t.Parallel()

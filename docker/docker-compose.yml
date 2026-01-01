@@ -125,6 +125,9 @@ services:
       - --node_id=manager-2
     environment:
       ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
+    ports:
+      - "8052:8050"  # gRPC API (mapped to different host port for testing)
+      - "8056:8055"  # Debug/metrics
     volumes:
       - manager-2-data:/data
       - ../cmd/config:/config:ro
@@ -157,6 +160,9 @@ services:
       - --node_id=manager-3
     environment:
       ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
+    ports:
+      - "8054:8050"  # gRPC API (mapped to different host port for testing)
+      - "8057:8055"  # Debug/metrics
     volumes:
       - manager-3-data:/data
       - ../cmd/config:/config:ro

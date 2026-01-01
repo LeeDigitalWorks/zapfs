@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
@@ -592,31 +591,4 @@ func (h *IAMAdminHandler) writeError(w http.ResponseWriter, status int, errType,
 		Error:   errType,
 		Message: message,
 	})
-}
-
-// PathValue compatibility for Go < 1.22
-// Remove this if using Go 1.22+ which has r.PathValue()
-func init() {
-	// This is a workaround for older Go versions
-	// In Go 1.22+, use r.PathValue() directly
-}
-
-// For Go < 1.22, we need to parse path parameters manually
-// This is a simplified version - in production use a router library
-func getPathParam(r *http.Request, pattern, param string) string {
-	// This is a placeholder - the actual implementation depends on your Go version
-	// Go 1.22+ has native path parameter support
-	path := r.URL.Path
-	parts := strings.Split(path, "/")
-	patternParts := strings.Split(pattern, "/")
-
-	for i, pp := range patternParts {
-		if strings.HasPrefix(pp, "{") && strings.HasSuffix(pp, "}") {
-			paramName := pp[1 : len(pp)-1]
-			if paramName == param && i < len(parts) {
-				return parts[i]
-			}
-		}
-	}
-	return ""
 }

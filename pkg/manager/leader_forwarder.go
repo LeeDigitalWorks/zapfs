@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
@@ -93,15 +94,21 @@ func (lf *LeaderForwarder) getClient(leaderAddr string) (manager_pb.ManagerServi
 	}
 
 	// Create new connection to leader
+	conn, err := grpc.NewClient(leaderAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client for leader %s: %w", leaderAddr, err)
+	}
+
+	// Trigger connection and wait for it to be ready
+	conn.Connect()
 	ctx, cancel := context.WithTimeout(context.Background(), lf.dialTimeout)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, leaderAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to leader %s: %w", leaderAddr, err)
+	if !waitForConnReady(ctx, conn) {
+		conn.Close()
+		return nil, fmt.Errorf("failed to connect to leader %s: timeout", leaderAddr)
 	}
 
 	lf.conn = conn
@@ -113,6 +120,22 @@ func (lf *LeaderForwarder) getClient(leaderAddr string) (manager_pb.ManagerServi
 		Msg("Connected to leader for forwarding")
 
 	return lf.client, nil
+}
+
+// waitForConnReady waits for the connection to become ready or the context to be done
+func waitForConnReady(ctx context.Context, conn *grpc.ClientConn) bool {
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return true
+		}
+		if state == connectivity.TransientFailure || state == connectivity.Shutdown {
+			return false
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			return false // context done
+		}
+	}
 }
 
 // Close closes any open connections

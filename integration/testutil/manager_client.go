@@ -50,7 +50,8 @@ func (mc *ManagerClient) CreateCollection(name string) *manager_pb.CreateCollect
 	defer cancel()
 
 	resp, err := mc.ManagerServiceClient.CreateCollection(ctx, &manager_pb.CreateCollectionRequest{
-		Name: name,
+		Name:  name,
+		Owner: "test-owner",
 	})
 	require.NoError(mc.t, err, "failed to create collection %s", name)
 	return resp

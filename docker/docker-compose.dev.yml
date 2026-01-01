@@ -64,6 +64,9 @@ services:
       - --raft_addr=manager-2:8051
       - --join=manager-1:8050
       - --node_id=manager-2
+    ports:
+      - "8052:8050"  # gRPC API (mapped to different host port for testing)
+      - "8056:8055"  # Debug/metrics
     volumes:
       - ..:/app:cached
       - manager-2-data:/data
@@ -91,6 +94,9 @@ services:
       - --raft_addr=manager-3:8051
       - --join=manager-1:8050
       - --node_id=manager-3
+    ports:
+      - "8054:8050"  # gRPC API (mapped to different host port for testing)
+      - "8057:8055"  # Debug/metrics
     volumes:
       - ..:/app:cached
       - manager-3-data:/data

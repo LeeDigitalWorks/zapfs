@@ -17,6 +17,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -33,6 +34,38 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// dialGRPC creates a gRPC connection using the modern grpc.NewClient API
+func dialGRPC(t *testing.T, addr string, timeout time.Duration) *grpc.ClientConn {
+	t.Helper()
+
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("failed to create gRPC client: %v", err)
+	}
+
+	// Trigger connection and wait for ready
+	conn.Connect()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return conn
+		}
+		if state == connectivity.TransientFailure || state == connectivity.Shutdown {
+			conn.Close()
+			t.Fatalf("failed to connect to %s: state=%v", addr, state)
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			conn.Close()
+			t.Fatalf("timeout connecting to %s", addr)
+		}
+	}
+}
+
 // TestIAMServiceConnection verifies we can connect to the manager's IAM gRPC service
 func TestIAMServiceConnection(t *testing.T) {
 	t.Parallel()
@@ -40,13 +73,7 @@ func TestIAMServiceConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, managerGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		t.Fatalf("failed to connect to manager: %v", err)
-	}
+	conn := dialGRPC(t, managerGRPCAddr, 10*time.Second)
 	defer conn.Close()
 
 	client := iam_pb.NewIAMServiceClient(conn)
@@ -119,13 +146,7 @@ func TestCredentialCreationViaAdminAPI(t *testing.T) {
 	t.Logf("created access key: %s", keyResult.AccessKey)
 
 	// Verify the key is available via gRPC
-	conn, err := grpc.DialContext(ctx, managerGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		t.Fatalf("failed to connect to manager: %v", err)
-	}
+	conn := dialGRPC(t, managerGRPCAddr, 10*time.Second)
 	defer conn.Close()
 
 	client := iam_pb.NewIAMServiceClient(conn)
@@ -163,13 +184,7 @@ func TestCredentialSyncToMetadata(t *testing.T) {
 	defer cancel()
 
 	// Connect to manager gRPC for credential creation
-	managerConn, err := grpc.DialContext(ctx, managerGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		t.Fatalf("failed to connect to manager: %v", err)
-	}
+	managerConn := dialGRPC(t, managerGRPCAddr, 10*time.Second)
 	defer managerConn.Close()
 
 	// Create user via admin API
@@ -249,13 +264,7 @@ func TestStreamCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, managerGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		t.Fatalf("failed to connect to manager: %v", err)
-	}
+	conn := dialGRPC(t, managerGRPCAddr, 10*time.Second)
 	defer conn.Close()
 
 	client := iam_pb.NewIAMServiceClient(conn)
@@ -332,13 +341,7 @@ func TestListCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, managerGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		t.Fatalf("failed to connect to manager: %v", err)
-	}
+	conn := dialGRPC(t, managerGRPCAddr, 10*time.Second)
 	defer conn.Close()
 
 	client := iam_pb.NewIAMServiceClient(conn)
@@ -374,13 +377,7 @@ func TestPolicySyncWithCredentials(t *testing.T) {
 	defer cancel()
 
 	// Connect to manager gRPC
-	conn, err := grpc.DialContext(ctx, managerGRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		t.Fatalf("failed to connect to manager: %v", err)
-	}
+	conn := dialGRPC(t, managerGRPCAddr, 10*time.Second)
 	defer conn.Close()
 
 	client := iam_pb.NewIAMServiceClient(conn)

@@ -15,7 +15,6 @@ import (
 type mockUsageStore struct {
 	usage.NopStore
 	jobs        map[string]*usage.ReportJob
-	dailyUsage  []usage.DailyUsage
 	snapshots   []usage.BucketSnapshot
 	mtdRequests int64
 	mtdEgress   int64

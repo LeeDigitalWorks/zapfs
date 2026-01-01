@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"testing"
 	"time"
 
@@ -21,70 +20,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-// mockStorage implements storage.Coordinator for testing
-type mockStorage struct {
-	writeResult *storage.WriteResult
-	writeErr    error
-	readData    []byte
-	readErr     error
-}
-
-func (m *mockStorage) WriteObject(ctx context.Context, req *storage.WriteRequest) (*storage.WriteResult, error) {
-	if m.writeErr != nil {
-		return nil, m.writeErr
-	}
-	if m.writeResult != nil {
-		return m.writeResult, nil
-	}
-	// Default successful write
-	return &storage.WriteResult{
-		Size: req.Size,
-		ChunkRefs: []types.ChunkRef{
-			{
-				ChunkID:        types.ChunkID(req.ObjectID),
-				Size:           req.Size,
-				FileServerAddr: "localhost:9000",
-				BackendID:      "backend-1",
-			},
-		},
-	}, nil
-}
-
-func (m *mockStorage) ReadObject(ctx context.Context, req *storage.ReadRequest, w io.Writer) error {
-	if m.readErr != nil {
-		return m.readErr
-	}
-	if m.readData != nil {
-		_, err := w.Write(m.readData)
-		return err
-	}
-	return nil
-}
-
-func (m *mockStorage) ReadObjectRange(ctx context.Context, req *storage.ReadRangeRequest, w io.Writer) error {
-	if m.readErr != nil {
-		return m.readErr
-	}
-	if m.readData != nil {
-		start := req.Offset
-		end := min(req.Offset+req.Length, uint64(len(m.readData)))
-		_, err := w.Write(m.readData[start:end])
-		return err
-	}
-	return nil
-}
-
-func (m *mockStorage) ReadObjectToBuffer(ctx context.Context, chunkRefs []types.ChunkRef) ([]byte, error) {
-	if m.readErr != nil {
-		return nil, m.readErr
-	}
-	return m.readData, nil
-}
-
-func (m *mockStorage) ReportOrphanChunks(ctx context.Context, bucket, objectID string, targets []types.ChunkRef) {
-	// No-op for testing
-}
 
 // newServiceWithMockDB creates a service for testing with a mock DB
 func newServiceWithMockDB(t *testing.T, mockDB *dbmocks.MockDB) Service {
