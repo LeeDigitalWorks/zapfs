@@ -1,6 +1,6 @@
 # ZapFS
 
-A distributed object storage system with an S3-compatible API, written in Go. Not ready for production.
+A distributed object storage system with an S3-compatible API, written in Go.
 
 ## Architecture
 

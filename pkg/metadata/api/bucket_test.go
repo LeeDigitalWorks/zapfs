@@ -192,7 +192,10 @@ func TestHeadBucketHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		bucket         string
+		setupBucket    *types.BucketInfo
 		expectedStatus int
+		expectedRegion string
+		setupLocation  string // Location to set in bucket store
 	}{
 		{
 			name:           "empty bucket name returns bad request",
@@ -204,6 +207,31 @@ func TestHeadBucketHandler(t *testing.T) {
 			bucket:         "nonexistent-bucket",
 			expectedStatus: http.StatusNotFound,
 		},
+		{
+			name:   "existing bucket returns OK",
+			bucket: "test-bucket",
+			setupBucket: &types.BucketInfo{
+				ID:        uuid.New(),
+				Name:      "test-bucket",
+				OwnerID:   "test-owner",
+				CreatedAt: time.Now().UnixNano(),
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:   "existing bucket with region returns region header",
+			bucket: "test-bucket",
+			setupBucket: &types.BucketInfo{
+				ID:        uuid.New(),
+				Name:      "test-bucket",
+				OwnerID:   "test-owner",
+				Region:    "eu-west-1",
+				CreatedAt: time.Now().UnixNano(),
+			},
+			expectedStatus: http.StatusOK,
+			expectedRegion: "eu-west-1",
+			setupLocation:  "eu-west-1",
+		},
 	}
 
 	for _, tc := range tests {
@@ -211,12 +239,32 @@ func TestHeadBucketHandler(t *testing.T) {
 			t.Parallel()
 
 			srv := newTestServer(t)
+			ctx := context.Background()
+
+			// Setup bucket if needed
+			if tc.setupBucket != nil {
+				err := srv.db.CreateBucket(ctx, tc.setupBucket)
+				require.NoError(t, err)
+				srv.bucketStore.SetBucket(tc.bucket, s3types.Bucket{
+					Name:       tc.setupBucket.Name,
+					OwnerID:    tc.setupBucket.OwnerID,
+					CreateTime: time.Unix(0, tc.setupBucket.CreatedAt),
+					Location:   tc.setupLocation,
+				})
+				// Also set in global cache for service layer
+				srv.globalBucketCache.Set(tc.bucket, tc.setupBucket.OwnerID)
+			}
+
 			d := createTestData(tc.bucket, "", "test-owner")
 			w := httptest.NewRecorder()
 
 			srv.HeadBucketHandler(d, w)
 
 			assert.Equal(t, tc.expectedStatus, w.Code)
+
+			if tc.expectedRegion != "" {
+				assert.Equal(t, tc.expectedRegion, w.Header().Get("x-amz-bucket-region"))
+			}
 		})
 	}
 }
@@ -227,12 +275,46 @@ func TestGetBucketLocationHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		bucket         string
+		setupBucket    *types.BucketInfo
 		expectedStatus int
+		expectedRegion string
+		setupLocation  string // Location to set in bucket store
 	}{
 		{
 			name:           "empty bucket name returns not found",
 			bucket:         "",
 			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "nonexistent bucket returns not found",
+			bucket:         "nonexistent-bucket",
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:   "bucket exists with region",
+			bucket: "test-bucket",
+			setupBucket: &types.BucketInfo{
+				ID:        uuid.New(),
+				Name:      "test-bucket",
+				OwnerID:   "test-owner",
+				Region:    "us-west-2",
+				CreatedAt: time.Now().UnixNano(),
+			},
+			expectedStatus: http.StatusOK,
+			expectedRegion: "us-west-2",
+			setupLocation:  "us-west-2",
+		},
+		{
+			name:   "bucket exists without region (default)",
+			bucket: "test-bucket",
+			setupBucket: &types.BucketInfo{
+				ID:        uuid.New(),
+				Name:      "test-bucket",
+				OwnerID:   "test-owner",
+				CreatedAt: time.Now().UnixNano(),
+			},
+			expectedStatus: http.StatusOK,
+			expectedRegion: "", // Empty = us-east-1 (AWS legacy behavior)
 		},
 	}
 
@@ -241,12 +323,37 @@ func TestGetBucketLocationHandler(t *testing.T) {
 			t.Parallel()
 
 			srv := newTestServer(t)
+			ctx := context.Background()
+
+			// Setup bucket if needed
+			if tc.setupBucket != nil {
+				err := srv.db.CreateBucket(ctx, tc.setupBucket)
+				require.NoError(t, err)
+				srv.bucketStore.SetBucket(tc.bucket, s3types.Bucket{
+					Name:       tc.setupBucket.Name,
+					OwnerID:    tc.setupBucket.OwnerID,
+					CreateTime: time.Unix(0, tc.setupBucket.CreatedAt),
+					Location:   tc.setupLocation,
+				})
+				// Also set in global cache for service layer
+				srv.globalBucketCache.Set(tc.bucket, tc.setupBucket.OwnerID)
+			}
+
 			d := createTestData(tc.bucket, "", "test-owner")
 			w := httptest.NewRecorder()
 
 			srv.GetBucketLocationHandler(d, w)
 
 			assert.Equal(t, tc.expectedStatus, w.Code)
+
+			if tc.expectedStatus == http.StatusOK {
+				assert.Contains(t, w.Header().Get("Content-Type"), "application/xml")
+
+				var result s3types.LocationConstraint
+				err := xml.Unmarshal(w.Body.Bytes(), &result)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedRegion, result.Location)
+			}
 		})
 	}
 }
@@ -338,54 +445,43 @@ func TestCreateBucketHandler(t *testing.T) {
 func TestDeleteBucketHandler(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name           string
-		bucket         string
-		ownerID        string
-		setupBucket    bool // whether to add bucket to cache first
-		mockResponse   *manager_pb.DeleteCollectionResponse
-		mockError      error
-		expectedStatus int
-	}{
-		{
-			name:        "success deletes bucket",
-			bucket:      "delete-me",
-			ownerID:     "test-owner",
-			setupBucket: true,
-			mockResponse: &manager_pb.DeleteCollectionResponse{
-				Success: true,
-			},
-			expectedStatus: http.StatusNoContent,
-		},
-	}
+	t.Run("empty bucket name returns not found", func(t *testing.T) {
+		t.Parallel()
+		srv := newTestServer(t)
+		d := createTestData("", "", "test-owner")
+		d.Req = httptest.NewRequest("DELETE", "/", nil)
+		w := httptest.NewRecorder()
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		srv.DeleteBucketHandler(d, w)
 
-			mockMgr := clientmocks.NewMockManager(t)
-			mockMgr.EXPECT().
-				DeleteCollection(mock.Anything, mock.MatchedBy(func(req *manager_pb.DeleteCollectionRequest) bool {
-					return req.Name == tc.bucket
-				})).
-				Return(tc.mockResponse, tc.mockError)
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
 
-			srv := newTestServer(t, WithManagerClient(mockMgr))
+	t.Run("success deletes bucket", func(t *testing.T) {
+		t.Parallel()
 
-			if tc.setupBucket {
-				srv.bucketStore.SetBucket(tc.bucket, s3types.Bucket{
-					Name:    tc.bucket,
-					OwnerID: tc.ownerID,
-				})
-			}
+		mockMgr := clientmocks.NewMockManager(t)
+		mockMgr.EXPECT().
+			DeleteCollection(mock.Anything, mock.MatchedBy(func(req *manager_pb.DeleteCollectionRequest) bool {
+				return req.Name == "delete-me"
+			})).
+			Return(&manager_pb.DeleteCollectionResponse{Success: true}, nil)
 
-			d := createTestData(tc.bucket, "", tc.ownerID)
-			d.Req = httptest.NewRequest("DELETE", "/"+tc.bucket, nil)
-			w := httptest.NewRecorder()
-
-			srv.DeleteBucketHandler(d, w)
-
-			assert.Equal(t, tc.expectedStatus, w.Code)
+		srv := newTestServer(t, WithManagerClient(mockMgr))
+		srv.bucketStore.SetBucket("delete-me", s3types.Bucket{
+			Name:    "delete-me",
+			OwnerID: "test-owner",
 		})
-	}
+
+		d := createTestData("delete-me", "", "test-owner")
+		d.Req = httptest.NewRequest("DELETE", "/delete-me", nil)
+		w := httptest.NewRecorder()
+
+		srv.DeleteBucketHandler(d, w)
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
+	})
+
+	// Note: "bucket not empty" case is tested in pkg/metadata/service/bucket/service_test.go
+	// as it requires mocking the DB ListObjects call
 }

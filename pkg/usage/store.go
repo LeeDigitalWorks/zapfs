@@ -21,7 +21,12 @@ type Store interface {
 	AggregateEvents(ctx context.Context, ownerID, bucket string, start, end time.Time) (*AggregatedSummary, error)
 
 	// DeleteEventsOlderThan removes events older than the cutoff time.
+	// For partitioned tables, this uses O(1) partition drops.
 	DeleteEventsOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
+
+	// RunPartitionMaintenance adds future partitions and ensures the table is ready.
+	// This is a no-op for non-partitioned tables.
+	RunPartitionMaintenance(ctx context.Context, monthsAhead int) error
 
 	// Daily usage operations
 
@@ -92,6 +97,10 @@ func (s *NopStore) AggregateEvents(ctx context.Context, ownerID, bucket string, 
 
 func (s *NopStore) DeleteEventsOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
 	return 0, nil
+}
+
+func (s *NopStore) RunPartitionMaintenance(ctx context.Context, monthsAhead int) error {
+	return nil
 }
 
 func (s *NopStore) GetDailyUsage(ctx context.Context, ownerID string, start, end time.Time) ([]DailyUsage, error) {

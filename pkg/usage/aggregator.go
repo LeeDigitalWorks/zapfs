@@ -107,6 +107,11 @@ func (a *Aggregator) runDailyTasks() {
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Minute)
 	defer cancel()
 
+	// Run partition maintenance first (add future partitions)
+	if err := a.store.RunPartitionMaintenance(ctx, 3); err != nil {
+		log.Error().Err(err).Msg("partition maintenance failed")
+	}
+
 	// Aggregate yesterday's data
 	yesterday := time.Now().UTC().AddDate(0, 0, -1)
 	if err := a.aggregateDay(ctx, yesterday); err != nil {
@@ -115,7 +120,7 @@ func (a *Aggregator) runDailyTasks() {
 		log.Info().Time("date", yesterday).Msg("daily aggregation completed")
 	}
 
-	// Run retention cleanup
+	// Run retention cleanup (uses partition drops if partitioned)
 	if deleted, err := a.runRetention(ctx); err != nil {
 		log.Error().Err(err).Msg("retention cleanup failed")
 	} else if deleted > 0 {

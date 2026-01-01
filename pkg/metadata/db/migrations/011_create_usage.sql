@@ -2,9 +2,10 @@
 -- These tables exist in all editions (community and enterprise)
 -- Data is only written when enterprise usage reporting is enabled
 
--- Raw usage events (append-only, short retention)
+-- Raw usage events (append-only, short retention, partitioned by month)
+-- Partitioning enables O(1) partition drops instead of row-by-row deletion
 CREATE TABLE IF NOT EXISTS usage_events (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT AUTO_INCREMENT,
     event_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     -- Ownership
@@ -21,11 +22,25 @@ CREATE TABLE IF NOT EXISTS usage_events (
     direction VARCHAR(10),       -- ingress, egress
     storage_class VARCHAR(32),
 
-    -- Indexes for efficient querying and aggregation
+    -- PRIMARY KEY must include partition column for MySQL partitioning
+    PRIMARY KEY (id, event_time),
+
+    -- Covering index for AggregateEvents() GROUP BY queries
+    INDEX idx_usage_agg (owner_id, bucket, event_type, event_time, storage_class),
     INDEX idx_owner_time (owner_id, event_time),
     INDEX idx_bucket_time (bucket, event_time),
     INDEX idx_event_time (event_time)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+PARTITION BY RANGE (TO_DAYS(event_time)) (
+    PARTITION p_2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
+    PARTITION p_2026_01 VALUES LESS THAN (TO_DAYS('2026-02-01')),
+    PARTITION p_2026_02 VALUES LESS THAN (TO_DAYS('2026-03-01')),
+    PARTITION p_2026_03 VALUES LESS THAN (TO_DAYS('2026-04-01')),
+    PARTITION p_2026_04 VALUES LESS THAN (TO_DAYS('2026-05-01')),
+    PARTITION p_2026_05 VALUES LESS THAN (TO_DAYS('2026-06-01')),
+    PARTITION p_2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
+    PARTITION p_future VALUES LESS THAN MAXVALUE
+);
 
 -- Daily usage aggregates (permanent retention)
 CREATE TABLE IF NOT EXISTS usage_daily (
@@ -65,7 +80,10 @@ CREATE TABLE IF NOT EXISTS usage_daily (
     -- Unique constraint for upserts
     UNIQUE INDEX idx_unique_day (owner_id, bucket, usage_date),
     INDEX idx_owner_date (owner_id, usage_date),
-    INDEX idx_date (usage_date)
+    INDEX idx_date (usage_date),
+
+    -- Optimal index for GetDailyUsageByBucket() range queries
+    INDEX idx_owner_bucket_date (owner_id, bucket, usage_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Async report generation jobs (24h expiry)

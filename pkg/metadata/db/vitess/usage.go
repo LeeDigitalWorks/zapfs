@@ -181,6 +181,27 @@ func (s *vitessUsageStore) AggregateEvents(ctx context.Context, ownerID, bucket 
 }
 
 func (s *vitessUsageStore) DeleteEventsOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	// Check if table is partitioned for O(1) partition drops
+	pm := usage.NewPartitionManager(s.db)
+	partitioned, err := pm.IsTablePartitioned(ctx)
+	if err != nil {
+		// Log but fallback to row deletion
+		partitioned = false
+	}
+
+	if partitioned {
+		// Use partition drops (O(1) operation)
+		retentionDays := int(time.Since(cutoff).Hours() / 24)
+		dropped, err := pm.DropOldPartitions(ctx, retentionDays)
+		if err != nil {
+			return 0, fmt.Errorf("drop old partitions: %w", err)
+		}
+		// Return estimate since partition drops don't give exact count
+		// Actual cleanup is the important metric, not the row count
+		return int64(dropped), nil
+	}
+
+	// Fallback to row-by-row deletion for non-partitioned tables
 	result, err := s.db.ExecContext(ctx, `
 		DELETE FROM usage_events WHERE event_time < ?
 	`, cutoff)
@@ -188,6 +209,19 @@ func (s *vitessUsageStore) DeleteEventsOlderThan(ctx context.Context, cutoff tim
 		return 0, fmt.Errorf("delete old events: %w", err)
 	}
 	return result.RowsAffected()
+}
+
+func (s *vitessUsageStore) RunPartitionMaintenance(ctx context.Context, monthsAhead int) error {
+	pm := usage.NewPartitionManager(s.db)
+	partitioned, err := pm.IsTablePartitioned(ctx)
+	if err != nil {
+		return err
+	}
+	if !partitioned {
+		// Table not partitioned, nothing to do
+		return nil
+	}
+	return pm.AddFuturePartitions(ctx, monthsAhead)
 }
 
 // ============================================================================

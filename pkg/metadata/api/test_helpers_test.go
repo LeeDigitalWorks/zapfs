@@ -139,8 +139,9 @@ func newTestServer(t *testing.T, opts ...TestServerOption) *MetadataServer {
 		DB:                testDatabase,
 	})
 
-	// Expose the DB for test setup
+	// Expose the DB and globalBucketCache for test setup
 	srv.db = testDatabase
+	srv.globalBucketCache = globalBucketCache
 
 	// Register cleanup to stop background goroutines (usage aggregator, reporter, etc.)
 	// Note: We don't call srv.Shutdown() because tests may provide their own mocks

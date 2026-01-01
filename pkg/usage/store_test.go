@@ -172,10 +172,10 @@ func TestNopStore(t *testing.T) {
 
 // MockStore is a mock implementation of Store for testing.
 type MockStore struct {
-	events      []UsageEvent
-	dailyUsage  []DailyUsage
-	reportJobs  map[string]*ReportJob
-	insertErr   error
+	events          []UsageEvent
+	dailyUsage      []DailyUsage
+	reportJobs      map[string]*ReportJob
+	insertErr       error
 	aggregateResult *AggregatedSummary
 }
 
@@ -253,6 +253,11 @@ func (m *MockStore) DeleteEventsOlderThan(ctx context.Context, cutoff time.Time)
 	}
 	m.events = kept
 	return deleted, nil
+}
+
+func (m *MockStore) RunPartitionMaintenance(ctx context.Context, monthsAhead int) error {
+	// No-op for mock - partitioning is a database-level concern
+	return nil
 }
 
 func (m *MockStore) GetDailyUsage(ctx context.Context, ownerID string, start, end time.Time) ([]DailyUsage, error) {
@@ -411,10 +416,10 @@ func TestMockStore(t *testing.T) {
 		now := time.Now()
 		events := []UsageEvent{
 			{
-				EventTime: now,
-				OwnerID:   "owner1",
-				Bucket:    "bucket1",
-				EventType: EventTypeStorageDelta,
+				EventTime:  now,
+				OwnerID:    "owner1",
+				Bucket:     "bucket1",
+				EventType:  EventTypeStorageDelta,
 				BytesDelta: 1024,
 			},
 			{

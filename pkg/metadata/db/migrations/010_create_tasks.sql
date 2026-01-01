@@ -34,5 +34,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     INDEX idx_type_status (type, status),
     INDEX idx_retry_after (retry_after),
     INDEX idx_running_heartbeat (status, heartbeat_at),
-    INDEX idx_region (region)
+    INDEX idx_region (region),
+
+    -- Indexes for List() and Cleanup() operations
+    INDEX idx_tasks_created_desc (created_at DESC),
+    INDEX idx_tasks_cleanup (status, completed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

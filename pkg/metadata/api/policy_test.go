@@ -42,9 +42,8 @@ func TestGetBucketPolicyHandler(t *testing.T) {
 				OwnerID:   "test-owner",
 				CreatedAt: time.Now().UnixNano(),
 			},
-			// NOTE: Per S3 spec this should return 404/NoSuchBucketPolicy, but current
-			// implementation returns 200 with null - see service layer bug
-			expectedStatus: http.StatusOK,
+			// Per AWS S3 spec, GetBucketPolicy returns 404/NoSuchBucketPolicy when no policy exists
+			expectedStatus: http.StatusNotFound,
 		},
 		{
 			name:   "policy exists",
