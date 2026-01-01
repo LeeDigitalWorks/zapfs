@@ -22,6 +22,9 @@ type ObjectRef struct {
 	ChunkRefs  []ChunkRef  `json:"chunk_refs,omitempty"`   // For simple/replicated storage
 	ECGroupIDs []uuid.UUID `json:"ec_group_ids,omitempty"` // For erasure-coded storage
 
+	// IsLatest indicates if this is the current version of the object
+	IsLatest bool `json:"is_latest,omitempty"`
+
 	// Encryption metadata
 	// SSEAlgorithm: "AES256" for SSE-S3 or SSE-C, "aws:kms" for SSE-KMS, empty for no encryption
 	SSEAlgorithm string `json:"sse_algorithm,omitempty"`

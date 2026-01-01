@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/store"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
 	"github.com/dustin/go-humanize"
@@ -21,10 +23,42 @@ import (
 // This is a random UUID used as the namespace for UUID v5 generation
 var objectIDNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
+// streamBufferSize is the size of buffers used for streaming data (64KB)
+const streamBufferSize = 64 * 1024
+
+// streamBufferPool provides pooled 64KB buffers for streaming operations.
+// Avoids allocation on every GetObject/GetObjectRange call.
+var streamBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, streamBufferSize)
+		return &buf
+	},
+}
+
+// getStreamBuffer gets a 64KB buffer from the pool.
+func getStreamBuffer() *[]byte {
+	return streamBufferPool.Get().(*[]byte)
+}
+
+// putStreamBuffer returns a buffer to the pool.
+func putStreamBuffer(buf *[]byte) {
+	streamBufferPool.Put(buf)
+}
+
+// uuidCache caches objectID -> UUID mappings to avoid repeated SHA-1 hashing.
+// UUID v5 uses SHA-1 which is ~200ns per call; caching reduces this to ~35ns.
+var uuidCache = utils.NewShardedMap[uuid.UUID]()
+
 // objectIDToUUID converts a string object ID to a deterministic UUID.
 // Uses UUID v5 (SHA-1 based) to ensure the same objectID always maps to the same UUID.
+// Results are cached for performance.
 func objectIDToUUID(objectID string) uuid.UUID {
-	return uuid.NewSHA1(objectIDNamespace, []byte(objectID))
+	if cached, ok := uuidCache.Load(objectID); ok {
+		return cached
+	}
+	id := uuid.NewSHA1(objectIDNamespace, []byte(objectID))
+	uuidCache.Store(objectID, id)
+	return id
 }
 
 // streamReader wraps the gRPC stream as an io.Reader.
@@ -151,8 +185,12 @@ func (fs *FileServer) GetObject(req *file_pb.GetObjectRequest, stream file_pb.Fi
 		return status.Errorf(codes.NotFound, "object not found: %s", objectID)
 	}
 
+	// Get pooled buffer for streaming
+	bufPtr := getStreamBuffer()
+	defer putStreamBuffer(bufPtr)
+	buf := *bufPtr
+
 	// Stream each chunk in order
-	buf := make([]byte, 64*1024) // 64KB streaming buffer
 	for _, chunkRef := range obj.ChunkRefs {
 		reader, err := fs.store.GetChunk(ctx, chunkRef.ChunkID)
 		if err != nil {
@@ -211,7 +249,10 @@ func (fs *FileServer) GetObjectRange(req *file_pb.GetObjectRangeRequest, stream 
 	var bytesRemaining = length
 	var currentOffset uint64 = 0
 
-	buf := make([]byte, 64*1024) // 64KB streaming buffer
+	// Get pooled buffer for streaming
+	bufPtr := getStreamBuffer()
+	defer putStreamBuffer(bufPtr)
+	buf := *bufPtr
 
 	for _, chunkRef := range obj.ChunkRefs {
 		chunkStart := currentOffset

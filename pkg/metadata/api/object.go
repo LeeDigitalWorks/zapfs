@@ -97,6 +97,11 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 	w.Header().Set("ETag", "\""+result.ETag+"\"")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 
+	// Set version ID if versioning is enabled
+	if result.VersionID != "" {
+		w.Header().Set(s3consts.XAmzVersionID, result.VersionID)
+	}
+
 	// SSE-C response headers
 	if result.SSECustomerKeyMD5 != "" {
 		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, result.SSEAlgorithm)
@@ -142,10 +147,14 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 		}
 	}
 
+	// Parse versionId query parameter
+	versionID := d.Req.URL.Query().Get("versionId")
+
 	// Build service request
 	req := &object.GetObjectRequest{
-		Bucket: bucket,
-		Key:    key,
+		Bucket:    bucket,
+		Key:       key,
+		VersionID: versionID,
 	}
 
 	// Parse Range header
@@ -218,6 +227,15 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 	w.Header().Set("Content-Type", result.Metadata.ContentType)
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 
+	// Set version ID if versioning is enabled or a specific version was requested
+	if result.Object != nil {
+		if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists {
+			if bucketInfo.Versioning == s3types.VersioningEnabled || versionID != "" {
+				w.Header().Set(s3consts.XAmzVersionID, result.Object.ID.String())
+			}
+		}
+	}
+
 	if result.AcceptRanges != "" {
 		w.Header().Set("Accept-Ranges", result.AcceptRanges)
 	}
@@ -261,6 +279,9 @@ func (s *MetadataServer) DeleteObjectHandler(d *data.Data, w http.ResponseWriter
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
+	// Parse versionId query parameter
+	versionID := d.Req.URL.Query().Get("versionId")
+
 	// Check expected bucket owner header if provided
 	if bucket != "" {
 		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
@@ -272,14 +293,25 @@ func (s *MetadataServer) DeleteObjectHandler(d *data.Data, w http.ResponseWriter
 		}
 	}
 
-	// Call service layer
-	_, err := s.svc.Objects().DeleteObject(ctx, bucket, key)
+	// Call service layer with version ID
+	result, err := s.svc.Objects().DeleteObjectWithVersion(ctx, bucket, key, versionID)
 	if err != nil {
 		s.handleObjectError(w, d, err)
 		return
 	}
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+
+	// Return version ID and delete marker info for versioned deletes
+	if result != nil {
+		if result.VersionID != "" {
+			w.Header().Set(s3consts.XAmzVersionID, result.VersionID)
+		}
+		if result.DeleteMarker {
+			w.Header().Set(s3consts.XAmzDeleteMarker, "true")
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 
 	// Record usage metrics

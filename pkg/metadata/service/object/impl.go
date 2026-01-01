@@ -14,6 +14,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
@@ -205,6 +206,14 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 		etag = hex.EncodeToString(streamingHasher.Sum(nil))
 	}
 
+	// Check if bucket has versioning enabled
+	versioningEnabled := false
+	if s.bucketStore != nil {
+		if bucketInfo, exists := s.bucketStore.GetBucket(req.Bucket); exists {
+			versioningEnabled = bucketInfo.Versioning == s3types.VersioningEnabled
+		}
+	}
+
 	// Build object reference
 	now := time.Now().Unix()
 	objRef := &types.ObjectRef{
@@ -217,6 +226,7 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 		ProfileID: profileName,
 		CreatedAt: now,
 		ChunkRefs: writeResult.ChunkRefs,
+		IsLatest:  versioningEnabled, // Set IsLatest for versioned objects
 	}
 
 	// Set encryption metadata
@@ -247,6 +257,11 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 		ETag: etag,
 	}
 
+	// Set version ID if versioning is enabled
+	if versioningEnabled {
+		result.VersionID = objectID.String()
+	}
+
 	if encryptionMetadata != nil {
 		result.SSEAlgorithm = encryptionMetadata.Algorithm
 		result.SSECustomerKeyMD5 = encryptionMetadata.CustomerKeyMD5
@@ -259,8 +274,15 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 
 // GetObject retrieves an object
 func (s *serviceImpl) GetObject(ctx context.Context, req *GetObjectRequest) (*GetObjectResult, error) {
-	// Look up object metadata
-	objRef, err := s.db.GetObject(ctx, req.Bucket, req.Key)
+	var objRef *types.ObjectRef
+	var err error
+
+	// Look up object metadata - use version-specific lookup if versionId is provided
+	if req.VersionID != "" {
+		objRef, err = s.db.GetObjectVersion(ctx, req.Bucket, req.Key, req.VersionID)
+	} else {
+		objRef, err = s.db.GetObject(ctx, req.Bucket, req.Key)
+	}
 	if err != nil {
 		if errors.Is(err, db.ErrObjectNotFound) {
 			return nil, newNotFoundError("object")
@@ -268,7 +290,9 @@ func (s *serviceImpl) GetObject(ctx context.Context, req *GetObjectRequest) (*Ge
 		return nil, newInternalError(err)
 	}
 
-	if objRef.IsDeleted() {
+	// For versioned requests, deleted objects (delete markers) are still accessible
+	// but should return 405 Method Not Allowed or similar
+	if objRef.IsDeleted() && req.VersionID == "" {
 		return nil, newNotFoundError("object")
 	}
 
@@ -567,6 +591,45 @@ func (s *serviceImpl) DeleteObject(ctx context.Context, bucket, key string) (*De
 	}
 
 	return &DeleteObjectResult{}, nil
+}
+
+// DeleteObjectWithVersion handles versioned delete operations
+func (s *serviceImpl) DeleteObjectWithVersion(ctx context.Context, bucket, key, versionID string) (*DeleteObjectResult, error) {
+	// If versionID is provided, permanently delete that specific version
+	if versionID != "" {
+		err := s.db.DeleteObjectVersion(ctx, bucket, key, versionID)
+		if err != nil {
+			if errors.Is(err, db.ErrObjectNotFound) {
+				// S3 returns success even for non-existent versions
+				return &DeleteObjectResult{VersionID: versionID}, nil
+			}
+			return nil, newInternalError(err)
+		}
+		return &DeleteObjectResult{VersionID: versionID}, nil
+	}
+
+	// Check if bucket has versioning enabled
+	versioningEnabled := false
+	if s.bucketStore != nil {
+		if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists {
+			versioningEnabled = bucketInfo.Versioning == "Enabled"
+		}
+	}
+
+	if versioningEnabled {
+		// Create a delete marker instead of actually deleting
+		deleteMarkerID, err := s.db.PutDeleteMarker(ctx, bucket, key, "")
+		if err != nil {
+			return nil, newInternalError(err)
+		}
+		return &DeleteObjectResult{
+			VersionID:    deleteMarkerID,
+			DeleteMarker: true,
+		}, nil
+	}
+
+	// Non-versioned: perform regular delete
+	return s.DeleteObject(ctx, bucket, key)
 }
 
 // DeleteObjects batch deletes multiple objects and decrements chunk reference counts

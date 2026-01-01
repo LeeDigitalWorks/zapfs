@@ -63,7 +63,7 @@ type ServiceConfig struct {
 // DefaultServiceConfig returns a ServiceConfig with sensible defaults
 func DefaultServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		CacheMaxItems: 10000,
+		CacheMaxItems: 1_000_000, // 1 million items for high-load scenarios
 		CacheTTL:      5 * time.Minute,
 		EnableSTS:     false,
 		EnableKMS:     false,
@@ -79,7 +79,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 
 	// Apply defaults
 	if cfg.CacheMaxItems <= 0 {
-		cfg.CacheMaxItems = 10000
+		cfg.CacheMaxItems = 1_000_000 // 1 million items for high-load scenarios
 	}
 	if cfg.CacheTTL <= 0 {
 		cfg.CacheTTL = 5 * time.Minute

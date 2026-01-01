@@ -35,9 +35,10 @@ type PutObjectResult struct {
 
 // GetObjectRequest contains parameters for retrieving an object
 type GetObjectRequest struct {
-	Bucket string
-	Key    string
-	Range  *ByteRange // nil for full object
+	Bucket    string
+	Key       string
+	VersionID string     // Specific version to retrieve (empty for latest)
+	Range     *ByteRange // nil for full object
 
 	// For SSE-C encrypted objects
 	SSEC *SSECParams

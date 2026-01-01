@@ -106,11 +106,109 @@ type Statement struct {
 	Effect       Effect               `json:"Effect"`
 	Principal    *Principal           `json:"Principal,omitempty"`
 	NotPrincipal *Principal           `json:"NotPrincipal,omitempty"`
-	Actions      []S3Action           `json:"Action"`
-	NotActions   []S3Action           `json:"NotAction,omitempty"`
-	Resources    []string             `json:"Resource"`
-	NotResources []string             `json:"NotResource,omitempty"`
+	Actions      []S3Action           `json:"-"` // Custom unmarshal handles Action field
+	NotActions   []S3Action           `json:"-"` // Custom unmarshal handles NotAction field
+	Resources    []string             `json:"-"` // Custom unmarshal handles Resource field
+	NotResources []string             `json:"-"` // Custom unmarshal handles NotResource field
 	Condition    map[string]Condition `json:"Condition,omitempty"`
+}
+
+// UnmarshalJSON handles both string and array forms of Action and Resource.
+// AWS S3 policy JSON allows: "Action": "s3:GetObject" or "Action": ["s3:GetObject"]
+func (s *Statement) UnmarshalJSON(data []byte) error {
+	// Use an alias to avoid infinite recursion
+	type Alias Statement
+	aux := &struct {
+		Action      interface{} `json:"Action"`
+		NotAction   interface{} `json:"NotAction"`
+		Resource    interface{} `json:"Resource"`
+		NotResource interface{} `json:"NotResource"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Parse Action (can be string or []string)
+	if aux.Action != nil {
+		actions, err := parseStringOrArray(aux.Action)
+		if err != nil {
+			return err
+		}
+		for _, a := range actions {
+			s.Actions = append(s.Actions, S3Action(a))
+		}
+	}
+
+	// Parse NotAction
+	if aux.NotAction != nil {
+		notActions, err := parseStringOrArray(aux.NotAction)
+		if err != nil {
+			return err
+		}
+		for _, a := range notActions {
+			s.NotActions = append(s.NotActions, S3Action(a))
+		}
+	}
+
+	// Parse Resource (can be string or []string)
+	if aux.Resource != nil {
+		resources, err := parseStringOrArray(aux.Resource)
+		if err != nil {
+			return err
+		}
+		s.Resources = resources
+	}
+
+	// Parse NotResource
+	if aux.NotResource != nil {
+		notResources, err := parseStringOrArray(aux.NotResource)
+		if err != nil {
+			return err
+		}
+		s.NotResources = notResources
+	}
+
+	return nil
+}
+
+// MarshalJSON outputs Action/Resource as arrays (canonical form)
+func (s Statement) MarshalJSON() ([]byte, error) {
+	type Alias Statement
+	return json.Marshal(&struct {
+		Action      []S3Action `json:"Action,omitempty"`
+		NotAction   []S3Action `json:"NotAction,omitempty"`
+		Resource    []string   `json:"Resource,omitempty"`
+		NotResource []string   `json:"NotResource,omitempty"`
+		*Alias
+	}{
+		Action:      s.Actions,
+		NotAction:   s.NotActions,
+		Resource:    s.Resources,
+		NotResource: s.NotResources,
+		Alias:       (*Alias)(&s),
+	})
+}
+
+// parseStringOrArray converts a JSON value that could be string or []string to []string
+func parseStringOrArray(v interface{}) ([]string, error) {
+	switch val := v.(type) {
+	case string:
+		return []string{val}, nil
+	case []interface{}:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result, nil
+	default:
+		return nil, nil
+	}
 }
 
 // Condition represents conditional access rules
@@ -142,11 +240,29 @@ type PolicyEvaluationContext struct {
 	Key    string
 }
 
-// Evaluate checks if the policy allows the given action
+// EvaluationResult represents the outcome of policy evaluation
+type EvaluationResult struct {
+	Effect      Effect
+	Matched     bool // True if any statement matched (explicit allow/deny)
+	ExplicitDeny bool // True if there was an explicit Deny statement
+}
+
+// Evaluate checks if the policy allows the given action.
+// Returns the effect and whether a statement explicitly matched.
 func (bp *BucketPolicy) Evaluate(action S3Action, ctx *PolicyEvaluationContext) Effect {
-	// Default deny
-	allowed := false
-	denied := false
+	result := bp.EvaluateWithResult(action, ctx)
+	return result.Effect
+}
+
+// EvaluateWithResult checks if the policy allows the given action and returns
+// detailed information about the match. Use this when you need to distinguish
+// between explicit deny and no-match (implicit deny).
+func (bp *BucketPolicy) EvaluateWithResult(action S3Action, ctx *PolicyEvaluationContext) EvaluationResult {
+	result := EvaluationResult{
+		Effect:       EffectDeny, // Default deny
+		Matched:      false,
+		ExplicitDeny: false,
+	}
 
 	for _, stmt := range bp.Statements {
 		if !stmt.matchesPrincipal(ctx) {
@@ -162,22 +278,18 @@ func (bp *BucketPolicy) Evaluate(action S3Action, ctx *PolicyEvaluationContext) 
 			continue
 		}
 
+		result.Matched = true
 		switch stmt.Effect {
 		case EffectDeny:
-			denied = true
+			result.ExplicitDeny = true
+			result.Effect = EffectDeny
+			return result // Explicit deny always wins, return immediately
 		case EffectAllow:
-			allowed = true
+			result.Effect = EffectAllow
 		}
 	}
 
-	// Explicit deny always wins
-	if denied {
-		return EffectDeny
-	}
-	if allowed {
-		return EffectAllow
-	}
-	return EffectDeny // Default deny
+	return result
 }
 
 func (s *Statement) matchesPrincipal(ctx *PolicyEvaluationContext) bool {

@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"hash/fnv"
 	"math"
 	"math/bits"
 	"sync"
@@ -178,11 +177,21 @@ func (hll *HyperLogLog) ErrorRate() float64 {
 	return 1.04 / math.Sqrt(float64(hll.m))
 }
 
-// hash computes a 64-bit hash of the data.
+// FNV-1a constants for inline hashing (avoids allocation)
+const (
+	hllFnvOffset64 = 14695981039346656037
+	hllFnvPrime64  = 1099511628211
+)
+
+// hash computes a 64-bit hash of the data using inline FNV-1a.
+// Inline implementation avoids allocations from fnv.New64a().
 func (hll *HyperLogLog) hash(data []byte) uint64 {
-	h := fnv.New64a()
-	h.Write(data)
-	return h.Sum64()
+	h := uint64(hllFnvOffset64)
+	for _, b := range data {
+		h ^= uint64(b)
+		h *= hllFnvPrime64
+	}
+	return h
 }
 
 // getAlpha returns the alpha correction factor for m buckets.

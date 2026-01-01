@@ -21,7 +21,7 @@ type cacheEntry struct {
 }
 
 const (
-	defaultCacheMaxItems = 10000
+	defaultCacheMaxItems = 1_000_000 // 1 million items for high-load scenarios
 	defaultCacheTTL      = 5 * time.Minute
 )
 

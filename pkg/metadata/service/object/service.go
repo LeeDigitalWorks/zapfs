@@ -23,6 +23,11 @@ type Service interface {
 	// Returns nil if the object doesn't exist (S3 compatibility).
 	DeleteObject(ctx context.Context, bucket, key string) (*DeleteObjectResult, error)
 
+	// DeleteObjectWithVersion handles versioned delete operations.
+	// If versionID is empty and versioning is enabled, creates a delete marker.
+	// If versionID is provided, permanently deletes that specific version.
+	DeleteObjectWithVersion(ctx context.Context, bucket, key, versionID string) (*DeleteObjectResult, error)
+
 	// DeleteObjects batch deletes multiple objects.
 	DeleteObjects(ctx context.Context, req *DeleteObjectsRequest) (*DeleteObjectsResult, error)
 

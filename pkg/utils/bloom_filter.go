@@ -4,7 +4,14 @@ import (
 	"hash"
 	"hash/fnv"
 	"math"
+	"math/bits"
 	"sync"
+)
+
+// FNV-1a constants for inline hashing (avoids allocation)
+const (
+	fnvOffset64 = 14695981039346656037
+	fnvPrime64  = 1099511628211
 )
 
 // BloomFilter is a space-efficient probabilistic data structure for set membership tests.
@@ -194,20 +201,23 @@ func (bf *BloomFilter) SizeBytes() int {
 	return len(bf.bits) * 8
 }
 
-// hash computes two independent hash values using FNV-1a.
-// We use the technique from "Less Hashing, Same Performance" paper.
+// hash computes two independent hash values using inline FNV-1a.
+// Uses the technique from "Less Hashing, Same Performance" paper.
+// Inline implementation avoids allocations from fnv.New64a().
 func (bf *BloomFilter) hash(data []byte) (uint64, uint64) {
-	h1 := fnv.New64a()
-	h1.Write(data)
-	hash1 := h1.Sum64()
+	// Inline FNV-1a for first hash (zero allocations)
+	h1 := uint64(fnvOffset64)
+	for _, b := range data {
+		h1 ^= uint64(b)
+		h1 *= fnvPrime64
+	}
 
-	// Create second hash by appending a byte
-	h2 := fnv.New64a()
-	h2.Write(data)
-	h2.Write([]byte{0x01})
-	hash2 := h2.Sum64()
+	// Second hash: continue from h1 with an extra byte
+	h2 := h1
+	h2 ^= 0x01
+	h2 *= fnvPrime64
 
-	return hash1, hash2
+	return h1, h2
 }
 
 // setBit sets the bit at position pos.
@@ -227,14 +237,9 @@ func (bf *BloomFilter) getBit(pos uint64) bool {
 }
 
 // popcount returns the number of set bits in a uint64.
+// Uses hardware-accelerated POPCNT instruction when available.
 func popcount(x uint64) int {
-	// Brian Kernighan's algorithm
-	count := 0
-	for x != 0 {
-		x &= x - 1
-		count++
-	}
-	return count
+	return bits.OnesCount64(x)
 }
 
 // BloomFilterSet wraps a BloomFilter with a backing store for rebuilding.

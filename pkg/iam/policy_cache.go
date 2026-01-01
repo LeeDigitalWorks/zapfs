@@ -65,7 +65,7 @@ func NewCachedPolicyEvaluator(
 	// Default config
 	cfg := &cachedEvaluatorConfig{
 		ttl:     5 * time.Minute,
-		maxSize: 10000,
+		maxSize: 1_000_000, // 1 million items for high-load scenarios
 	}
 
 	for _, opt := range opts {

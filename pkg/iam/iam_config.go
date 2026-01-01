@@ -88,7 +88,7 @@ type PolicyConfig struct {
 // DefaultIAMConfig returns default configuration for development
 func DefaultIAMConfig() IAMConfig {
 	return IAMConfig{
-		CacheMaxItems: 10000,
+		CacheMaxItems: 1_000_000, // 1 million items for high-load scenarios
 		CacheTTL:      "5m",
 		EnableSTS:     false,
 		EnableKMS:     false,
@@ -140,7 +140,7 @@ func LoadFromConfig(cfg IAMConfig) (*Service, error) {
 
 	cacheMaxItems := cfg.CacheMaxItems
 	if cacheMaxItems <= 0 {
-		cacheMaxItems = 10000
+		cacheMaxItems = 1_000_000 // 1 million items for high-load scenarios
 	}
 
 	// Parse policies first (needed for user/group attachment)

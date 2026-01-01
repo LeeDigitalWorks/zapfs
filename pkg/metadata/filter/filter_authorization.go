@@ -183,17 +183,20 @@ func (f *AuthorizationFilter) evaluateBucketPolicy(
 	// Convert s3action.Action to s3types.S3Action
 	s3Action := s3types.S3Action("s3:" + action.String())
 
-	// Use the policy's built-in Evaluate method
-	result := policy.Evaluate(s3Action, evalCtx)
+	// Use EvaluateWithResult to distinguish between explicit deny and no-match
+	result := policy.EvaluateWithResult(s3Action, evalCtx)
 
-	switch result {
-	case s3types.EffectDeny:
+	// Only return PolicyDeny for explicit Deny statements
+	// No-match (implicit deny) should be treated as PolicyNotApplicable
+	// so that IAM policies and ACLs can still grant access
+	if result.ExplicitDeny {
 		return PolicyDeny, nil
-	case s3types.EffectAllow:
-		return PolicyAllow, nil
-	default:
-		return PolicyNotApplicable, nil
 	}
+	if result.Effect == s3types.EffectAllow {
+		return PolicyAllow, nil
+	}
+	// No statement matched - let other policy sources decide
+	return PolicyNotApplicable, nil
 }
 
 // evaluateIAMPolicies checks the user's attached IAM policies

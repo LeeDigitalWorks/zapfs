@@ -134,59 +134,93 @@ func (t *vitessTx) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 		return fmt.Errorf("marshal ec group ids: %w", err)
 	}
 
-	_, err = t.tx.ExecContext(ctx, `
-		INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			size = VALUES(size),
-			version = VALUES(version),
-			etag = VALUES(etag),
-			created_at = VALUES(created_at),
-			deleted_at = VALUES(deleted_at),
-			ttl = VALUES(ttl),
-			profile_id = VALUES(profile_id),
-			chunk_refs = VALUES(chunk_refs),
-			ec_group_ids = VALUES(ec_group_ids),
-			sse_algorithm = VALUES(sse_algorithm),
-			sse_customer_key_md5 = VALUES(sse_customer_key_md5),
-			sse_kms_key_id = VALUES(sse_kms_key_id),
-			sse_kms_context = VALUES(sse_kms_context)
-	`,
-		obj.ID.String(),
-		obj.Bucket,
-		obj.Key,
-		obj.Size,
-		obj.Version,
-		obj.ETag,
-		obj.CreatedAt,
-		obj.DeletedAt,
-		obj.TTL,
-		obj.ProfileID,
-		string(chunkRefsJSON),
-		string(ecGroupIDsJSON),
-		obj.SSEAlgorithm,
-		obj.SSECustomerKeyMD5,
-		obj.SSEKMSKeyID,
-		obj.SSEKMSContext,
-	)
+	// Convert IsLatest bool to int for MySQL
+	isLatest := 0
+	if obj.IsLatest {
+		isLatest = 1
+	}
+
+	if obj.IsLatest {
+		// Versioning mode: mark old versions as not latest, then insert new
+		_, err = t.tx.ExecContext(ctx, `
+			UPDATE objects SET is_latest = 0 WHERE bucket = ? AND object_key = ? AND is_latest = 1
+		`, obj.Bucket, obj.Key)
+		if err != nil {
+			return fmt.Errorf("mark old versions: %w", err)
+		}
+
+		// Insert new version
+		_, err = t.tx.ExecContext(ctx, `
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`,
+			obj.ID.String(),
+			obj.Bucket,
+			obj.Key,
+			obj.Size,
+			obj.Version,
+			obj.ETag,
+			obj.CreatedAt,
+			obj.DeletedAt,
+			obj.TTL,
+			obj.ProfileID,
+			string(chunkRefsJSON),
+			string(ecGroupIDsJSON),
+			isLatest,
+			obj.SSEAlgorithm,
+			obj.SSECustomerKeyMD5,
+			obj.SSEKMSKeyID,
+			obj.SSEKMSContext,
+		)
+	} else {
+		// Non-versioning mode: delete old, then insert new (replace behavior)
+		_, err = t.tx.ExecContext(ctx, `
+			DELETE FROM objects WHERE bucket = ? AND object_key = ?
+		`, obj.Bucket, obj.Key)
+		if err != nil {
+			return fmt.Errorf("delete old object: %w", err)
+		}
+
+		_, err = t.tx.ExecContext(ctx, `
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+		`,
+			obj.ID.String(),
+			obj.Bucket,
+			obj.Key,
+			obj.Size,
+			obj.Version,
+			obj.ETag,
+			obj.CreatedAt,
+			obj.DeletedAt,
+			obj.TTL,
+			obj.ProfileID,
+			string(chunkRefsJSON),
+			string(ecGroupIDsJSON),
+			obj.SSEAlgorithm,
+			obj.SSECustomerKeyMD5,
+			obj.SSEKMSKeyID,
+			obj.SSEKMSContext,
+		)
+	}
 	if err != nil {
-		return fmt.Errorf("upsert object: %w", err)
+		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
 }
 
 func (t *vitessTx) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {
 	row := t.tx.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
-		WHERE bucket = ? AND object_key = ?
+		WHERE bucket = ? AND object_key = ? AND is_latest = 1
 	`, bucket, key)
 	return scanObject(row)
 }
 
 func (t *vitessTx) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
 	row := t.tx.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE id = ?
 	`, id.String())
@@ -240,11 +274,12 @@ func (t *vitessTx) ListObjectsV2(ctx context.Context, params *db.ListObjectsPara
 	}
 
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
-		WHERE bucket = ? 
-		  AND object_key LIKE ? 
+		WHERE bucket = ?
+		  AND object_key LIKE ?
 		  AND deleted_at = 0
+		  AND is_latest = 1
 	`
 	args := []any{params.Bucket, params.Prefix + "%"}
 
@@ -314,7 +349,7 @@ func (t *vitessTx) ListObjectsV2(ctx context.Context, params *db.ListObjectsPara
 
 func (t *vitessTx) ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE deleted_at > 0 AND deleted_at < ?
 		ORDER BY deleted_at
@@ -793,54 +828,87 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 		return fmt.Errorf("marshal ec_group_ids: %w", err)
 	}
 
-	// Upsert: INSERT ... ON DUPLICATE KEY UPDATE
-	_, err = v.db.ExecContext(ctx, `
-		INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
-			size = VALUES(size),
-			version = VALUES(version),
-			etag = VALUES(etag),
-			deleted_at = VALUES(deleted_at),
-			ttl = VALUES(ttl),
-			profile_id = VALUES(profile_id),
-			chunk_refs = VALUES(chunk_refs),
-			ec_group_ids = VALUES(ec_group_ids),
-			sse_algorithm = VALUES(sse_algorithm),
-			sse_customer_key_md5 = VALUES(sse_customer_key_md5),
-			sse_kms_key_id = VALUES(sse_kms_key_id),
-			sse_kms_context = VALUES(sse_kms_context)
-	`,
-		obj.ID.String(),
-		obj.Bucket,
-		obj.Key,
-		obj.Size,
-		obj.Version,
-		obj.ETag,
-		obj.CreatedAt,
-		obj.DeletedAt,
-		obj.TTL,
-		obj.ProfileID,
-		chunkRefsJSON,
-		ecGroupIDsJSON,
-		obj.SSEAlgorithm,
-		obj.SSECustomerKeyMD5,
-		obj.SSEKMSKeyID,
-		obj.SSEKMSContext,
-	)
+	// Convert IsLatest bool to int for MySQL
+	isLatest := 0
+	if obj.IsLatest {
+		isLatest = 1
+	}
+
+	if obj.IsLatest {
+		// Versioning mode: mark old versions as not latest, then insert new
+		_, err = v.db.ExecContext(ctx, `
+			UPDATE objects SET is_latest = 0 WHERE bucket = ? AND object_key = ? AND is_latest = 1
+		`, obj.Bucket, obj.Key)
+		if err != nil {
+			return fmt.Errorf("mark old versions: %w", err)
+		}
+
+		// Insert new version
+		_, err = v.db.ExecContext(ctx, `
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`,
+			obj.ID.String(),
+			obj.Bucket,
+			obj.Key,
+			obj.Size,
+			obj.Version,
+			obj.ETag,
+			obj.CreatedAt,
+			obj.DeletedAt,
+			obj.TTL,
+			obj.ProfileID,
+			chunkRefsJSON,
+			ecGroupIDsJSON,
+			isLatest,
+			obj.SSEAlgorithm,
+			obj.SSECustomerKeyMD5,
+			obj.SSEKMSKeyID,
+			obj.SSEKMSContext,
+		)
+	} else {
+		// Non-versioning mode: delete old versions, then insert new (replace behavior)
+		_, err = v.db.ExecContext(ctx, `
+			DELETE FROM objects WHERE bucket = ? AND object_key = ?
+		`, obj.Bucket, obj.Key)
+		if err != nil {
+			return fmt.Errorf("delete old object: %w", err)
+		}
+
+		// Insert new object
+		_, err = v.db.ExecContext(ctx, `
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+		`,
+			obj.ID.String(),
+			obj.Bucket,
+			obj.Key,
+			obj.Size,
+			obj.Version,
+			obj.ETag,
+			obj.CreatedAt,
+			obj.DeletedAt,
+			obj.TTL,
+			obj.ProfileID,
+			chunkRefsJSON,
+			ecGroupIDsJSON,
+			obj.SSEAlgorithm,
+			obj.SSECustomerKeyMD5,
+			obj.SSEKMSKeyID,
+			obj.SSEKMSContext,
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)
 	}
-	// Debug logging to verify encryption metadata is being stored
-	// Note: logger is not available in this package, so we'll rely on the API layer logging
 	return nil
 }
 
 func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
-		WHERE bucket = ? AND object_key = ? AND deleted_at = 0
+		WHERE bucket = ? AND object_key = ? AND is_latest = 1 AND deleted_at = 0
 	`, bucket, key)
 
 	return scanObject(row)
@@ -848,7 +916,7 @@ func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.Obje
 
 func (v *Vitess) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE id = ?
 	`, id.String())
@@ -911,11 +979,12 @@ func (v *Vitess) ListObjectsV2(ctx context.Context, params *db.ListObjectsParams
 
 	// Build efficient query with proper indexes
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
-		WHERE bucket = ? 
-		  AND object_key LIKE ? 
+		WHERE bucket = ?
+		  AND object_key LIKE ?
 		  AND deleted_at = 0
+		  AND is_latest = 1
 	`
 	args := []any{params.Bucket, params.Prefix + "%"}
 
@@ -996,7 +1065,7 @@ func (v *Vitess) ListObjectsV2(ctx context.Context, params *db.ListObjectsParams
 
 func (v *Vitess) ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE deleted_at > 0 AND deleted_at < ?
 		ORDER BY deleted_at
@@ -1194,6 +1263,7 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 	var idStr string
 	var profileID sql.NullString
 	var chunkRefsJSON, ecGroupIDsJSON []byte
+	var isLatest int
 	var sseAlgorithm, sseCustomerKeyMD5, sseKMSKeyID sql.NullString
 	var sseKMSContext sql.NullString
 
@@ -1210,6 +1280,7 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 		&profileID,
 		&chunkRefsJSON,
 		&ecGroupIDsJSON,
+		&isLatest,
 		&sseAlgorithm,
 		&sseCustomerKeyMD5,
 		&sseKMSKeyID,
@@ -1224,6 +1295,7 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 
 	obj.ID, _ = uuid.Parse(idStr)
 	obj.ProfileID = profileID.String
+	obj.IsLatest = isLatest == 1
 
 	if len(chunkRefsJSON) > 0 && string(chunkRefsJSON) != "null" {
 		if err := json.Unmarshal(chunkRefsJSON, &obj.ChunkRefs); err != nil {
@@ -1538,7 +1610,7 @@ func (v *Vitess) UpdateBucketVersioning(ctx context.Context, bucket string, vers
 
 func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMarker, versionIDMarker, delimiter string, maxKeys int) ([]*types.ObjectVersion, bool, string, string, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, profile_id
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, profile_id, is_latest
 		FROM objects
 		WHERE bucket = ?
 	`
@@ -1573,7 +1645,6 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 	defer rows.Close()
 
 	var versions []*types.ObjectVersion
-	var prevKey string
 	for rows.Next() {
 		var idStr string
 		var bucketName, key, etag string
@@ -1581,20 +1652,17 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 		var version uint64
 		var createdAt, deletedAt int64
 		var profileID sql.NullString
+		var isLatest int
 
-		err := rows.Scan(&idStr, &bucketName, &key, &size, &version, &etag, &createdAt, &deletedAt, &profileID)
+		err := rows.Scan(&idStr, &bucketName, &key, &size, &version, &etag, &createdAt, &deletedAt, &profileID, &isLatest)
 		if err != nil {
 			return nil, false, "", "", fmt.Errorf("scan object version: %w", err)
 		}
 
-		// Determine if this is the latest version (first occurrence of key)
-		isLatest := key != prevKey
-		prevKey = key
-
 		versions = append(versions, &types.ObjectVersion{
 			Key:            key,
 			VersionID:      idStr,
-			IsLatest:       isLatest,
+			IsLatest:       isLatest == 1,
 			IsDeleteMarker: deletedAt > 0,
 			LastModified:   createdAt,
 			ETag:           etag,
@@ -1621,7 +1689,7 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 
 func (v *Vitess) GetObjectVersion(ctx context.Context, bucket, key, versionID string) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ? AND object_key = ? AND id = ?
 	`, bucket, key, versionID)
@@ -1648,9 +1716,19 @@ func (v *Vitess) PutDeleteMarker(ctx context.Context, bucket, key, ownerID strin
 	id := uuid.New()
 	now := time.Now().UnixNano()
 
+	// Mark existing versions as not latest
 	_, err := v.db.ExecContext(ctx, `
-		INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at)
-		VALUES (?, ?, ?, 0, 1, '', ?, ?)
+		UPDATE objects SET is_latest = 0 WHERE bucket = ? AND object_key = ? AND is_latest = 1
+	`, bucket, key)
+	if err != nil {
+		return "", fmt.Errorf("mark old versions not latest: %w", err)
+	}
+
+	// Insert delete marker with is_latest = 1
+	// A delete marker is an object with size=0, empty etag, and deleted_at > 0
+	_, err = v.db.ExecContext(ctx, `
+		INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, is_latest)
+		VALUES (?, ?, ?, 0, 1, '', ?, ?, 1)
 	`, id.String(), bucket, key, now, now)
 	if err != nil {
 		return "", fmt.Errorf("put delete marker: %w", err)

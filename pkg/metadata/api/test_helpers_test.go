@@ -142,7 +142,7 @@ func newTestServer(t *testing.T, opts ...TestServerOption) *MetadataServer {
 	// Expose the DB for test setup
 	srv.db = testDatabase
 
-	// Register cleanup to stop background goroutines (usage aggregator, etc.)
+	// Register cleanup to stop background goroutines (usage aggregator, reporter, etc.)
 	// Note: We don't call srv.Shutdown() because tests may provide their own mocks
 	// that don't have Close() expectations. We just need to stop the usage components.
 	t.Cleanup(func() {
@@ -151,6 +151,9 @@ func newTestServer(t *testing.T, opts ...TestServerOption) *MetadataServer {
 		}
 		if srv.usageAggregator != nil {
 			srv.usageAggregator.Stop()
+		}
+		if srv.usageReporter != nil {
+			srv.usageReporter.Stop()
 		}
 	})
 
