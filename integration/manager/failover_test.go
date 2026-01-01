@@ -105,9 +105,20 @@ type clusterState struct {
 	followerContainers []string
 }
 
+// ensureClusterStable waits for the cluster to be stable with a leader elected.
+// This should be called at the start of failover tests to ensure clean state.
+func ensureClusterStable(t *testing.T) {
+	t.Helper()
+	allAddrs := []string{managerServer1Addr, managerServer2Addr, managerServer3Addr}
+	waitForLeader(t, 30*time.Second, allAddrs...)
+}
+
 // getClusterState returns the current cluster state including leader info
 func getClusterState(t *testing.T) *clusterState {
 	t.Helper()
+
+	// First ensure cluster is stable before querying state
+	ensureClusterStable(t)
 
 	// Query each node individually to determine leader status
 	// This is more reliable than parsing raft addresses
@@ -270,21 +281,23 @@ func TestLeaderFailover(t *testing.T) {
 	require.NoError(t, err, "failed to create collection after failover")
 	t.Logf("Created new collection after failover: %s", newCollectionName)
 
-	// Unpause the old leader
+	// Unpause the old leader (this is also in defer, but we unpause here to proceed with verification)
 	unpauseContainer(t, state.leaderContainer)
 
-	// Wait for old leader to rejoin
-	time.Sleep(5 * time.Second)
-
-	// Verify the new collection is visible from the rejoined node
+	// Wait for old leader to rejoin and catch up on Raft log
 	oldLeaderClient := testutil.NewManagerClient(t, state.leaderAddr)
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-	getResp, err = oldLeaderClient.ManagerServiceClient.GetCollection(ctx, &manager_pb.GetCollectionRequest{
-		Name: newCollectionName,
-	})
-	cancel()
-	require.NoError(t, err, "failed to get post-failover collection from rejoined node")
-	assert.Equal(t, newCollectionName, getResp.Collection.Name)
+	require.Eventually(t, func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resp, err := oldLeaderClient.ManagerServiceClient.GetCollection(ctx, &manager_pb.GetCollectionRequest{
+			Name: newCollectionName,
+		})
+		if err != nil {
+			t.Logf("Waiting for collection to replicate to rejoined node: %v", err)
+			return false
+		}
+		return resp.Collection.Name == newCollectionName
+	}, 20*time.Second, 1*time.Second, "post-failover collection should be visible on rejoined node")
 	t.Log("Post-failover collection visible on rejoined node")
 
 	// Cleanup
@@ -292,6 +305,9 @@ func TestLeaderFailover(t *testing.T) {
 	newLeaderClient.ManagerServiceClient.DeleteCollection(ctx, &manager_pb.DeleteCollectionRequest{Name: collectionName})
 	newLeaderClient.ManagerServiceClient.DeleteCollection(ctx, &manager_pb.DeleteCollectionRequest{Name: newCollectionName})
 	cancel()
+
+	// Ensure cluster is stable before other tests run
+	waitForLeader(t, 15*time.Second, managerServer1Addr, managerServer2Addr, managerServer3Addr)
 }
 
 // TestFollowerFailure tests that the cluster continues operating when a follower fails
@@ -528,16 +544,25 @@ func TestNetworkPartition(t *testing.T) {
 
 	// Reconnect partitioned node
 	connectToNetwork(t, state.leaderContainer, dockerNetwork)
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second) // Brief wait for network to stabilize
 
 	// Verify the collection is visible from the reconnected node
+	// The reconnected node may need time to catch up on the Raft log
 	reconnectedClient := testutil.NewManagerClient(t, state.leaderAddr)
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-	getResp, err := reconnectedClient.ManagerServiceClient.GetCollection(ctx, &manager_pb.GetCollectionRequest{
-		Name: collectionName,
-	})
-	cancel()
-	require.NoError(t, err, "collection should be visible on reconnected node")
+	var getResp *manager_pb.GetCollectionResponse
+	require.Eventually(t, func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resp, err := reconnectedClient.ManagerServiceClient.GetCollection(ctx, &manager_pb.GetCollectionRequest{
+			Name: collectionName,
+		})
+		if err != nil {
+			t.Logf("Waiting for collection to replicate: %v", err)
+			return false
+		}
+		getResp = resp
+		return true
+	}, 20*time.Second, 1*time.Second, "collection should be visible on reconnected node")
 	assert.Equal(t, collectionName, getResp.Collection.Name)
 	t.Log("Collection visible on reconnected node")
 
@@ -545,6 +570,9 @@ func TestNetworkPartition(t *testing.T) {
 	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	newLeaderClient.ManagerServiceClient.DeleteCollection(ctx, &manager_pb.DeleteCollectionRequest{Name: collectionName})
 	cancel()
+
+	// Network partition recovery can take longer - wait for full stabilization
+	waitForLeader(t, 30*time.Second, managerServer1Addr, managerServer2Addr, managerServer3Addr)
 }
 
 // TestRapidLeaderFailovers tests cluster stability with multiple rapid leader failures
@@ -644,6 +672,9 @@ func TestRapidLeaderFailovers(t *testing.T) {
 	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	finalClient.ManagerServiceClient.DeleteCollection(ctx, &manager_pb.DeleteCollectionRequest{Name: collectionName})
 	cancel()
+
+	// Ensure cluster is stable before other tests run
+	waitForLeader(t, 10*time.Second, managerServer1Addr, managerServer2Addr, managerServer3Addr)
 }
 
 // TestConcurrentWritesDuringFailover tests handling of concurrent writes during leader failover
@@ -731,4 +762,8 @@ done:
 
 	// Restore leader
 	unpauseContainer(t, state.leaderContainer)
+
+	// Wait for cluster to stabilize before other tests run
+	// This prevents parallel tests from seeing an unstable cluster
+	waitForLeader(t, 15*time.Second, managerServer1Addr, managerServer2Addr, managerServer3Addr)
 }

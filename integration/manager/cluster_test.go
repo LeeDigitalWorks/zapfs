@@ -11,23 +11,43 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// waitForClusterLeader waits for a leader to be available in the cluster.
+// This is used by tests that need a stable leader before running.
+func waitForClusterLeader(t *testing.T) {
+	t.Helper()
+	addrs := []string{managerServer1Addr, managerServer2Addr, managerServer3Addr}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, addr := range addrs {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			client := newManagerClient(t, addr)
+			resp, err := client.ManagerServiceClient.Ping(ctx, &manager_pb.PingRequest{})
+			cancel()
+			if err == nil && resp.IsLeader {
+				return
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.Fail(t, "timeout waiting for cluster leader")
+}
 
 // =============================================================================
 // Ping Tests
 // =============================================================================
 
 func TestPing(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel - share cluster with other tests
 	client := newManagerClient(t, managerServer1Addr)
 	resp := client.Ping()
 	assert.NotNil(t, resp)
 }
 
 func TestPing_AllNodes(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel - share cluster with other tests
 	addrs := []string{managerServer1Addr, managerServer2Addr, managerServer3Addr}
 
 	for _, addr := range addrs {
@@ -44,8 +64,7 @@ func TestPing_AllNodes(t *testing.T) {
 // =============================================================================
 
 func TestListClusterServers(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel - share cluster with other tests
 	client := newManagerClient(t, managerServer1Addr)
 	resp := client.ListClusterServers()
 
@@ -59,8 +78,7 @@ func TestListClusterServers(t *testing.T) {
 }
 
 func TestWatchTopology(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel - share cluster with other tests
 	client := newManagerClient(t, managerServer1Addr)
 	event := client.WatchTopology()
 
@@ -74,7 +92,8 @@ func TestWatchTopology(t *testing.T) {
 // =============================================================================
 
 func TestCreateCollection(t *testing.T) {
-	t.Parallel()
+	// Not parallel - requires stable leader
+	waitForClusterLeader(t)
 
 	client := newManagerClient(t, managerServer1Addr)
 	name := testutil.UniqueID("test-mgr-collection")
@@ -92,7 +111,8 @@ func TestCreateCollection(t *testing.T) {
 }
 
 func TestListCollections(t *testing.T) {
-	t.Parallel()
+	// Not parallel - requires stable leader
+	waitForClusterLeader(t)
 
 	client := newManagerClient(t, managerServer1Addr)
 
@@ -118,8 +138,7 @@ func TestListCollections(t *testing.T) {
 // =============================================================================
 
 func TestGetReplicationTargets(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel - share cluster with other tests
 	client := newManagerClient(t, managerServer1Addr)
 
 	resp := client.GetReplicationTargets(1024*1024, 2) // 1MB, 2 replicas
@@ -132,7 +151,8 @@ func TestGetReplicationTargets(t *testing.T) {
 // =============================================================================
 
 func TestLeaderDiscovery(t *testing.T) {
-	t.Parallel()
+	// Not parallel - requires stable leader
+	waitForClusterLeader(t)
 
 	// Connect to any node and verify we can find the leader
 	client := newManagerClient(t, managerServer1Addr)
@@ -152,7 +172,8 @@ func TestLeaderDiscovery(t *testing.T) {
 
 func TestWriteToAnyNode(t *testing.T) {
 	// Test that writes can be routed through any node
-	t.Parallel()
+	// Not parallel - share cluster with other tests and needs stable leader
+	waitForClusterLeader(t)
 
 	addrs := []string{managerServer1Addr, managerServer2Addr, managerServer3Addr}
 

@@ -142,6 +142,16 @@ ZapFS is open-core software with dual licensing:
 
 The default build includes all core S3 functionality:
 
+| Category | Features |
+|----------|----------|
+| **Bucket Operations** | Create, Delete, List, Head, Location |
+| **Object Operations** | Put, Get, Delete, Copy, Head, List (v1/v2) |
+| **Multipart Upload** | Create, Upload Part, Complete, Abort, List Parts |
+| **Versioning** | Enable/Suspend, List Versions, Delete Markers |
+| **Access Control** | Bucket/Object ACLs, Bucket Policies |
+| **Configuration** | CORS, Website Hosting, Tagging, Encryption |
+| **Authentication** | AWS SigV4, SigV2, Presigned URLs, POST Policy |
+
 ```bash
 go build -o zapfs .
 ```
@@ -171,6 +181,7 @@ export ZAPFS_LICENSE_KEY=$(cat ~/Downloads/zapfs-license.key)
 
 | Feature | License Required | Description |
 |---------|------------------|-------------|
+| Usage Reporting | FeatureAdvancedMetrics | Storage, bandwidth, and request tracking |
 | Lifecycle Rules | FeatureLifecycle | Object expiration and transitions |
 | Object Lock (WORM) | FeatureObjectLock | Retention and legal hold |
 | SSE-KMS Encryption | FeatureKMS | KMS-managed encryption keys |
@@ -189,4 +200,3 @@ For enterprise licensing, support, and custom deployments:
 
 - **Portal**: [zapfs.io](https://zapfs.io) — Manage licenses and subscriptions
 - **Documentation**: [zapfs.io/docs](https://zapfs.io/docs) — Setup guides and API reference
-- **Sales**: [sales@zapfs.io](mailto:sales@zapfs.io) — Enterprise inquiries
