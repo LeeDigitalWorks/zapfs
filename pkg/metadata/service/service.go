@@ -78,10 +78,16 @@ func NewService(cfg Config) (*Service, error) {
 	})
 
 	// Initialize encryption handler
+	// Priority: external KMS provider > internal KMS service > disabled
 	var encHandler *encryption.Handler
-	if cfg.IAMService != nil && cfg.IAMService.KMS() != nil {
+	if cfg.KMSProvider != nil {
+		// External KMS (AWS KMS, Vault, etc.) - enterprise feature
+		encHandler = encryption.NewHandlerWithProvider(cfg.KMSProvider)
+	} else if cfg.IAMService != nil && cfg.IAMService.KMS() != nil {
+		// Internal KMS (for testing/development only)
 		encHandler = encryption.NewHandler(cfg.IAMService.KMS())
 	} else {
+		// KMS disabled
 		encHandler = encryption.NewHandler(nil)
 	}
 

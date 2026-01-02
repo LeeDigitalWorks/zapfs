@@ -98,12 +98,12 @@ func (p *VaultProvider) Encrypt(ctx context.Context, keyID string, plaintext []b
 		"plaintext": base64.StdEncoding.EncodeToString(plaintext),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Vault Transit encrypt failed: %w", err)
+		return nil, fmt.Errorf("vault Transit encrypt failed: %w", err)
 	}
 
 	ciphertext, ok := secret.Data["ciphertext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("Vault Transit encrypt: invalid response")
+		return nil, fmt.Errorf("vault Transit encrypt: invalid response")
 	}
 
 	// Return the ciphertext as-is (Vault format: vault:v1:base64...)
@@ -116,17 +116,17 @@ func (p *VaultProvider) Decrypt(ctx context.Context, keyID string, ciphertext []
 		"ciphertext": string(ciphertext),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Vault Transit decrypt failed: %w", err)
+		return nil, fmt.Errorf("vault Transit decrypt failed: %w", err)
 	}
 
 	plaintextB64, ok := secret.Data["plaintext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("Vault Transit decrypt: invalid response")
+		return nil, fmt.Errorf("vault Transit decrypt: invalid response")
 	}
 
 	plaintext, err := base64.StdEncoding.DecodeString(plaintextB64)
 	if err != nil {
-		return nil, fmt.Errorf("Vault Transit decrypt: failed to decode plaintext: %w", err)
+		return nil, fmt.Errorf("vault Transit decrypt: failed to decode plaintext: %w", err)
 	}
 
 	return plaintext, nil
@@ -146,22 +146,22 @@ func (p *VaultProvider) GenerateDataKey(ctx context.Context, keyID string, keySp
 		"bits": bits,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("Vault Transit generate data key failed: %w", err)
+		return nil, nil, fmt.Errorf("vault Transit generate data key failed: %w", err)
 	}
 
 	plaintextB64, ok := secret.Data["plaintext"].(string)
 	if !ok {
-		return nil, nil, fmt.Errorf("Vault Transit datakey: invalid plaintext response")
+		return nil, nil, fmt.Errorf("vault Transit datakey: invalid plaintext response")
 	}
 
 	ciphertext, ok := secret.Data["ciphertext"].(string)
 	if !ok {
-		return nil, nil, fmt.Errorf("Vault Transit datakey: invalid ciphertext response")
+		return nil, nil, fmt.Errorf("vault Transit datakey: invalid ciphertext response")
 	}
 
 	plaintext, err := base64.StdEncoding.DecodeString(plaintextB64)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Vault Transit datakey: failed to decode plaintext: %w", err)
+		return nil, nil, fmt.Errorf("vault Transit datakey: failed to decode plaintext: %w", err)
 	}
 
 	return plaintext, []byte(ciphertext), nil
@@ -171,7 +171,7 @@ func (p *VaultProvider) GenerateDataKey(ctx context.Context, keyID string, keySp
 func (p *VaultProvider) DescribeKey(ctx context.Context, keyID string) (*KeyMetadata, error) {
 	secret, err := p.client.Logical().ReadWithContext(ctx, p.transitPath("keys", keyID))
 	if err != nil {
-		return nil, fmt.Errorf("Vault Transit describe key failed: %w", err)
+		return nil, fmt.Errorf("vault Transit describe key failed: %w", err)
 	}
 	if secret == nil {
 		return nil, ErrKeyNotFound
@@ -206,7 +206,7 @@ func (p *VaultProvider) DescribeKey(ctx context.Context, keyID string) (*KeyMeta
 func (p *VaultProvider) ListKeys(ctx context.Context) ([]string, error) {
 	secret, err := p.client.Logical().ListWithContext(ctx, p.transitPath("keys", ""))
 	if err != nil {
-		return nil, fmt.Errorf("Vault Transit list keys failed: %w", err)
+		return nil, fmt.Errorf("vault Transit list keys failed: %w", err)
 	}
 	if secret == nil {
 		return []string{}, nil
@@ -246,7 +246,7 @@ func (p *VaultProvider) CreateKey(ctx context.Context, input CreateKeyInput) (*K
 
 	_, err := p.client.Logical().WriteWithContext(ctx, p.transitPath("keys", keyName), params)
 	if err != nil {
-		return nil, fmt.Errorf("Vault Transit create key failed: %w", err)
+		return nil, fmt.Errorf("vault Transit create key failed: %w", err)
 	}
 
 	return p.DescribeKey(ctx, keyName)
@@ -272,7 +272,7 @@ func (p *VaultProvider) ScheduleKeyDeletion(ctx context.Context, keyID string, p
 		"deletion_allowed": true,
 	})
 	if err != nil {
-		return fmt.Errorf("Vault Transit enable deletion failed: %w", err)
+		return fmt.Errorf("vault Transit enable deletion failed: %w", err)
 	}
 
 	// Note: Vault doesn't have a pending deletion period like AWS

@@ -446,7 +446,8 @@ func groupChunksByID(refs []types.ChunkRef) []chunkGroup {
 func (c *Coordinator) readChunkGroup(ctx context.Context, group chunkGroup, writer io.Writer) error {
 	var lastErr error
 	for _, replica := range group.replicas {
-		_, err := c.fileClientPool.GetObject(ctx, replica.FileServerAddr, string(replica.ChunkID), func(chunk []byte) error {
+		// Use GetChunk to read by chunk ID (SHA-256 content hash)
+		err := c.fileClientPool.GetChunk(ctx, replica.FileServerAddr, string(replica.ChunkID), func(chunk []byte) error {
 			_, writeErr := writer.Write(chunk)
 			return writeErr
 		})
@@ -516,7 +517,8 @@ func (c *Coordinator) ReadObjectRange(ctx context.Context, req *ReadRangeRequest
 func (c *Coordinator) readChunkGroupRange(ctx context.Context, group chunkGroup, offset, length uint64, writer io.Writer) error {
 	var lastErr error
 	for _, replica := range group.replicas {
-		_, err := c.fileClientPool.GetObjectRange(ctx, replica.FileServerAddr, string(replica.ChunkID), offset, length, func(chunk []byte) error {
+		// Use GetChunkRange to read by chunk ID (SHA-256 content hash)
+		err := c.fileClientPool.GetChunkRange(ctx, replica.FileServerAddr, string(replica.ChunkID), offset, length, func(chunk []byte) error {
 			_, writeErr := writer.Write(chunk)
 			return writeErr
 		})
@@ -571,7 +573,8 @@ func (c *Coordinator) readChunkGroupToBuffer(ctx context.Context, group chunkGro
 	var lastErr error
 	for _, replica := range group.replicas {
 		var data []byte
-		_, err := c.fileClientPool.GetObject(ctx, replica.FileServerAddr, string(replica.ChunkID), func(chunk []byte) error {
+		// Use GetChunk to read by chunk ID (SHA-256 content hash)
+		err := c.fileClientPool.GetChunk(ctx, replica.FileServerAddr, string(replica.ChunkID), func(chunk []byte) error {
 			data = append(data, chunk...)
 			return nil
 		})

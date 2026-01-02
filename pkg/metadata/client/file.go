@@ -41,11 +41,19 @@ type File interface {
 	// PutObject streams data to a file server
 	PutObject(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64) (*PutObjectResult, error)
 
-	// GetObject retrieves an object from a file server
+	// GetObject retrieves an object from a file server by ObjectID
+	// Deprecated: Use GetChunk for reading by chunk ID
 	GetObject(ctx context.Context, address string, objectID string, writer ObjectWriter) (etag string, err error)
 
-	// GetObjectRange retrieves a range of bytes from an object
+	// GetObjectRange retrieves a range of bytes from an object by ObjectID
+	// Deprecated: Use GetChunkRange for reading by chunk ID
 	GetObjectRange(ctx context.Context, address string, objectID string, offset, length uint64, writer ObjectWriter) (etag string, err error)
+
+	// GetChunk retrieves chunk data by its SHA-256 content hash
+	GetChunk(ctx context.Context, address string, chunkID string, writer ObjectWriter) error
+
+	// GetChunkRange retrieves a range of bytes from a chunk by its SHA-256 content hash
+	GetChunkRange(ctx context.Context, address string, chunkID string, offset, length uint64, writer ObjectWriter) error
 
 	// DecrementRefCount decrements a chunk's reference count on a file server
 	DecrementRefCount(ctx context.Context, address string, chunkID string, expectedRefCount uint32) (*DecrementRefCountResult, error)

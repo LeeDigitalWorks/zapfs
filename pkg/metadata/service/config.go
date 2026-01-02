@@ -12,6 +12,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
@@ -42,8 +43,9 @@ type Config struct {
 	DefaultProfile string
 
 	// Enterprise features (may be nil)
-	IAMService *iam.Service   // For KMS operations
-	CRRHook    object.CRRHook // For cross-region replication
+	IAMService  *iam.Service          // For internal KMS operations (testing/dev only)
+	KMSProvider encryption.KMSProvider // External KMS provider (AWS KMS, Vault, etc.)
+	CRRHook     object.CRRHook         // For cross-region replication
 
 	// Event emitter for S3 event notifications (enterprise: FeatureEvents)
 	// If nil, events are not emitted

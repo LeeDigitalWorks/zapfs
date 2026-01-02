@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS multipart_uploads (
     content_type VARCHAR(255),
     storage_class VARCHAR(32) DEFAULT 'STANDARD',
     metadata JSON,
+    -- Server-side encryption fields
+    sse_algorithm VARCHAR(32),
+    sse_kms_key_id VARCHAR(255),
+    sse_kms_context TEXT,
+    sse_dek_ciphertext BLOB,
     PRIMARY KEY (upload_id),
     INDEX idx_bucket_key (bucket, object_key(255)),
     INDEX idx_bucket_initiated (bucket, initiated)

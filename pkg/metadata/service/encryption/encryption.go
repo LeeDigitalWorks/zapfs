@@ -18,15 +18,40 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 )
 
-// Handler provides encryption/decryption services
-type Handler struct {
-	kmsService *iam.KMSService // For SSE-KMS (may be nil if KMS not available)
+// KMSProvider defines the interface for KMS operations.
+// Both internal (iam.KMSService) and external (kms.Adapter) providers implement this.
+type KMSProvider interface {
+	// GetKey retrieves key metadata
+	GetKey(ctx context.Context, keyID string) (*iam.KeyMetadata, error)
+	// Encrypt encrypts data using the specified key
+	Encrypt(ctx context.Context, keyID string, plaintext []byte) ([]byte, error)
+	// Decrypt decrypts data using the specified key
+	Decrypt(ctx context.Context, keyID string, ciphertext []byte) ([]byte, error)
+	// GenerateDataKey generates a data encryption key wrapped by the master key
+	GenerateDataKey(ctx context.Context, keyID string, keySpec string) (plaintext, ciphertext []byte, err error)
 }
 
-// NewHandler creates a new encryption handler
+// Handler provides encryption/decryption services
+type Handler struct {
+	kmsProvider KMSProvider // For SSE-KMS (may be nil if KMS not available)
+}
+
+// NewHandler creates a new encryption handler with an internal KMS service.
+// For external KMS, use NewHandlerWithProvider.
 func NewHandler(kmsService *iam.KMSService) *Handler {
+	if kmsService == nil {
+		return &Handler{kmsProvider: nil}
+	}
 	return &Handler{
-		kmsService: kmsService,
+		kmsProvider: kmsService,
+	}
+}
+
+// NewHandlerWithProvider creates a new encryption handler with a custom KMS provider.
+// Use this for external KMS providers (AWS KMS, Vault, etc.).
+func NewHandlerWithProvider(provider KMSProvider) *Handler {
+	return &Handler{
+		kmsProvider: provider,
 	}
 }
 
@@ -85,12 +110,12 @@ func (h *Handler) encryptSSEC(plaintext []byte, params *SSECParams) (*Result, er
 
 // encryptSSEKMS encrypts data using SSE-KMS (AES-256-GCM with KMS-managed DEK)
 func (h *Handler) encryptSSEKMS(ctx context.Context, plaintext []byte, params *SSEKMSParams) (*Result, error) {
-	if h.kmsService == nil {
+	if h.kmsProvider == nil {
 		return nil, fmt.Errorf("KMS service not available")
 	}
 
 	// Validate KMS key exists
-	_, err := h.kmsService.GetKey(ctx, params.KeyID)
+	_, err := h.kmsProvider.GetKey(ctx, params.KeyID)
 	if err != nil {
 		if err == iam.ErrKeyNotFound {
 			return nil, fmt.Errorf("KMS key not found: %s", params.KeyID)
@@ -102,7 +127,7 @@ func (h *Handler) encryptSSEKMS(ctx context.Context, plaintext []byte, params *S
 	}
 
 	// Generate data encryption key (DEK)
-	dekPlaintext, dekCiphertext, err := h.kmsService.GenerateDataKey(ctx, params.KeyID, "AES_256")
+	dekPlaintext, dekCiphertext, err := h.kmsProvider.GenerateDataKey(ctx, params.KeyID, "AES_256")
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate data key: %w", err)
 	}
@@ -129,7 +154,7 @@ func (h *Handler) encryptSSEKMS(ctx context.Context, plaintext []byte, params *S
 
 // decryptSSEKMS decrypts data using SSE-KMS
 func (h *Handler) decryptSSEKMS(ctx context.Context, ciphertext []byte, metadata *Metadata) ([]byte, error) {
-	if h.kmsService == nil {
+	if h.kmsProvider == nil {
 		return nil, fmt.Errorf("KMS service not available")
 	}
 
@@ -144,7 +169,7 @@ func (h *Handler) decryptSSEKMS(ctx context.Context, ciphertext []byte, metadata
 	}
 
 	// Decrypt DEK using KMS
-	dekPlaintext, err := h.kmsService.Decrypt(ctx, metadata.KMSKeyID, dekCiphertext)
+	dekPlaintext, err := h.kmsProvider.Decrypt(ctx, metadata.KMSKeyID, dekCiphertext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt DEK: %w", err)
 	}
@@ -160,7 +185,7 @@ func (h *Handler) decryptSSEKMS(ctx context.Context, ciphertext []byte, metadata
 
 // HasKMS returns true if KMS is available
 func (h *Handler) HasKMS() bool {
-	return h.kmsService != nil
+	return h.kmsProvider != nil
 }
 
 // DEKResult contains the result of generating a data encryption key
@@ -173,12 +198,12 @@ type DEKResult struct {
 // This is used for multipart uploads where the DEK is generated at upload initiation
 // and reused for each part.
 func (h *Handler) GenerateDEK(ctx context.Context, keyID string) (*DEKResult, error) {
-	if h.kmsService == nil {
+	if h.kmsProvider == nil {
 		return nil, fmt.Errorf("KMS service not available")
 	}
 
 	// Generate data encryption key
-	dekPlaintext, dekCiphertext, err := h.kmsService.GenerateDataKey(ctx, keyID, "AES_256")
+	dekPlaintext, dekCiphertext, err := h.kmsProvider.GenerateDataKey(ctx, keyID, "AES_256")
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate data key: %w", err)
 	}
@@ -192,7 +217,7 @@ func (h *Handler) GenerateDEK(ctx context.Context, keyID string) (*DEKResult, er
 // DecryptDEK decrypts an encrypted DEK using KMS.
 // This is used for multipart uploads to decrypt the DEK for each part.
 func (h *Handler) DecryptDEK(ctx context.Context, keyID, dekCiphertextBase64 string) ([]byte, error) {
-	if h.kmsService == nil {
+	if h.kmsProvider == nil {
 		return nil, fmt.Errorf("KMS service not available")
 	}
 
@@ -201,7 +226,7 @@ func (h *Handler) DecryptDEK(ctx context.Context, keyID, dekCiphertextBase64 str
 		return nil, fmt.Errorf("failed to decode encrypted DEK: %w", err)
 	}
 
-	dekPlaintext, err := h.kmsService.Decrypt(ctx, keyID, dekCiphertext)
+	dekPlaintext, err := h.kmsProvider.Decrypt(ctx, keyID, dekCiphertext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt DEK: %w", err)
 	}

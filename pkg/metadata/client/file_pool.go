@@ -233,6 +233,121 @@ func (p *FileClientPool) GetObjectRange(
 	return etag, nil
 }
 
+// GetChunk retrieves chunk data by its SHA-256 content hash.
+// Uses the GetChunk RPC which is designed for direct chunk access.
+func (p *FileClientPool) GetChunk(
+	ctx context.Context,
+	address string,
+	chunkID string,
+	writer ObjectWriter,
+) error {
+	client, err := p.GetClient(ctx, address)
+	if err != nil {
+		return err
+	}
+
+	stream, err := client.GetChunk(ctx, &file_pb.GetChunkRequest{
+		ChunkId: chunkID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open GetChunk stream: %w", err)
+	}
+
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to receive chunk data: %w", err)
+		}
+
+		// Handle data payload (skip metadata)
+		if data := resp.GetData(); data != nil {
+			if err := writer(data); err != nil {
+				return fmt.Errorf("failed to write chunk data: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetChunkRange retrieves a range of bytes from a chunk by its SHA-256 content hash.
+// Note: The GetChunk RPC doesn't support ranges directly, so we read the full chunk
+// and skip bytes. For large chunks, this is inefficient but correct.
+// TODO: Add range support to GetChunk RPC for efficiency.
+func (p *FileClientPool) GetChunkRange(
+	ctx context.Context,
+	address string,
+	chunkID string,
+	offset, length uint64,
+	writer ObjectWriter,
+) error {
+	client, err := p.GetClient(ctx, address)
+	if err != nil {
+		return err
+	}
+
+	stream, err := client.GetChunk(ctx, &file_pb.GetChunkRequest{
+		ChunkId: chunkID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open GetChunk stream: %w", err)
+	}
+
+	var bytesSkipped, bytesWritten uint64
+	remaining := length
+
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to receive chunk data: %w", err)
+		}
+
+		data := resp.GetData()
+		if data == nil {
+			continue // Skip metadata messages
+		}
+
+		dataLen := uint64(len(data))
+
+		// Skip bytes until we reach offset
+		if bytesSkipped < offset {
+			toSkip := offset - bytesSkipped
+			if toSkip >= dataLen {
+				bytesSkipped += dataLen
+				continue
+			}
+			data = data[toSkip:]
+			bytesSkipped = offset
+			dataLen = uint64(len(data))
+		}
+
+		// Write up to remaining bytes
+		if dataLen > remaining {
+			data = data[:remaining]
+		}
+
+		if len(data) > 0 {
+			if err := writer(data); err != nil {
+				return fmt.Errorf("failed to write chunk data: %w", err)
+			}
+			bytesWritten += uint64(len(data))
+			remaining -= uint64(len(data))
+		}
+
+		if remaining == 0 {
+			break
+		}
+	}
+
+	return nil
+}
+
 // DeleteObject deletes an object from a file server.
 func (p *FileClientPool) DeleteObject(
 	ctx context.Context,

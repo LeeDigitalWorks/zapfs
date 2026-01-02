@@ -17,39 +17,34 @@ package kms
 import (
 	"context"
 	"errors"
-	"time"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 )
 
-// Provider errors
+// Re-export types from pkg/iam for convenience within this package.
+// This allows external KMS code to use kms.KeyMetadata etc. while
+// the actual type definition lives in pkg/iam.
+type (
+	KeyState       = iam.KeyState
+	KeyMetadata    = iam.KeyMetadata
+	CreateKeyInput = iam.CreateKeyInput
+)
+
+// Re-export error variables from pkg/iam for convenience.
 var (
-	ErrKeyNotFound     = errors.New("key not found")
-	ErrKeyDisabled     = errors.New("key is disabled")
-	ErrInvalidKeyState = errors.New("invalid key state")
-	ErrDecryptFailed   = errors.New("decryption failed")
-	ErrNotSupported    = errors.New("operation not supported by this provider")
+	ErrKeyNotFound     = iam.ErrKeyNotFound
+	ErrKeyDisabled     = iam.ErrKeyDisabled
+	ErrInvalidKeyState = iam.ErrInvalidKeyState
+	ErrDecryptFailed   = iam.ErrDecryptFailed
+	ErrNotSupported    = iam.ErrNotSupported
 )
 
-// KeyState represents the state of a KMS key
-type KeyState string
-
+// Re-export KeyState constants from pkg/iam for convenience.
 const (
-	KeyStateEnabled         KeyState = "Enabled"
-	KeyStateDisabled        KeyState = "Disabled"
-	KeyStatePendingDeletion KeyState = "PendingDeletion"
+	KeyStateEnabled         = iam.KeyStateEnabled
+	KeyStateDisabled        = iam.KeyStateDisabled
+	KeyStatePendingDeletion = iam.KeyStatePendingDeletion
 )
-
-// KeyMetadata holds metadata about a KMS key
-type KeyMetadata struct {
-	KeyID        string
-	ARN          string // Provider-specific ARN or identifier
-	Alias        string // Human-readable alias
-	CreationDate time.Time
-	Description  string
-	KeyState     KeyState
-	KeyUsage     string // ENCRYPT_DECRYPT, SIGN_VERIFY
-	Origin       string // AWS_KMS, EXTERNAL, VAULT, etc.
-	Provider     string // aws, vault, gcp, azure
-}
 
 // Provider defines the interface for KMS providers
 type Provider interface {
@@ -74,14 +69,6 @@ type Provider interface {
 
 	// Close releases any resources held by the provider
 	Close() error
-}
-
-// CreateKeyInput contains parameters for creating a key (optional operation)
-type CreateKeyInput struct {
-	Description string
-	KeyUsage    string
-	Alias       string
-	Tags        map[string]string
 }
 
 // KeyCreator is an optional interface for providers that support key creation
@@ -140,7 +127,7 @@ func NewProvider(ctx context.Context, cfg Config) (Provider, error) {
 		return NewAWSProvider(ctx, *cfg.AWS)
 	case "vault":
 		if cfg.Vault == nil {
-			return nil, errors.New("Vault configuration required")
+			return nil, errors.New("vault configuration required")
 		}
 		return NewVaultProvider(ctx, *cfg.Vault)
 	default:

@@ -132,11 +132,11 @@ func TestReadObject(t *testing.T) {
 		chunkData := []byte("hello world")
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, writer clientpkg.ObjectWriter) {
+			GetChunk(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
 				writer(chunkData)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObject(context.Background(), &ReadRequest{
@@ -158,25 +158,25 @@ func TestReadObject(t *testing.T) {
 		chunk3Data := []byte("part3")
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, writer clientpkg.ObjectWriter) {
+			GetChunk(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
 				writer(chunk1Data)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-2", mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, writer clientpkg.ObjectWriter) {
+			GetChunk(mock.Anything, "file-1:8081", "chunk-2", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
 				writer(chunk2Data)
 			}).
-			Return("etag-2", nil)
+			Return(nil)
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-3", mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, writer clientpkg.ObjectWriter) {
+			GetChunk(mock.Anything, "file-1:8081", "chunk-3", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
 				writer(chunk3Data)
 			}).
-			Return("etag-3", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObject(context.Background(), &ReadRequest{
@@ -199,16 +199,16 @@ func TestReadObject(t *testing.T) {
 
 		// First replica fails
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
-			Return("", errors.New("connection refused"))
+			GetChunk(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
+			Return(errors.New("connection refused"))
 
 		// Second replica succeeds
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-2:8081", "chunk-1", mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, writer clientpkg.ObjectWriter) {
+			GetChunk(mock.Anything, "file-2:8081", "chunk-1", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
 				writer(chunkData)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObject(context.Background(), &ReadRequest{
@@ -227,12 +227,12 @@ func TestReadObject(t *testing.T) {
 		coord := &Coordinator{fileClientPool: mockFile}
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
-			Return("", errors.New("file-1 failed"))
+			GetChunk(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
+			Return(errors.New("file-1 failed"))
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-2:8081", "chunk-1", mock.Anything).
-			Return("", errors.New("file-2 failed"))
+			GetChunk(mock.Anything, "file-2:8081", "chunk-1", mock.Anything).
+			Return(errors.New("file-2 failed"))
 
 		var buf bytes.Buffer
 		err := coord.ReadObject(context.Background(), &ReadRequest{
@@ -253,15 +253,15 @@ func TestReadObject(t *testing.T) {
 		chunk1Data := []byte("success")
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, writer clientpkg.ObjectWriter) {
+			GetChunk(mock.Anything, "file-1:8081", "chunk-1", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
 				writer(chunk1Data)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		mockFile.EXPECT().
-			GetObject(mock.Anything, "file-1:8081", "chunk-2", mock.Anything).
-			Return("", errors.New("chunk-2 not found"))
+			GetChunk(mock.Anything, "file-1:8081", "chunk-2", mock.Anything).
+			Return(errors.New("chunk-2 not found"))
 
 		var buf bytes.Buffer
 		err := coord.ReadObject(context.Background(), &ReadRequest{
@@ -303,11 +303,11 @@ func TestReadObjectRange(t *testing.T) {
 		rangeData := []byte("llo wor")
 
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-1:8081", "chunk-1", uint64(2), uint64(7), mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, offset, length uint64, writer clientpkg.ObjectWriter) {
+			GetChunkRange(mock.Anything, "file-1:8081", "chunk-1", uint64(2), uint64(7), mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, offset, length uint64, writer clientpkg.ObjectWriter) {
 				writer(rangeData)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObjectRange(context.Background(), &ReadRangeRequest{
@@ -338,27 +338,27 @@ func TestReadObjectRange(t *testing.T) {
 
 		// Chunk 1: offset 500 within chunk, length 500
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-1:8081", "chunk-1", uint64(500), uint64(500), mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, offset, length uint64, writer clientpkg.ObjectWriter) {
+			GetChunkRange(mock.Anything, "file-1:8081", "chunk-1", uint64(500), uint64(500), mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, offset, length uint64, writer clientpkg.ObjectWriter) {
 				writer(chunk1Part)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		// Chunk 2: offset 0 within chunk, length 1000 (full chunk)
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-1:8081", "chunk-2", uint64(0), uint64(1000), mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, offset, length uint64, writer clientpkg.ObjectWriter) {
+			GetChunkRange(mock.Anything, "file-1:8081", "chunk-2", uint64(0), uint64(1000), mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, offset, length uint64, writer clientpkg.ObjectWriter) {
 				writer(chunk2Full)
 			}).
-			Return("etag-2", nil)
+			Return(nil)
 
 		// Chunk 3: offset 0 within chunk, length 500
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-1:8081", "chunk-3", uint64(0), uint64(500), mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, offset, length uint64, writer clientpkg.ObjectWriter) {
+			GetChunkRange(mock.Anything, "file-1:8081", "chunk-3", uint64(0), uint64(500), mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, offset, length uint64, writer clientpkg.ObjectWriter) {
 				writer(chunk3Part)
 			}).
-			Return("etag-3", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObjectRange(context.Background(), &ReadRangeRequest{
@@ -385,11 +385,11 @@ func TestReadObjectRange(t *testing.T) {
 		chunk2Data := []byte("only chunk 2")
 
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-1:8081", "chunk-2", uint64(100), uint64(200), mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, offset, length uint64, writer clientpkg.ObjectWriter) {
+			GetChunkRange(mock.Anything, "file-1:8081", "chunk-2", uint64(100), uint64(200), mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, offset, length uint64, writer clientpkg.ObjectWriter) {
 				writer(chunk2Data)
 			}).
-			Return("etag-2", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObjectRange(context.Background(), &ReadRangeRequest{
@@ -414,16 +414,16 @@ func TestReadObjectRange(t *testing.T) {
 
 		// First replica fails
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-1:8081", "chunk-1", uint64(0), uint64(100), mock.Anything).
-			Return("", errors.New("connection refused"))
+			GetChunkRange(mock.Anything, "file-1:8081", "chunk-1", uint64(0), uint64(100), mock.Anything).
+			Return(errors.New("connection refused"))
 
 		// Second replica succeeds
 		mockFile.EXPECT().
-			GetObjectRange(mock.Anything, "file-2:8081", "chunk-1", uint64(0), uint64(100), mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, offset, length uint64, writer clientpkg.ObjectWriter) {
+			GetChunkRange(mock.Anything, "file-2:8081", "chunk-1", uint64(0), uint64(100), mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, offset, length uint64, writer clientpkg.ObjectWriter) {
 				writer(rangeData)
 			}).
-			Return("etag-1", nil)
+			Return(nil)
 
 		var buf bytes.Buffer
 		err := coord.ReadObjectRange(context.Background(), &ReadRangeRequest{

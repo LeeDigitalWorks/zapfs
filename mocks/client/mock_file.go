@@ -237,6 +237,156 @@ func (_c *MockFile_DecrementRefCountBatch_Call) RunAndReturn(run func(ctx contex
 	return _c
 }
 
+// GetChunk provides a mock function for the type MockFile
+func (_mock *MockFile) GetChunk(ctx context.Context, address string, chunkID string, writer client.ObjectWriter) error {
+	ret := _mock.Called(ctx, address, chunkID, writer)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChunk")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, client.ObjectWriter) error); ok {
+		r0 = returnFunc(ctx, address, chunkID, writer)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockFile_GetChunk_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChunk'
+type MockFile_GetChunk_Call struct {
+	*mock.Call
+}
+
+// GetChunk is a helper method to define mock.On call
+//   - ctx context.Context
+//   - address string
+//   - chunkID string
+//   - writer client.ObjectWriter
+func (_e *MockFile_Expecter) GetChunk(ctx interface{}, address interface{}, chunkID interface{}, writer interface{}) *MockFile_GetChunk_Call {
+	return &MockFile_GetChunk_Call{Call: _e.mock.On("GetChunk", ctx, address, chunkID, writer)}
+}
+
+func (_c *MockFile_GetChunk_Call) Run(run func(ctx context.Context, address string, chunkID string, writer client.ObjectWriter)) *MockFile_GetChunk_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 client.ObjectWriter
+		if args[3] != nil {
+			arg3 = args[3].(client.ObjectWriter)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFile_GetChunk_Call) Return(err error) *MockFile_GetChunk_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockFile_GetChunk_Call) RunAndReturn(run func(ctx context.Context, address string, chunkID string, writer client.ObjectWriter) error) *MockFile_GetChunk_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetChunkRange provides a mock function for the type MockFile
+func (_mock *MockFile) GetChunkRange(ctx context.Context, address string, chunkID string, offset uint64, length uint64, writer client.ObjectWriter) error {
+	ret := _mock.Called(ctx, address, chunkID, offset, length, writer)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChunkRange")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, uint64, uint64, client.ObjectWriter) error); ok {
+		r0 = returnFunc(ctx, address, chunkID, offset, length, writer)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockFile_GetChunkRange_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChunkRange'
+type MockFile_GetChunkRange_Call struct {
+	*mock.Call
+}
+
+// GetChunkRange is a helper method to define mock.On call
+//   - ctx context.Context
+//   - address string
+//   - chunkID string
+//   - offset uint64
+//   - length uint64
+//   - writer client.ObjectWriter
+func (_e *MockFile_Expecter) GetChunkRange(ctx interface{}, address interface{}, chunkID interface{}, offset interface{}, length interface{}, writer interface{}) *MockFile_GetChunkRange_Call {
+	return &MockFile_GetChunkRange_Call{Call: _e.mock.On("GetChunkRange", ctx, address, chunkID, offset, length, writer)}
+}
+
+func (_c *MockFile_GetChunkRange_Call) Run(run func(ctx context.Context, address string, chunkID string, offset uint64, length uint64, writer client.ObjectWriter)) *MockFile_GetChunkRange_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 uint64
+		if args[3] != nil {
+			arg3 = args[3].(uint64)
+		}
+		var arg4 uint64
+		if args[4] != nil {
+			arg4 = args[4].(uint64)
+		}
+		var arg5 client.ObjectWriter
+		if args[5] != nil {
+			arg5 = args[5].(client.ObjectWriter)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFile_GetChunkRange_Call) Return(err error) *MockFile_GetChunkRange_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockFile_GetChunkRange_Call) RunAndReturn(run func(ctx context.Context, address string, chunkID string, offset uint64, length uint64, writer client.ObjectWriter) error) *MockFile_GetChunkRange_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetObject provides a mock function for the type MockFile
 func (_mock *MockFile) GetObject(ctx context.Context, address string, objectID string, writer client.ObjectWriter) (string, error) {
 	ret := _mock.Called(ctx, address, objectID, writer)

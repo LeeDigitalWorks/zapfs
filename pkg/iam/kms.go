@@ -21,6 +21,7 @@ var (
 	ErrKeyDisabled     = errors.New("key is disabled")
 	ErrInvalidKeyState = errors.New("invalid key state")
 	ErrDecryptFailed   = errors.New("decryption failed")
+	ErrNotSupported    = errors.New("operation not supported by this provider")
 )
 
 // KeyState represents the state of a KMS key
@@ -30,18 +31,20 @@ const (
 	KeyStateEnabled         KeyState = "Enabled"
 	KeyStateDisabled        KeyState = "Disabled"
 	KeyStatePendingDeletion KeyState = "PendingDeletion"
-	KeyStatePendingImport   KeyState = "PendingImport"
 )
 
-// KeyMetadata holds metadata about a KMS key
+// KeyMetadata holds metadata about a KMS key.
+// This struct is used by both internal KMS (for testing) and external KMS providers.
 type KeyMetadata struct {
 	KeyID                string
-	ARN                  string
+	ARN                  string // Provider-specific ARN or identifier
+	Alias                string // Human-readable alias (optional)
 	CreationDate         time.Time
 	Description          string
 	KeyState             KeyState
 	KeyUsage             string // ENCRYPT_DECRYPT, SIGN_VERIFY
-	Origin               string // AWS_KMS, EXTERNAL
+	Origin               string // AWS_KMS, EXTERNAL, VAULT, etc.
+	Provider             string // aws, vault, gcp, azure (for external KMS)
 	DeletionDate         *time.Time
 	EncryptionAlgorithms []string
 }
@@ -66,11 +69,14 @@ func NewKMSService() *KMSService {
 	}
 }
 
-// CreateKeyInput contains parameters for CreateKey
+// CreateKeyInput contains parameters for CreateKey.
+// Used by both internal KMS and external KMS providers.
 type CreateKeyInput struct {
 	Description string
-	KeyUsage    string // Default: ENCRYPT_DECRYPT
-	Origin      string // Default: AWS_KMS
+	KeyUsage    string            // Default: ENCRYPT_DECRYPT
+	Origin      string            // Default: AWS_KMS
+	Alias       string            // Human-readable alias (optional)
+	Tags        map[string]string // Key-value tags (optional, for AWS/cloud providers)
 }
 
 // CreateKey creates a new KMS key

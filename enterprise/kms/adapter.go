@@ -15,7 +15,7 @@ import (
 )
 
 // Adapter wraps an external KMS Provider to provide an interface compatible
-// with iam.KMSService for use with the encryption handler.
+// with the encryption handler's KMSProvider interface.
 type Adapter struct {
 	provider     Provider
 	defaultKeyID string
@@ -39,15 +39,8 @@ func (a *Adapter) CreateKey(ctx context.Context, input iam.CreateKeyInput) (*iam
 		return nil, ErrNotSupported
 	}
 
-	km, err := creator.CreateKey(ctx, CreateKeyInput{
-		Description: input.Description,
-		KeyUsage:    input.KeyUsage,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return a.convertKeyMetadata(km), nil
+	// Types are now unified, can pass directly
+	return creator.CreateKey(ctx, input)
 }
 
 // GetKey retrieves key metadata from the external KMS.
@@ -64,23 +57,18 @@ func (a *Adapter) GetKey(ctx context.Context, keyID string) (*iam.KeyMetadata, e
 	}
 	a.mu.RUnlock()
 
-	// Fetch from provider
+	// Fetch from provider - types are now unified, no conversion needed
 	km, err := a.provider.DescribeKey(ctx, keyID)
 	if err != nil {
-		if err == ErrKeyNotFound {
-			return nil, iam.ErrKeyNotFound
-		}
 		return nil, err
 	}
 
-	result := a.convertKeyMetadata(km)
-
 	// Cache the result
 	a.mu.Lock()
-	a.keyCache[keyID] = result
+	a.keyCache[keyID] = km
 	a.mu.Unlock()
 
-	return result, nil
+	return km, nil
 }
 
 // DisableKey disables a key in the external KMS.
@@ -171,51 +159,12 @@ func (a *Adapter) Close() error {
 	return a.provider.Close()
 }
 
-// convertKeyMetadata converts enterprise KeyMetadata to iam KeyMetadata.
-func (a *Adapter) convertKeyMetadata(km *KeyMetadata) *iam.KeyMetadata {
-	result := &iam.KeyMetadata{
-		KeyID:        km.KeyID,
-		ARN:          km.ARN,
-		CreationDate: km.CreationDate,
-		Description:  km.Description,
-		KeyUsage:     km.KeyUsage,
-		Origin:       km.Origin,
-	}
-
-	// Convert key state
-	switch km.KeyState {
-	case KeyStateEnabled:
-		result.KeyState = iam.KeyStateEnabled
-	case KeyStateDisabled:
-		result.KeyState = iam.KeyStateDisabled
-	case KeyStatePendingDeletion:
-		result.KeyState = iam.KeyStatePendingDeletion
-	default:
-		result.KeyState = iam.KeyStateEnabled
-	}
-
-	return result
-}
-
-// KMSServiceInterface defines the interface that both internal KMSService and
-// external KMS Adapter must implement for use with the encryption handler.
-type KMSServiceInterface interface {
-	GetKey(ctx context.Context, keyID string) (*iam.KeyMetadata, error)
-	Encrypt(ctx context.Context, keyID string, plaintext []byte) ([]byte, error)
-	Decrypt(ctx context.Context, keyID string, ciphertext []byte) ([]byte, error)
-	GenerateDataKey(ctx context.Context, keyID string, keySpec string) (plaintext, ciphertext []byte, err error)
-	ListKeys(ctx context.Context) []string
-}
-
-// Verify Adapter implements KMSServiceInterface
-var _ KMSServiceInterface = (*Adapter)(nil)
-
 // ExternalKMSConfig holds configuration for external KMS providers.
 // This is the runtime config struct populated from TOML/CLI flags.
 type ExternalKMSConfig struct {
-	Provider     string      // "aws" or "vault"
-	DefaultKeyID string      // Default key to use for operations
-	AWS          *AWSConfig  // AWS KMS config (if Provider == "aws")
+	Provider     string       // "aws" or "vault"
+	DefaultKeyID string       // Default key to use for operations
+	AWS          *AWSConfig   // AWS KMS config (if Provider == "aws")
 	Vault        *VaultConfig // Vault config (if Provider == "vault")
 }
 
@@ -251,9 +200,7 @@ func IsConfigured(cfg ExternalKMSConfig) bool {
 }
 
 // MockAdapter creates a mock adapter for testing.
-// Uses the internal KMS service as a backing store.
 func MockAdapter() *Adapter {
-	// For testing, we create an adapter that wraps a mock provider
 	return &Adapter{
 		provider:     &mockProvider{},
 		defaultKeyID: "test-key",
@@ -265,6 +212,7 @@ func MockAdapter() *Adapter {
 type mockProvider struct{}
 
 func (m *mockProvider) Name() string { return "mock" }
+
 func (m *mockProvider) Encrypt(ctx context.Context, keyID string, plaintext []byte) ([]byte, error) {
 	// Simple XOR "encryption" for testing only
 	result := make([]byte, len(plaintext))
@@ -273,6 +221,7 @@ func (m *mockProvider) Encrypt(ctx context.Context, keyID string, plaintext []by
 	}
 	return result, nil
 }
+
 func (m *mockProvider) Decrypt(ctx context.Context, keyID string, ciphertext []byte) ([]byte, error) {
 	// Simple XOR "decryption" for testing only
 	result := make([]byte, len(ciphertext))
@@ -281,6 +230,7 @@ func (m *mockProvider) Decrypt(ctx context.Context, keyID string, ciphertext []b
 	}
 	return result, nil
 }
+
 func (m *mockProvider) GenerateDataKey(ctx context.Context, keyID string, keySpec string) ([]byte, []byte, error) {
 	// Return a fixed key for testing
 	plaintext := make([]byte, 32)
@@ -290,6 +240,7 @@ func (m *mockProvider) GenerateDataKey(ctx context.Context, keyID string, keySpe
 	ciphertext, _ := m.Encrypt(ctx, keyID, plaintext)
 	return plaintext, ciphertext, nil
 }
+
 func (m *mockProvider) DescribeKey(ctx context.Context, keyID string) (*KeyMetadata, error) {
 	return &KeyMetadata{
 		KeyID:        keyID,
@@ -301,7 +252,9 @@ func (m *mockProvider) DescribeKey(ctx context.Context, keyID string) (*KeyMetad
 		Provider:     "mock",
 	}, nil
 }
+
 func (m *mockProvider) ListKeys(ctx context.Context) ([]string, error) {
 	return []string{"test-key"}, nil
 }
+
 func (m *mockProvider) Close() error { return nil }
