@@ -97,10 +97,18 @@ func (v *V4Verifier) extractAuthInfo(r *http.Request) (*authInfo, error) {
 		return nil, fmt.Errorf("invalid authorization header")
 	}
 
-	parts := strings.Split(strings.TrimPrefix(authHeader, AuthHeaderV4+" "), ", ")
+	// Remove "AWS4-HMAC-SHA256 " prefix
+	authStr := strings.TrimPrefix(authHeader, AuthHeaderV4+" ")
+
+	// Split by comma - some clients use ", " (comma-space), others just ","
+	// Replace ", " with "," to normalize, then split by ","
+	authStr = strings.ReplaceAll(authStr, ", ", ",")
+	parts := strings.Split(authStr, ",")
 	auth := &authInfo{}
 
 	for _, part := range parts {
+		// Trim spaces from each part
+		part = strings.TrimSpace(part)
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
 			continue

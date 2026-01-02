@@ -238,10 +238,12 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 	pools, profiles, profilePlacer, backendManager := initializeStorage(opts)
 
 	// Database
-	metadataDB, err := initializeDatabase(opts)
+	rawDB, err := initializeDatabase(opts)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize database")
 	}
+	// Wrap with metrics instrumentation
+	metadataDB := db.NewMetricsDB(rawDB)
 	if err := metadataDB.Migrate(cmd.Context()); err != nil {
 		logger.Fatal().Err(err).Msg("failed to run database migrations")
 	}
@@ -280,11 +282,29 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 	var tq taskqueue.Queue
 	var sqlDBConn *sql.DB
 
-	switch v := metadataDB.(type) {
+	// Unwrap MetricsDB to get the underlying DB for SQL connection
+	switch v := rawDB.(type) {
 	case *vitess.Vitess:
 		sqlDBConn = v.SqlDB()
 	case *postgres.Postgres:
 		sqlDBConn = v.SqlDB()
+	}
+
+	// Start connection pool metrics collector
+	if sqlDBConn != nil {
+		go func() {
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-cmd.Context().Done():
+					return
+				case <-ticker.C:
+					stats := sqlDBConn.Stats()
+					db.UpdateConnectionMetrics(stats.InUse, stats.Idle, stats.OpenConnections)
+				}
+			}
+		}()
 	}
 
 	if sqlDBConn != nil {

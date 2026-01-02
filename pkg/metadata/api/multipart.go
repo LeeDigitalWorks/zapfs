@@ -127,8 +127,16 @@ func (s *MetadataServer) UploadPartHandler(d *data.Data, w http.ResponseWriter) 
 
 	// Use verified body for streaming signed requests, otherwise use raw body
 	body := io.Reader(d.Req.Body)
+	contentLength := d.Req.ContentLength
 	if d.VerifiedBody != nil {
 		body = d.VerifiedBody
+		// For streaming signed requests, x-amz-decoded-content-length contains
+		// the actual payload size (Content-Length includes chunked framing overhead)
+		if decodedLen := d.Req.Header.Get(s3consts.XAmzDecodedLength); decodedLen != "" {
+			if parsed, err := strconv.ParseInt(decodedLen, 10, 64); err == nil {
+				contentLength = parsed
+			}
+		}
 	}
 
 	// Use the service layer which handles parallel writes to all file servers
@@ -138,7 +146,7 @@ func (s *MetadataServer) UploadPartHandler(d *data.Data, w http.ResponseWriter) 
 		UploadID:      uploadID,
 		PartNumber:    partNumber,
 		Body:          body,
-		ContentLength: d.Req.ContentLength,
+		ContentLength: contentLength,
 	})
 	if err != nil {
 		var svcErr *multipart.Error

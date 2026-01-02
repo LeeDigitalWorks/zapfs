@@ -319,8 +319,17 @@ func TestV4Verifier_ExtractAuthInfo(t *testing.T) {
 		expectService string
 	}{
 		{
-			name:          "valid authorization header",
+			name:          "valid authorization header with comma-space",
 			authHeader:    "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=abcd1234",
+			amzDate:       "20130524T000000Z",
+			expectError:   false,
+			expectAccess:  "AKIAIOSFODNN7EXAMPLE",
+			expectRegion:  "us-east-1",
+			expectService: "s3",
+		},
+		{
+			name:          "valid authorization header with comma-only (minio/warp style)",
+			authHeader:    "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-date,Signature=abcd1234",
 			amzDate:       "20130524T000000Z",
 			expectError:   false,
 			expectAccess:  "AKIAIOSFODNN7EXAMPLE",

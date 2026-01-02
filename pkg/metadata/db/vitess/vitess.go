@@ -88,6 +88,11 @@ func (v *Vitess) SqlDB() *sql.DB {
 	return v.db
 }
 
+// Stats returns database connection pool statistics
+func (v *Vitess) Stats() sql.DBStats {
+	return v.db.Stats()
+}
+
 // WithTx executes fn within a database transaction.
 // If fn returns an error, the transaction is rolled back.
 // If fn returns nil, the transaction is committed.

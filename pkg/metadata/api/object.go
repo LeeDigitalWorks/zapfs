@@ -48,8 +48,16 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 
 	// Use verified body for streaming signed requests, otherwise use raw body
 	body := io.Reader(d.Req.Body)
+	contentLength := d.Req.ContentLength
 	if d.VerifiedBody != nil {
 		body = d.VerifiedBody
+		// For streaming signed requests, x-amz-decoded-content-length contains
+		// the actual payload size (Content-Length includes chunked framing overhead)
+		if decodedLen := d.Req.Header.Get(s3consts.XAmzDecodedLength); decodedLen != "" {
+			if parsed, err := strconv.ParseInt(decodedLen, 10, 64); err == nil {
+				contentLength = parsed
+			}
+		}
 	}
 
 	// Build service request
@@ -57,7 +65,7 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		Bucket:        bucket,
 		Key:           key,
 		Body:          body,
-		ContentLength: d.Req.ContentLength,
+		ContentLength: contentLength,
 		StorageClass:  d.Req.Header.Get(s3consts.XAmzStorageClass),
 		Owner:         d.S3Info.OwnerID,
 	}

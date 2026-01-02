@@ -21,8 +21,6 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
-
-	"github.com/dustin/go-humanize"
 )
 
 // Coordinator manages interaction with file servers and the manager.
@@ -160,9 +158,9 @@ func (c *Coordinator) handleTopologyEvent(event *manager_pb.TopologyEvent) {
 
 // writeResult holds the outcome of writing to a single target
 type writeResult struct {
-	target  *manager_pb.ReplicationTarget
-	size    uint64
-	err     error
+	target *manager_pb.ReplicationTarget
+	size   uint64
+	err    error
 }
 
 // WriteObject writes data to ALL file servers in parallel.
@@ -358,13 +356,6 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 
 	// Log results
 	etag := hex.EncodeToString(hash.Sum(nil))
-	logger.Info().
-		Str("object_id", req.ObjectID).
-		Str("size", humanize.IBytes(bytesWritten)).
-		Str("etag", etag).
-		Int("successful", len(successfulTargets)).
-		Int("failed", len(failedTargets)).
-		Msg("WriteObject completed")
 
 	return &WriteResult{
 		Size:      resultSize,

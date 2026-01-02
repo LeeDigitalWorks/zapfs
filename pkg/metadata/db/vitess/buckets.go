@@ -89,9 +89,15 @@ func (v *Vitess) ListBuckets(ctx context.Context, params *db.ListBucketsParams) 
 	query := `
 		SELECT id, name, owner_id, region, created_at, default_profile_id, versioning
 		FROM buckets
-		WHERE owner_id = ?
+		WHERE 1=1
 	`
-	args := []any{params.OwnerID}
+	var args []any
+
+	// Add owner filter (optional - when empty, returns all buckets for cache loading)
+	if params.OwnerID != "" {
+		query += " AND owner_id = ?"
+		args = append(args, params.OwnerID)
+	}
 
 	// Add prefix filter
 	if params.Prefix != "" {
