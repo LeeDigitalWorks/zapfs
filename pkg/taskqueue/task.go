@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package taskqueue provides a durable task queue for background processing.
 //
 // Supported backends:

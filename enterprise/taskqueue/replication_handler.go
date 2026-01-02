@@ -9,7 +9,15 @@ package taskqueue
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
@@ -77,16 +85,67 @@ func NewReplicationTask(payload ReplicationPayload) (*taskqueue.Task, error) {
 	}, nil
 }
 
+// ObjectReader provides read access to objects in local storage.
+type ObjectReader interface {
+	// ReadObject reads an object's content. Caller must close the returned ReadCloser.
+	ReadObject(ctx context.Context, bucket, key string) (io.ReadCloser, *ObjectMeta, error)
+}
+
+// ObjectMeta contains metadata about an object.
+type ObjectMeta struct {
+	Size        int64
+	ContentType string
+	ETag        string
+	Metadata    map[string]string
+}
+
+// RegionEndpoints provides S3 endpoints for remote regions.
+type RegionEndpoints interface {
+	// GetS3Endpoint returns the S3 endpoint URL for a region.
+	GetS3Endpoint(region string) string
+}
+
+// ReplicationCredentials provides credentials for cross-region replication.
+type ReplicationCredentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
+}
+
 // ReplicationHandler processes replication tasks.
 type ReplicationHandler struct {
-	// Dependencies for actual replication
-	// regionClient RegionClient  // Client to connect to remote regions
-	// fileClient   FileClient    // Client to read/write objects
+	objectReader ObjectReader
+	endpoints    RegionEndpoints
+	creds        ReplicationCredentials
+	httpClient   *http.Client
+
+	// Cache of S3 clients per region
+	clientCache map[string]*s3.Client
+}
+
+// ReplicationHandlerConfig configures the replication handler.
+type ReplicationHandlerConfig struct {
+	ObjectReader ObjectReader
+	Endpoints    RegionEndpoints
+	Credentials  ReplicationCredentials
+	HTTPClient   *http.Client // Optional, defaults to http.DefaultClient
 }
 
 // NewReplicationHandler creates a new replication handler.
-func NewReplicationHandler() *ReplicationHandler {
-	return &ReplicationHandler{}
+func NewReplicationHandler(cfg ReplicationHandlerConfig) *ReplicationHandler {
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{
+			Timeout: 5 * time.Minute, // Long timeout for large objects
+		}
+	}
+
+	return &ReplicationHandler{
+		objectReader: cfg.ObjectReader,
+		endpoints:    cfg.Endpoints,
+		creds:        cfg.Credentials,
+		httpClient:   httpClient,
+		clientCache:  make(map[string]*s3.Client),
+	}
 }
 
 func (h *ReplicationHandler) Type() taskqueue.TaskType {
@@ -96,7 +155,7 @@ func (h *ReplicationHandler) Type() taskqueue.TaskType {
 func (h *ReplicationHandler) Handle(ctx context.Context, task *taskqueue.Task) error {
 	payload, err := taskqueue.UnmarshalPayload[ReplicationPayload](task.Payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshal payload: %w", err)
 	}
 
 	logger.Info().
@@ -116,33 +175,99 @@ func (h *ReplicationHandler) Handle(ctx context.Context, task *taskqueue.Task) e
 	case "COPY":
 		return h.handleCopy(ctx, &payload)
 	default:
-		return errors.New("unknown operation: " + payload.Operation)
+		return fmt.Errorf("unknown operation: %s", payload.Operation)
 	}
 }
 
 func (h *ReplicationHandler) handlePut(ctx context.Context, p *ReplicationPayload) error {
-	// TODO: Implement actual replication
+	// Validate dependencies
+	if h.objectReader == nil {
+		return errors.New("object reader not configured")
+	}
+
 	// 1. Read object from local storage
-	// 2. Connect to destination region's metadata/file service
+	body, meta, err := h.objectReader.ReadObject(ctx, p.SourceBucket, p.SourceKey)
+	if err != nil {
+		return fmt.Errorf("read source object: %w", err)
+	}
+	defer body.Close()
+
+	// 2. Get S3 client for destination region
+	client, err := h.getS3Client(ctx, p.DestRegion)
+	if err != nil {
+		return fmt.Errorf("get S3 client for region %s: %w", p.DestRegion, err)
+	}
+
 	// 3. PUT object to destination bucket
-	// 4. Verify ETag matches
+	contentType := p.ContentType
+	if contentType == "" && meta != nil {
+		contentType = meta.ContentType
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	putInput := &s3.PutObjectInput{
+		Bucket:      aws.String(p.DestBucket),
+		Key:         aws.String(p.DestKey),
+		Body:        body,
+		ContentType: aws.String(contentType),
+	}
+
+	// Copy metadata if available
+	if len(p.Metadata) > 0 {
+		putInput.Metadata = p.Metadata
+	} else if meta != nil && len(meta.Metadata) > 0 {
+		putInput.Metadata = meta.Metadata
+	}
+
+	// Set content length if known
+	if meta != nil && meta.Size > 0 {
+		putInput.ContentLength = aws.Int64(meta.Size)
+	} else if p.SourceSize > 0 {
+		putInput.ContentLength = aws.Int64(p.SourceSize)
+	}
+
+	result, err := client.PutObject(ctx, putInput)
+	if err != nil {
+		return fmt.Errorf("put object to destination: %w", err)
+	}
+
+	// 4. Verify ETag matches (optional - destination may have different encryption)
+	destETag := ""
+	if result.ETag != nil {
+		destETag = *result.ETag
+	}
 
 	logger.Info().
 		Str("source", p.SourceBucket+"/"+p.SourceKey).
 		Str("dest", p.DestRegion+":"+p.DestBucket+"/"+p.DestKey).
-		Msg("replicated object (simulated)")
+		Str("source_etag", p.SourceETag).
+		Str("dest_etag", destETag).
+		Msg("replicated object successfully")
 
 	return nil
 }
 
 func (h *ReplicationHandler) handleDelete(ctx context.Context, p *ReplicationPayload) error {
-	// TODO: Implement delete replication
-	// 1. Connect to destination region
-	// 2. DELETE object from destination bucket
+	// Get S3 client for destination region
+	client, err := h.getS3Client(ctx, p.DestRegion)
+	if err != nil {
+		return fmt.Errorf("get S3 client for region %s: %w", p.DestRegion, err)
+	}
+
+	// Delete object from destination bucket
+	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(p.DestBucket),
+		Key:    aws.String(p.DestKey),
+	})
+	if err != nil {
+		return fmt.Errorf("delete object from destination: %w", err)
+	}
 
 	logger.Info().
 		Str("dest", p.DestRegion+":"+p.DestBucket+"/"+p.DestKey).
-		Msg("replicated delete (simulated)")
+		Msg("replicated delete successfully")
 
 	return nil
 }
@@ -150,4 +275,46 @@ func (h *ReplicationHandler) handleDelete(ctx context.Context, p *ReplicationPay
 func (h *ReplicationHandler) handleCopy(ctx context.Context, p *ReplicationPayload) error {
 	// Same as PUT for cross-region
 	return h.handlePut(ctx, p)
+}
+
+// getS3Client returns an S3 client for the specified region, creating one if needed.
+func (h *ReplicationHandler) getS3Client(ctx context.Context, region string) (*s3.Client, error) {
+	// Check cache first
+	if client, ok := h.clientCache[region]; ok {
+		return client, nil
+	}
+
+	// Get endpoint for region
+	if h.endpoints == nil {
+		return nil, errors.New("region endpoints not configured")
+	}
+
+	endpoint := h.endpoints.GetS3Endpoint(region)
+	if endpoint == "" {
+		return nil, fmt.Errorf("no S3 endpoint configured for region %s", region)
+	}
+
+	// Create S3 client with custom endpoint
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			h.creds.AccessKeyID,
+			h.creds.SecretAccessKey,
+			"", // session token
+		)),
+		config.WithHTTPClient(h.httpClient),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = true // Use path-style for custom endpoints
+	})
+
+	// Cache the client
+	h.clientCache[region] = client
+
+	return client, nil
 }

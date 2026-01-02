@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package object
 
 import (
@@ -22,6 +25,7 @@ const (
 	ErrCodeInvalidStorageClass
 	ErrCodeInvalidEncryption
 	ErrCodeKMSError
+	ErrCodeKMSKeyNotFound
 	ErrCodeInternalError
 )
 
@@ -68,6 +72,8 @@ func (e *Error) ToS3Error() s3err.ErrorCode {
 		return s3err.ErrInvalidEncryptionAlgorithm
 	case ErrCodeKMSError:
 		return s3err.ErrKMSAccessDenied
+	case ErrCodeKMSKeyNotFound:
+		return s3err.ErrKMSKeyNotFound
 	default:
 		return s3err.ErrInternalError
 	}

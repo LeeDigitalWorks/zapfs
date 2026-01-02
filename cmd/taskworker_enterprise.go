@@ -1,5 +1,9 @@
 //go:build enterprise
 
+// Copyright 2025 ZapFS, Inc. All rights reserved.
+// Use of this source code is governed by the ZapFS Enterprise License
+// that can be found in the LICENSE.enterprise file.
+
 package cmd
 
 import (
@@ -13,6 +17,8 @@ import (
 	enttaskqueue "github.com/LeeDigitalWorks/zapfs/enterprise/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
@@ -23,6 +29,17 @@ type TaskWorkerConfig struct {
 	PollInterval time.Duration
 	Concurrency  int
 	LocalRegion  string
+
+	// Dependencies for replication handler
+	ObjectService object.Service         // For reading objects from local storage
+	RegionConfig  *manager.RegionConfig  // For getting S3 endpoints per region
+	Credentials   ReplicationCredentials // For authenticating to remote regions
+}
+
+// ReplicationCredentials provides credentials for cross-region replication.
+type ReplicationCredentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
 }
 
 // TaskWorkerManager wraps the task queue and worker for enterprise features.
@@ -73,11 +90,33 @@ func InitializeTaskWorker(ctx context.Context, cfg TaskWorkerConfig) (*TaskWorke
 		Concurrency:  cfg.Concurrency,
 	})
 
+	// Create dependencies for enterprise handlers
+	deps := enttaskqueue.Dependencies{}
+
+	// Configure object reader if object service is available
+	if cfg.ObjectService != nil {
+		deps.ObjectReader = enttaskqueue.NewObjectServiceAdapter(cfg.ObjectService)
+	}
+
+	// Configure region endpoints if region config is available
+	if cfg.RegionConfig != nil {
+		deps.RegionEndpoints = enttaskqueue.NewRegionConfigAdapter(cfg.RegionConfig)
+	}
+
+	// Configure replication credentials
+	if cfg.Credentials.AccessKeyID != "" {
+		deps.ReplicationCredentials = enttaskqueue.ReplicationCredentials{
+			AccessKeyID:     cfg.Credentials.AccessKeyID,
+			SecretAccessKey: cfg.Credentials.SecretAccessKey,
+		}
+	}
+
 	// Register handlers
-	worker.RegisterHandler(enttaskqueue.NewReplicationHandler())
-	// Future: Add more handlers
-	// worker.RegisterHandler(NewAuditLogHandler())
-	// worker.RegisterHandler(NewWebhookHandler())
+	handlers := enttaskqueue.EnterpriseHandlers(deps)
+	for _, h := range handlers {
+		worker.RegisterHandler(h)
+		logger.Debug().Str("type", string(h.Type())).Msg("registered task handler")
+	}
 
 	// Start worker
 	worker.Start(ctx)
@@ -115,6 +154,7 @@ func InitializeTaskWorker(ctx context.Context, cfg TaskWorkerConfig) (*TaskWorke
 		Str("worker_id", cfg.WorkerID).
 		Int("concurrency", cfg.Concurrency).
 		Dur("poll_interval", cfg.PollInterval).
+		Int("handlers", len(handlers)).
 		Msg("enterprise task worker started")
 
 	return &TaskWorkerManager{

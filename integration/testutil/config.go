@@ -1,5 +1,8 @@
 //go:build integration
 
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package testutil
 
 // ServiceAddresses holds addresses for all services used in tests

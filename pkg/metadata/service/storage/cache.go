@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package storage provides coordination between file servers and the manager
 // for object storage operations.
 package storage

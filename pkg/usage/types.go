@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package usage provides usage tracking and reporting for billing.
 // This is the core package containing types and interfaces used by both
 // community and enterprise editions.

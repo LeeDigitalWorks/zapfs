@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -859,18 +862,24 @@ func TestPutObjectHandler(t *testing.T) {
 				},
 			}, nil)
 
-		// Setup file client mock - expect encrypted data (larger than plaintext)
+		// Setup file client mock - MUST drain the reader for the storage coordinator's
+		// pipe-based streaming to work correctly
 		mockFile.EXPECT().
 			PutObject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Run(func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64) {
+			RunAndReturn(func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error) {
+				// Drain the reader (required for pipe-based streaming in storage coordinator)
+				readData, err := io.ReadAll(data)
+				if err != nil {
+					return nil, err
+				}
 				// Verify that data is encrypted (size should be larger than plaintext)
-				assert.Greater(t, totalSize, uint64(len(body)), "encrypted data should be larger than plaintext")
-			}).
-			Return(&client.PutObjectResult{
-				ObjectID: "test-object-id",
-				Size:     50, // Encrypted size (larger than plaintext)
-				ETag:     "dummy-etag",
-			}, nil)
+				assert.Greater(t, uint64(len(readData)), uint64(len(body)), "encrypted data should be larger than plaintext")
+				return &client.PutObjectResult{
+					ObjectID: objectID,
+					Size:     uint64(len(readData)),
+					ETag:     "dummy-etag",
+				}, nil
+			})
 
 		// Create request with SSE-KMS headers
 		req := httptest.NewRequest("PUT", "/"+bucket+"/"+key, bytes.NewReader(body))

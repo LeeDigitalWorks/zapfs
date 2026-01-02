@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package encryption provides encryption/decryption services for SSE-C and SSE-KMS.
 package encryption
 

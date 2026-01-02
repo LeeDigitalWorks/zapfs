@@ -1,5 +1,8 @@
 //go:build integration
 
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package testutil provides shared utilities for integration tests.
 package testutil
 

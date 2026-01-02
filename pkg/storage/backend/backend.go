@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package backend provides storage backend implementations.
 // All backends implement types.BackendStorage interface.
 package backend

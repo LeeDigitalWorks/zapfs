@@ -21,20 +21,29 @@ const (
 
 // Dependencies required by enterprise handlers.
 type Dependencies struct {
-	// TODO: Add actual dependencies as handlers are implemented
-	// RegionClient RegionClient
-	// FileClient   client.File
-	// AuditStore   AuditStore
-	// HTTPClient   *http.Client
+	// ObjectReader for reading objects from local storage
+	ObjectReader ObjectReader
+
+	// RegionEndpoints for getting S3 endpoints per region
+	RegionEndpoints RegionEndpoints
+
+	// ReplicationCredentials for authenticating to remote regions
+	ReplicationCredentials ReplicationCredentials
 }
 
 // EnterpriseHandlers returns all enterprise task handlers.
-// Returns nil if dependencies are not provided.
+// Returns empty slice if dependencies are not provided.
 func EnterpriseHandlers(deps Dependencies) []taskqueue.Handler {
-	return []taskqueue.Handler{
-		NewReplicationHandler(),
-		// TODO: Add more handlers as implemented
-		// NewAuditHandler(deps.AuditStore),
-		// NewWebhookHandler(deps.HTTPClient),
+	handlers := []taskqueue.Handler{}
+
+	// Only add replication handler if dependencies are configured
+	if deps.ObjectReader != nil && deps.RegionEndpoints != nil {
+		handlers = append(handlers, NewReplicationHandler(ReplicationHandlerConfig{
+			ObjectReader: deps.ObjectReader,
+			Endpoints:    deps.RegionEndpoints,
+			Credentials:  deps.ReplicationCredentials,
+		}))
 	}
+
+	return handlers
 }

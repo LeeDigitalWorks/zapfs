@@ -65,3 +65,16 @@ lifecycle_scan_interval = "1h"        # How often to scan buckets
 lifecycle_scan_concurrency = 5        # Parallel bucket processing
 lifecycle_scan_batch_size = 1000      # Objects per batch when listing
 lifecycle_max_tasks_per_scan = 10000  # Max tasks to enqueue per scan run
+
+# =============================================================================
+# Cross-Region Replication Configuration (Enterprise Feature)
+# =============================================================================
+# Requires FeatureMultiRegion license. These credentials are used by the
+# replication handler to authenticate when writing objects to remote regions.
+#
+# For production, use environment variables:
+#   ZAPFS_REPLICATION_ACCESS_KEY_ID
+#   ZAPFS_REPLICATION_SECRET_ACCESS_KEY
+#
+# replication_access_key_id = ""
+# replication_secret_access_key = ""

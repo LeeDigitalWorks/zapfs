@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package service provides the business logic layer for the metadata server.
 // It separates concerns between HTTP handling and domain logic, following
 // the pattern established in pkg/iam/service.go.
@@ -165,7 +168,28 @@ func NewService(cfg Config) (*Service, error) {
 		worker.RegisterHandler(handlers.NewLifecycleHandler(cfg.DB, cfg.FileClientPool))
 
 		// Register enterprise handlers (returns nil in community edition)
-		for _, h := range enttaskqueue.EnterpriseHandlers(enttaskqueue.Dependencies{}) {
+		// Pass dependencies for replication and other enterprise features
+		entDeps := enttaskqueue.Dependencies{}
+
+		// Object reader for replication (read source objects)
+		if objectSvc != nil {
+			entDeps.ObjectReader = enttaskqueue.NewObjectServiceAdapter(objectSvc)
+		}
+
+		// Region endpoints for replication (get S3 endpoints per region)
+		if cfg.RegionConfig != nil {
+			entDeps.RegionEndpoints = enttaskqueue.NewRegionConfigAdapter(cfg.RegionConfig)
+		}
+
+		// Credentials for replication (authenticate to remote regions)
+		if cfg.ReplicationCredentials.AccessKeyID != "" {
+			entDeps.ReplicationCredentials = enttaskqueue.ReplicationCredentials{
+				AccessKeyID:     cfg.ReplicationCredentials.AccessKeyID,
+				SecretAccessKey: cfg.ReplicationCredentials.SecretAccessKey,
+			}
+		}
+
+		for _, h := range enttaskqueue.EnterpriseHandlers(entDeps) {
 			worker.RegisterHandler(h)
 		}
 

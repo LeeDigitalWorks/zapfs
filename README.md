@@ -139,6 +139,35 @@ make mocks
 ./zapfs file --node_id=file-1
 ```
 
+## Performance
+
+ZapFS is designed for high-throughput object storage. Benchmarks use [MinIO WARP](https://github.com/minio/warp).
+
+### Quick Benchmark
+
+```bash
+# Start benchmark environment
+docker compose -f docker/docker-compose.benchmark.yml up -d
+
+# Run quick benchmark (1 min)
+./scripts/benchmark.sh --profile quick
+
+# Run standard benchmark (5 min) with output
+./scripts/benchmark.sh --profile standard --output ./results
+```
+
+### Benchmark Profiles
+
+| Profile | Duration | Best For |
+|---------|----------|----------|
+| `quick` | 1 min | Sanity checks |
+| `standard` | 5 min | General performance |
+| `large` | 5 min | Large object workloads |
+| `small` | 5 min | High-IOPS small files |
+| `mixed` | 10 min | Realistic workloads |
+
+See [docs/benchmarks/](docs/benchmarks/) for detailed methodology, environment setup, and recorded results.
+
 ## Acknowledgments
 
 ZapFS draws inspiration from several excellent open-source projects:

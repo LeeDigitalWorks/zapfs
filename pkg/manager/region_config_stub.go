@@ -1,5 +1,8 @@
 //go:build !enterprise
 
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package manager provides stub region configuration for community edition.
 // Multi-region support is an enterprise feature.
 package manager

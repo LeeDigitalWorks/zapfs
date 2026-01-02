@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package s3consts
 
 // http://docs.aws.amazon.com/AmazonS3/latest/dev/UploadingObjects.html

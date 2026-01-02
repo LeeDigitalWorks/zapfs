@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package pool provides generic gRPC connection pooling with optional
 // cluster-aware routing for Raft-based services.
 package pool

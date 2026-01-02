@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cmd
 
 import (
@@ -79,6 +82,10 @@ type MetadataServerOpts struct {
 	LifecycleScanConcurrency int
 	LifecycleScanBatchSize   int
 	LifecycleMaxTasksPerScan int
+
+	// Cross-region replication (enterprise: FeatureMultiRegion)
+	ReplicationAccessKeyID     string
+	ReplicationSecretAccessKey string
 }
 
 var metadataCmd = &cobra.Command{
@@ -136,6 +143,10 @@ func init() {
 	f.Int("lifecycle_scan_concurrency", 5, "Number of buckets to scan in parallel")
 	f.Int("lifecycle_scan_batch_size", 1000, "Objects per batch when listing")
 	f.Int("lifecycle_max_tasks_per_scan", 10000, "Max tasks to enqueue per scan run")
+
+	// Cross-region replication (enterprise: FeatureMultiRegion)
+	f.String("replication_access_key_id", "", "Access key for cross-region replication")
+	f.String("replication_secret_access_key", "", "Secret key for cross-region replication (use env var ZAPFS_REPLICATION_SECRET_ACCESS_KEY)")
 
 	viper.BindPFlags(f)
 }
@@ -292,6 +303,13 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		defer accessLogMgr.Stop()
 	}
 
+	// CRR hook for cross-region replication (enterprise feature)
+	// Returns nil in community edition
+	crrHook := api.NewCRRHook(tq, opts.RegionID)
+	if crrHook != nil {
+		logger.Info().Str("region", opts.RegionID).Msg("CRR hook enabled for cross-region replication")
+	}
+
 	// Metadata server
 	serverCfg := api.ServerConfig{
 		ManagerClient:     managerClient,
@@ -306,6 +324,13 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		DefaultProfile:    "STANDARD",
 		IAMService:        iamService, // For KMS operations (enterprise feature)
 		TaskQueue:         tq,
+		CRRHook:           crrHook, // Cross-region replication (enterprise feature)
+		// Cross-region replication credentials (enterprise: FeatureMultiRegion)
+		// Never log the secret key!
+		ReplicationCredentials: api.ReplicationCredentials{
+			AccessKeyID:     opts.ReplicationAccessKeyID,
+			SecretAccessKey: opts.ReplicationSecretAccessKey,
+		},
 		// Lifecycle scanner configuration
 		LifecycleScannerEnabled:  opts.LifecycleScannerEnabled,
 		LifecycleScanInterval:    opts.LifecycleScanInterval,
@@ -376,6 +401,9 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		LifecycleScanConcurrency: f.Int("lifecycle_scan_concurrency"),
 		LifecycleScanBatchSize:   f.Int("lifecycle_scan_batch_size"),
 		LifecycleMaxTasksPerScan: f.Int("lifecycle_max_tasks_per_scan"),
+		// Cross-region replication
+		ReplicationAccessKeyID:     f.String("replication_access_key_id"),
+		ReplicationSecretAccessKey: f.String("replication_secret_access_key"),
 	}
 }
 

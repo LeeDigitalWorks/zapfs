@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cmd provides CLI command implementations for ZapFS services.
 // This file contains reusable helpers for configuration loading with CLI flag precedence.
 package cmd

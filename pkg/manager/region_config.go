@@ -36,7 +36,7 @@ type RegionConfig struct {
 	Cache RegionCacheConfig `mapstructure:"cache"`
 }
 
-// RegionPeer represents a remote region's manager cluster.
+// RegionPeer represents a remote region's services.
 type RegionPeer struct {
 	// Name is the region identifier (must match a name in PrimaryRegions).
 	Name string `mapstructure:"name"`
@@ -44,6 +44,10 @@ type RegionPeer struct {
 	// ManagerAddresses are the gRPC addresses of managers in this region.
 	// Multiple addresses provide redundancy (any can be used to reach the region).
 	ManagerAddresses []string `mapstructure:"manager_addresses"`
+
+	// S3Endpoint is the S3-compatible HTTP endpoint for this region's metadata service.
+	// Used for cross-region replication. Example: "https://s3.us-west-2.example.com"
+	S3Endpoint string `mapstructure:"s3_endpoint"`
 }
 
 // RegionCacheConfig holds cache synchronization settings.
@@ -99,6 +103,20 @@ func (c *RegionConfig) GetPeerAddresses(regionName string) []string {
 		}
 	}
 	return nil
+}
+
+// GetPeerS3Endpoint returns the S3 endpoint for a given region.
+// Returns empty string if the region is not found or endpoint not configured.
+func (c *RegionConfig) GetPeerS3Endpoint(regionName string) string {
+	if c == nil {
+		return ""
+	}
+	for _, peer := range c.Peers {
+		if peer.Name == regionName {
+			return peer.S3Endpoint
+		}
+	}
+	return ""
 }
 
 // GetCurrentPrimary returns the first healthy region from the priority list.

@@ -92,9 +92,9 @@ Default S3 credentials for local development:
 - Access Key: `AKIAIOSFODNN7EXAMPLE`
 - Secret Key: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`
 
-## Large Feature Development
+## Code Changes
 
-For significant features or architectural changes, write a design plan in `workspace/plans/` before implementation:
+For significant code changes, write a design plan in `workspace/plans/` before implementation:
 
 1. **Create a design doc** - Document the problem, proposed solution, alternatives considered, and implementation steps
 2. **Consider performance** - Analyze memory allocations, hot paths, and concurrency patterns. Profile before and after for performance-sensitive code
@@ -102,3 +102,6 @@ For significant features or architectural changes, write a design plan in `works
 4. **Test coverage** - Write unit tests for new code. Add integration tests for cross-service functionality. Run `make test-race` to catch data races
 5. **Track TODOs** - Document feature gaps and future work in `workspace/todo.md`
 6. **Metrics** - Add metrics for the new feature and use prometheus to expose them.
+7. **License checks** - If the code is enterprise-only, add license checks to the code.
+8. **Documentation** - Update the documentation to reflect the changes.
+9. **License Header** - Add the license header to the code.

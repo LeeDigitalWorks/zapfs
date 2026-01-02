@@ -1,5 +1,8 @@
 //go:build !enterprise
 
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cmd
 
 import (
@@ -8,6 +11,8 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 )
 
 // TaskWorkerConfig configures the task worker.
@@ -17,6 +22,17 @@ type TaskWorkerConfig struct {
 	PollInterval time.Duration
 	Concurrency  int
 	LocalRegion  string
+
+	// Dependencies for replication handler (enterprise only)
+	ObjectService object.Service
+	RegionConfig  *manager.RegionConfig
+	Credentials   ReplicationCredentials
+}
+
+// ReplicationCredentials provides credentials for cross-region replication.
+type ReplicationCredentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
 }
 
 // TaskWorkerManager is a stub for community edition.

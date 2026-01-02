@@ -1,9 +1,13 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
 	"context"
 	"errors"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -22,38 +26,63 @@ func (s *MetadataServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pass the request through the filter chain
-	data := data.NewData(r.Context(), r)
-	_, err := s.chain.Run(data)
-	if err != nil {
-		// TODO: Check if response should be HTML or XML based on bucket website
-		var httpErr s3err.ErrorCode
-		if errors.As(err, &httpErr) {
-			writeXMLErrorResponse(wrappedWriter, data, httpErr)
-		} else {
-			writeXMLErrorResponse(wrappedWriter, data, s3err.ErrInternalError)
-		}
-		return
-	}
+	d := data.NewData(r.Context(), r)
 
+	// Defer metrics and access logging (runs after panic recovery)
 	defer func() {
 		// If the request was cancelled by the client, avoid logging a 500 error
 		if wrappedWriter.statusCode == http.StatusInternalServerError && errors.Is(r.Context().Err(), context.Canceled) {
 			wrappedWriter.statusCode = 0
 		}
-		s.metricsRequest.WithLabelValues(data.S3Info.Action.String(), strconv.FormatInt(int64(wrappedWriter.statusCode), 10)).Inc()
-		s.metricsRequestDuration.WithLabelValues(data.S3Info.Action.String(), strconv.FormatInt(int64(wrappedWriter.statusCode), 10)).Observe(time.Since(start).Seconds())
+		s.metricsRequest.WithLabelValues(d.S3Info.Action.String(), strconv.FormatInt(int64(wrappedWriter.statusCode), 10)).Inc()
+		s.metricsRequestDuration.WithLabelValues(d.S3Info.Action.String(), strconv.FormatInt(int64(wrappedWriter.statusCode), 10)).Observe(time.Since(start).Seconds())
 
 		// Capture access log for buckets with logging enabled (enterprise: FeatureAuditLog)
-		s.captureAccessLog(data, start, wrappedWriter.statusCode, wrappedWriter.bytesWritten)
+		s.captureAccessLog(d, start, wrappedWriter.statusCode, wrappedWriter.bytesWritten)
 	}()
 
-	handler, exists := s.handlers[data.S3Info.Action]
-	if !exists {
-		writeXMLErrorResponse(wrappedWriter, data, s3err.ErrNotImplemented)
+	// Recover from panics to prevent server crash and return proper S3 error
+	defer func() {
+		if rec := recover(); rec != nil {
+			// Capture stack trace
+			stack := debug.Stack()
+
+			// Log the panic with stack trace
+			logger.Error().
+				Interface("panic", rec).
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Str("action", d.S3Info.Action.String()).
+				Str("request_id", r.Header.Get("X-Amz-Request-Id")).
+				Bytes("stack", stack).
+				Msg("panic recovered in request handler")
+
+			// Return S3 internal error if response not already written
+			if wrappedWriter.statusCode == 0 {
+				writeXMLErrorResponse(wrappedWriter, d, s3err.ErrInternalError)
+			}
+		}
+	}()
+
+	_, err := s.chain.Run(d)
+	if err != nil {
+		// TODO: Check if response should be HTML or XML based on bucket website
+		var httpErr s3err.ErrorCode
+		if errors.As(err, &httpErr) {
+			writeXMLErrorResponse(wrappedWriter, d, httpErr)
+		} else {
+			writeXMLErrorResponse(wrappedWriter, d, s3err.ErrInternalError)
+		}
 		return
 	}
 
-	handler(data, wrappedWriter)
+	handler, exists := s.handlers[d.S3Info.Action]
+	if !exists {
+		writeXMLErrorResponse(wrappedWriter, d, s3err.ErrNotImplemented)
+		return
+	}
+
+	handler(d, wrappedWriter)
 }
 
 // handleObjectError converts service layer errors to HTTP responses.

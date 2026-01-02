@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package client defines interfaces for external service clients used by the metadata server.
 // These interfaces are separate from the implementations to avoid import cycles with mocks.
 package client

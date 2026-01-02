@@ -47,10 +47,12 @@ default_num_replicas = 3
 # [[region.peers]]
 # name = "us-west-2"
 # manager_addresses = ["manager-1.us-west-2.example.com:8050", "manager-2.us-west-2.example.com:8050"]
+# s3_endpoint = "https://s3.us-west-2.example.com"  # For cross-region replication
 #
 # [[region.peers]]
 # name = "eu-west-1"
 # manager_addresses = ["manager-1.eu-west-1.example.com:8050"]
+# s3_endpoint = "https://s3.eu-west-1.example.com"  # For cross-region replication
 #
 # [region.cache]
 # sync_interval = 30          # Seconds between cache syncs from primary

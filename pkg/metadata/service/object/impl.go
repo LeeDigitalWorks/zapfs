@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package object
 
 import (
@@ -7,6 +10,7 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
@@ -154,6 +158,23 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 
 			result, err := s.encryption.Encrypt(ctx, body, params)
 			if err != nil {
+				// Check for KMS-specific errors and return appropriate error codes
+				errStr := err.Error()
+				if strings.Contains(errStr, "KMS key not found") ||
+					strings.Contains(errStr, "KMS key disabled") {
+					return nil, &Error{
+						Code:    ErrCodeKMSKeyNotFound,
+						Message: err.Error(),
+						Err:     err,
+					}
+				}
+				if strings.Contains(errStr, "KMS service not available") {
+					return nil, &Error{
+						Code:    ErrCodeKMSError,
+						Message: err.Error(),
+						Err:     err,
+					}
+				}
 				return nil, newInternalError(err)
 			}
 			dataToStore = bytes.NewReader(result.Ciphertext)

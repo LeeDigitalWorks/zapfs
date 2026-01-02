@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package manager provides the manager server for ZapFS cluster coordination.
 //
 // The manager server handles:

@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package memory provides an in-memory implementation of db.DB for testing.
 // This implementation stores data in maps and is suitable for unit tests
 // where fast, isolated testing is needed without a real database.

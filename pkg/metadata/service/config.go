@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package service
 
 import (
@@ -5,12 +8,19 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
+
+// ReplicationCredentials provides credentials for cross-region replication.
+type ReplicationCredentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
+}
 
 // Config holds all configuration for the metadata service layer.
 // This follows the pattern established in pkg/iam/service.go.
@@ -33,6 +43,10 @@ type Config struct {
 	// Enterprise features (may be nil)
 	IAMService *iam.Service   // For KMS operations
 	CRRHook    object.CRRHook // For cross-region replication
+
+	// Cross-region replication configuration (enterprise)
+	RegionConfig           *manager.RegionConfig // For getting S3 endpoints per region
+	ReplicationCredentials ReplicationCredentials // For authenticating to remote regions
 
 	// Task queue for background processing (optional)
 	// If provided, enables GC retry processing and other background tasks

@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -6,6 +9,7 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
@@ -19,6 +23,12 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"github.com/prometheus/client_golang/prometheus"
+)
+
+// Type aliases for cross-region replication configuration
+type (
+	RegionConfig           = manager.RegionConfig
+	ReplicationCredentials = service.ReplicationCredentials
 )
 
 type MetadataServer struct {
@@ -95,6 +105,10 @@ type ServerConfig struct {
 	CRRHook           *CRRHook        // Enterprise: cross-region replication hook
 	IAMService        *iam.Service    // IAM service for KMS operations (enterprise feature)
 	TaskQueue          taskqueue.Queue      // Optional: for GC decrement retry and background tasks
+
+	// Cross-region replication configuration (enterprise: FeatureMultiRegion)
+	RegionConfig           *RegionConfig           // For getting S3 endpoints per region
+	ReplicationCredentials ReplicationCredentials  // For authenticating to remote regions
 	UsageConfig        usage.Config         // Usage reporting configuration
 	UsageStore         usage.Store          // Usage data store (nil = use NopStore)
 	AccessLogCollector AccessLogCollector   // Access log collector (enterprise: FeatureAuditLog)
@@ -134,6 +148,9 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		IAMService:        cfg.IAMService,
 		CRRHook:           adaptCRRHook(cfg.CRRHook),
 		TaskQueue:         cfg.TaskQueue,
+		// Cross-region replication configuration
+		RegionConfig:           cfg.RegionConfig,
+		ReplicationCredentials: cfg.ReplicationCredentials,
 		// Lifecycle scanner configuration
 		LifecycleScannerEnabled:  cfg.LifecycleScannerEnabled,
 		LifecycleScanInterval:    cfg.LifecycleScanInterval,

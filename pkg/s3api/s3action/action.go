@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package s3action
 
 // This file represents the S3 actions that are used to handle S3 requests.

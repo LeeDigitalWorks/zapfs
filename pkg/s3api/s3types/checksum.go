@@ -1,3 +1,6 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package s3types
 
 import "github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
