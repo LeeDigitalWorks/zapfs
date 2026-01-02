@@ -530,7 +530,33 @@ func (q *DBQueue) Cleanup(ctx context.Context, olderThan time.Duration) (int, er
 
 // Heartbeat extends the visibility timeout for a running task.
 // Workers should call this periodically to prevent the task from being reclaimed.
+// Uses deadlock retry to ensure heartbeat succeeds even under contention.
 func (q *DBQueue) Heartbeat(ctx context.Context, taskID string, workerID string) error {
+	var lastErr error
+	for attempt := range maxDeadlockRetries {
+		err := q.heartbeatOnce(ctx, taskID, workerID)
+		if err == nil {
+			return nil
+		}
+		if !isDeadlockError(err) {
+			return err
+		}
+		lastErr = err
+		DeadlockRetries.Inc()
+
+		// Exponential backoff with jitter
+		backoff := baseDeadlockBackoff * time.Duration(1<<attempt)
+		jitter := time.Duration(rand.Int63n(int64(backoff)))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff + jitter):
+		}
+	}
+	return lastErr
+}
+
+func (q *DBQueue) heartbeatOnce(ctx context.Context, taskID string, workerID string) error {
 	now := time.Now()
 	query := fmt.Sprintf(`
 		UPDATE %s SET heartbeat_at = ?, updated_at = ?

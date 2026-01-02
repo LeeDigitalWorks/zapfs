@@ -5,7 +5,6 @@ package vitess
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -19,92 +18,13 @@ import (
 // ============================================================================
 
 func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
-	chunkRefsJSON, err := json.Marshal(obj.ChunkRefs)
-	if err != nil {
-		return fmt.Errorf("marshal chunk_refs: %w", err)
-	}
-
-	ecGroupIDsJSON, err := json.Marshal(obj.ECGroupIDs)
-	if err != nil {
-		return fmt.Errorf("marshal ec_group_ids: %w", err)
-	}
-
-	// Convert IsLatest bool to int for MySQL
-	isLatest := 0
-	if obj.IsLatest {
-		isLatest = 1
-	}
-
-	if obj.IsLatest {
-		// Versioning mode: mark old versions as not latest, then insert new
-		_, err = v.db.ExecContext(ctx, `
-			UPDATE objects SET is_latest = 0 WHERE bucket = ? AND object_key = ? AND is_latest = 1
-		`, obj.Bucket, obj.Key)
-		if err != nil {
-			return fmt.Errorf("mark old versions: %w", err)
-		}
-
-		// Insert new version
-		_, err = v.db.ExecContext(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`,
-			obj.ID.String(),
-			obj.Bucket,
-			obj.Key,
-			obj.Size,
-			obj.Version,
-			obj.ETag,
-			obj.CreatedAt,
-			obj.DeletedAt,
-			obj.TTL,
-			obj.ProfileID,
-			storageClass(obj.StorageClass),
-			string(chunkRefsJSON),
-			string(ecGroupIDsJSON),
-			isLatest,
-			obj.SSEAlgorithm,
-			obj.SSECustomerKeyMD5,
-			obj.SSEKMSKeyID,
-			obj.SSEKMSContext,
-		)
-	} else {
-		// Non-versioning mode: delete old versions, then insert new (replace behavior)
-		_, err = v.db.ExecContext(ctx, `
-			DELETE FROM objects WHERE bucket = ? AND object_key = ?
-		`, obj.Bucket, obj.Key)
-		if err != nil {
-			return fmt.Errorf("delete old object: %w", err)
-		}
-
-		// Insert new object
-		_, err = v.db.ExecContext(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
-		`,
-			obj.ID.String(),
-			obj.Bucket,
-			obj.Key,
-			obj.Size,
-			obj.Version,
-			obj.ETag,
-			obj.CreatedAt,
-			obj.DeletedAt,
-			obj.TTL,
-			obj.ProfileID,
-			storageClass(obj.StorageClass),
-			string(chunkRefsJSON),
-			string(ecGroupIDsJSON),
-			obj.SSEAlgorithm,
-			obj.SSECustomerKeyMD5,
-			obj.SSEKMSKeyID,
-			obj.SSEKMSContext,
-		)
-	}
-	if err != nil {
-		return fmt.Errorf("put object: %w", err)
-	}
-	return nil
+	// Use a transaction to ensure atomicity and prevent race conditions.
+	// The transactional PutObject uses SELECT FOR UPDATE to serialize
+	// concurrent writes to the same bucket/key, preventing the race where
+	// two concurrent calls both set is_latest=1.
+	return v.WithTx(ctx, func(tx db.TxStore) error {
+		return tx.PutObject(ctx, obj)
+	})
 }
 
 func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {

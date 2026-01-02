@@ -10,6 +10,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
@@ -185,6 +186,7 @@ func (m *ECManager) Encode(ctx context.Context, src io.Reader, size int64) (uuid
 				BackendID: backends[idx].ID,
 				Path:      path,
 				Size:      uint64(len(data)),
+				CreatedAt: time.Now().Unix(),
 				ECGroupID: groupID,
 				ShardIdx:  idx,
 				IsParity:  idx >= m.scheme.DataShards,

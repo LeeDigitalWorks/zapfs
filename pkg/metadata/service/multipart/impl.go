@@ -29,7 +29,6 @@ import (
 // This interface allows for easy mocking in tests.
 type Storage interface {
 	WriteObject(ctx context.Context, req *storage.WriteRequest) (*storage.WriteResult, error)
-	DecrementChunkRefCounts(ctx context.Context, chunks []types.ChunkRef) []storage.FailedDecrement
 	// ReadObject streams object data to a writer. Used for UploadPartCopy.
 	ReadObject(ctx context.Context, req *storage.ReadRequest, writer io.Writer) error
 	// ReadObjectRange streams a byte range of object data to a writer.
@@ -603,6 +602,10 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 	utils.Md5PoolPutHasher(h)
 	finalETag := hex.EncodeToString(hashSum) + "-" + strconv.Itoa(len(sortedParts))
 
+	// Deduplicate chunks by ChunkID for registry registration
+	// Same chunk may appear multiple times (e.g., from dedup or same data in parts)
+	uniqueChunks := deduplicateChunksForRegistry(allChunkRefs)
+
 	// Create final object within transaction
 	err = s.db.WithTx(ctx, func(tx db.TxStore) error {
 		obj := &types.ObjectRef{
@@ -630,6 +633,14 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 
 		if err := tx.PutObject(ctx, obj); err != nil {
 			return err
+		}
+
+		// Register chunks in chunk_registry (centralized RefCount)
+		// This atomically increments ref_count for each unique chunk
+		if len(uniqueChunks) > 0 {
+			if err := tx.IncrementChunkRefCountBatch(ctx, uniqueChunks); err != nil {
+				return err
+			}
 		}
 
 		if err := tx.DeleteMultipartUpload(ctx, req.Bucket, req.Key, req.UploadID); err != nil {
@@ -687,39 +698,10 @@ func (s *serviceImpl) AbortUpload(ctx context.Context, bucket, key, uploadID str
 		}
 	}
 
-	// Collect all chunk refs from all parts to decrement ref counts
-	var allChunkRefs []types.ChunkRef
-	parts, _, err := s.db.ListParts(ctx, uploadID, 0, 10000) // Get all parts
-	if err != nil {
-		logger.Warn().Err(err).Str("upload_id", uploadID).Msg("failed to list parts for cleanup")
-	} else {
-		for _, part := range parts {
-			allChunkRefs = append(allChunkRefs, part.ChunkRefs...)
-		}
-	}
-
-	// Decrement reference counts for all chunks
-	// This is done before deleting the upload metadata to ensure chunks are cleaned up
-	// even if the upload deletion fails (we can always retry the deletion)
-	if len(allChunkRefs) > 0 {
-		failed := s.storage.DecrementChunkRefCounts(ctx, allChunkRefs)
-		if len(failed) > 0 {
-			// Failed decrements are automatically queued for retry by the coordinator
-			// if a task queue is configured. Log for visibility.
-			logger.Warn().
-				Str("upload_id", uploadID).
-				Int("failed_count", len(failed)).
-				Int("total_chunks", len(allChunkRefs)).
-				Msg("some chunk ref count decrements failed during multipart abort (queued for retry if task queue enabled)")
-		} else {
-			logger.Debug().
-				Str("upload_id", uploadID).
-				Int("chunks", len(allChunkRefs)).
-				Msg("decremented chunk ref counts for aborted multipart upload")
-		}
-	}
-
-	// Delete upload and parts
+	// Delete upload and parts (cascade delete handles parts)
+	// Note: Chunks written during UploadPart are NOT registered in chunk_registry
+	// until CompleteUpload. Since we're aborting, these chunks become orphans.
+	// The orphan chunk reconciliation process will clean them up.
 	if err := s.db.DeleteMultipartUpload(ctx, bucket, key, uploadID); err != nil {
 		return &Error{
 			Code:    ErrCodeInternalError,
@@ -727,6 +709,12 @@ func (s *serviceImpl) AbortUpload(ctx context.Context, bucket, key, uploadID str
 			Err:     err,
 		}
 	}
+
+	logger.Debug().
+		Str("bucket", bucket).
+		Str("key", key).
+		Str("upload_id", uploadID).
+		Msg("aborted multipart upload (orphaned chunks will be cleaned by GC reconciliation)")
 
 	return nil
 }
@@ -859,5 +847,26 @@ func (s *serviceImpl) ListUploads(ctx context.Context, req *ListUploadsRequest) 
 		Uploads:            resultUploads,
 		CommonPrefixes:     commonPrefixes,
 	}, nil
+}
+
+// deduplicateChunksForRegistry converts ChunkRefs to db.ChunkInfo and deduplicates by ChunkID.
+// Same chunk may appear multiple times (e.g., from content-addressable dedup or same data in parts).
+// Only the first occurrence is kept to register each unique chunk once.
+func deduplicateChunksForRegistry(refs []types.ChunkRef) []db.ChunkInfo {
+	seen := make(map[string]bool)
+	var unique []db.ChunkInfo
+	for _, ref := range refs {
+		id := ref.ChunkID.String()
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, db.ChunkInfo{
+				ChunkID:   id,
+				Size:      int64(ref.Size),
+				ServerID:  ref.FileServerAddr,
+				BackendID: ref.BackendID,
+			})
+		}
+	}
+	return unique
 }
 

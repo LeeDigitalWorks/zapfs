@@ -49,3 +49,8 @@ func (fs *FileServer) Shutdown() {
 		fs.peerPool.Close()
 	}
 }
+
+// Store returns the underlying file store for reconciliation and admin operations
+func (fs *FileServer) Store() *store.FileStore {
+	return fs.store
+}

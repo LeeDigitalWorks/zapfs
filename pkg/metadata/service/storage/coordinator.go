@@ -17,7 +17,6 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
-	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue/handlers"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
@@ -160,6 +159,7 @@ func (c *Coordinator) handleTopologyEvent(event *manager_pb.TopologyEvent) {
 type writeResult struct {
 	target *manager_pb.ReplicationTarget
 	size   uint64
+	chunks []client.ChunkInfo // Actual chunk IDs from file server
 	err    error
 }
 
@@ -262,6 +262,7 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 			results <- writeResult{
 				target: p.target,
 				size:   result.Size,
+				chunks: result.Chunks,
 			}
 		}(pipes[i])
 	}
@@ -318,7 +319,12 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 	}
 
 	// Collect results
-	var successfulTargets []*manager_pb.ReplicationTarget
+	type successResult struct {
+		target *manager_pb.ReplicationTarget
+		size   uint64
+		chunks []client.ChunkInfo
+	}
+	var successfulResults []successResult
 	var failedTargets []string
 	var resultSize uint64
 
@@ -331,27 +337,33 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 				Msg("failed to write to file server")
 			failedTargets = append(failedTargets, result.target.Location.Address)
 		} else {
-			successfulTargets = append(successfulTargets, result.target)
+			successfulResults = append(successfulResults, successResult{
+				target: result.target,
+				size:   result.size,
+				chunks: result.chunks,
+			})
 			resultSize = result.size
 		}
 	}
 
 	// Check if we have enough successful writes
 	minRequired := 1 // At least one must succeed
-	if len(successfulTargets) < minRequired {
-		return nil, fmt.Errorf("failed to write to enough targets: %d/%d succeeded", len(successfulTargets), numTargets)
+	if len(successfulResults) < minRequired {
+		return nil, fmt.Errorf("failed to write to enough targets: %d/%d succeeded", len(successfulResults), numTargets)
 	}
 
-	// Build chunk refs from successful targets only
-	chunkRefs := make([]types.ChunkRef, 0, len(successfulTargets))
-	for _, t := range successfulTargets {
-		chunkRefs = append(chunkRefs, types.ChunkRef{
-			ChunkID:        types.ChunkID(req.ObjectID),
-			Offset:         0,
-			Size:           resultSize,
-			BackendID:      t.BackendId,
-			FileServerAddr: t.Location.Address,
-		})
+	// Build chunk refs from successful targets using actual chunk IDs from file servers
+	chunkRefs := make([]types.ChunkRef, 0)
+	for _, sr := range successfulResults {
+		for _, chunk := range sr.chunks {
+			chunkRefs = append(chunkRefs, types.ChunkRef{
+				ChunkID:        types.ChunkID(chunk.ChunkID),
+				Offset:         chunk.Offset,
+				Size:           chunk.Size,
+				BackendID:      sr.target.BackendId,
+				FileServerAddr: sr.target.Location.Address,
+			})
+		}
 	}
 
 	// Log results
@@ -591,94 +603,3 @@ func (c *Coordinator) CacheStats() *CacheStats {
 	return &stats
 }
 
-// DecrementChunkRefCounts decrements reference counts for chunks on their file servers.
-// Returns a list of failed decrements that should be retried.
-// Groups chunks by file server address and uses batch calls for efficiency.
-// If a taskqueue is configured, failed decrements are automatically queued for retry.
-func (c *Coordinator) DecrementChunkRefCounts(ctx context.Context, chunks []types.ChunkRef) []FailedDecrement {
-	if len(chunks) == 0 {
-		return nil
-	}
-
-	// Group chunks by file server address
-	byServer := make(map[string][]client.DecrementRefCountRequest)
-	for _, chunk := range chunks {
-		if chunk.FileServerAddr == "" {
-			continue
-		}
-		byServer[chunk.FileServerAddr] = append(byServer[chunk.FileServerAddr], client.DecrementRefCountRequest{
-			ChunkID:          string(chunk.ChunkID),
-			ExpectedRefCount: 0, // Don't use CAS for now - just decrement
-		})
-	}
-
-	var failed []FailedDecrement
-
-	// Process each file server
-	for addr, reqs := range byServer {
-		results, err := c.fileClientPool.DecrementRefCountBatch(ctx, addr, reqs)
-		if err != nil {
-			// Entire batch failed - queue all for retry
-			logger.Warn().Err(err).
-				Str("file_server", addr).
-				Int("chunks", len(reqs)).
-				Msg("failed to decrement ref counts, queuing for retry")
-			for _, req := range reqs {
-				failed = append(failed, FailedDecrement{
-					ChunkID:        req.ChunkID,
-					FileServerAddr: addr,
-					Error:          err.Error(),
-				})
-			}
-			continue
-		}
-
-		// Check individual results - only log failures
-		for _, r := range results {
-			if !r.Success {
-				logger.Debug().
-					Str("chunk_id", r.ChunkID).
-					Str("file_server", addr).
-					Str("error", r.Error).
-					Msg("chunk ref count decrement failed")
-				failed = append(failed, FailedDecrement{
-					ChunkID:        r.ChunkID,
-					FileServerAddr: addr,
-					Error:          r.Error,
-				})
-			}
-		}
-	}
-
-	// Queue failed decrements for retry if taskqueue is configured
-	if len(failed) > 0 && c.taskQueue != nil {
-		for _, f := range failed {
-			task, err := handlers.NewGCDecrementTask(f.ChunkID, f.FileServerAddr, 0)
-			if err != nil {
-				logger.Error().Err(err).
-					Str("chunk_id", f.ChunkID).
-					Msg("failed to create gc decrement task")
-				continue
-			}
-			if err := c.taskQueue.Enqueue(ctx, task); err != nil {
-				logger.Error().Err(err).
-					Str("chunk_id", f.ChunkID).
-					Msg("failed to enqueue gc decrement task")
-			} else {
-				logger.Debug().
-					Str("chunk_id", f.ChunkID).
-					Str("task_id", task.ID).
-					Msg("queued gc decrement for retry")
-			}
-		}
-	}
-
-	return failed
-}
-
-// FailedDecrement represents a failed ref count decrement that should be retried
-type FailedDecrement struct {
-	ChunkID        string
-	FileServerAddr string
-	Error          string
-}

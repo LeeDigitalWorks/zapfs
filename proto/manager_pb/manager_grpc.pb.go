@@ -33,6 +33,16 @@ const (
 	ManagerService_GetReplicationTargets_FullMethodName  = "/manager_pb.ManagerService/GetReplicationTargets"
 	ManagerService_WatchTopology_FullMethodName          = "/manager_pb.ManagerService/WatchTopology"
 	ManagerService_WatchCollections_FullMethodName       = "/manager_pb.ManagerService/WatchCollections"
+	ManagerService_GetExpectedChunks_FullMethodName      = "/manager_pb.ManagerService/GetExpectedChunks"
+	ManagerService_ReportReconciliation_FullMethodName   = "/manager_pb.ManagerService/ReportReconciliation"
+	ManagerService_TriggerReconciliation_FullMethodName  = "/manager_pb.ManagerService/TriggerReconciliation"
+	ManagerService_CreateBackup_FullMethodName           = "/manager_pb.ManagerService/CreateBackup"
+	ManagerService_GetBackupStatus_FullMethodName        = "/manager_pb.ManagerService/GetBackupStatus"
+	ManagerService_ListBackups_FullMethodName            = "/manager_pb.ManagerService/ListBackups"
+	ManagerService_DeleteBackup_FullMethodName           = "/manager_pb.ManagerService/DeleteBackup"
+	ManagerService_GetClusterStatus_FullMethodName       = "/manager_pb.ManagerService/GetClusterStatus"
+	ManagerService_CalculateRebalancePlan_FullMethodName = "/manager_pb.ManagerService/CalculateRebalancePlan"
+	ManagerService_ExecuteRebalance_FullMethodName       = "/manager_pb.ManagerService/ExecuteRebalance"
 )
 
 // ManagerServiceClient is the client API for ManagerService service.
@@ -55,6 +65,22 @@ type ManagerServiceClient interface {
 	// WatchCollections streams collection changes for multi-region cache sync.
 	// Sends initial sync of collections since the requested time, then pushes updates.
 	WatchCollections(ctx context.Context, in *WatchCollectionsRequest, opts ...grpc.CallOption) (ManagerService_WatchCollectionsClient, error)
+	// Reconciliation - File server calls this to get expected chunks.
+	// Manager queries metadata service and streams chunk IDs.
+	GetExpectedChunks(ctx context.Context, in *GetExpectedChunksRequest, opts ...grpc.CallOption) (ManagerService_GetExpectedChunksClient, error)
+	// ReportReconciliation - File server reports reconciliation results.
+	ReportReconciliation(ctx context.Context, in *ReconciliationReport, opts ...grpc.CallOption) (*ReconciliationAck, error)
+	// TriggerReconciliation - Admin API to manually trigger reconciliation for a server.
+	TriggerReconciliation(ctx context.Context, in *TriggerReconciliationRequest, opts ...grpc.CallOption) (*TriggerReconciliationResponse, error)
+	// Backup RPCs (enterprise - requires FeatureBackup license)
+	CreateBackup(ctx context.Context, in *CreateBackupRequest, opts ...grpc.CallOption) (*CreateBackupResponse, error)
+	GetBackupStatus(ctx context.Context, in *GetBackupStatusRequest, opts ...grpc.CallOption) (*GetBackupStatusResponse, error)
+	ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResponse, error)
+	DeleteBackup(ctx context.Context, in *DeleteBackupRequest, opts ...grpc.CallOption) (*DeleteBackupResponse, error)
+	// Cluster rebalancing RPCs
+	GetClusterStatus(ctx context.Context, in *GetClusterStatusRequest, opts ...grpc.CallOption) (*GetClusterStatusResponse, error)
+	CalculateRebalancePlan(ctx context.Context, in *CalculateRebalancePlanRequest, opts ...grpc.CallOption) (*CalculateRebalancePlanResponse, error)
+	ExecuteRebalance(ctx context.Context, in *ExecuteRebalanceRequest, opts ...grpc.CallOption) (ManagerService_ExecuteRebalanceClient, error)
 }
 
 type managerServiceClient struct {
@@ -260,6 +286,142 @@ func (x *managerServiceWatchCollectionsClient) Recv() (*CollectionEvent, error) 
 	return m, nil
 }
 
+func (c *managerServiceClient) GetExpectedChunks(ctx context.Context, in *GetExpectedChunksRequest, opts ...grpc.CallOption) (ManagerService_GetExpectedChunksClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ManagerService_ServiceDesc.Streams[3], ManagerService_GetExpectedChunks_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &managerServiceGetExpectedChunksClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ManagerService_GetExpectedChunksClient interface {
+	Recv() (*ExpectedChunkResponse, error)
+	grpc.ClientStream
+}
+
+type managerServiceGetExpectedChunksClient struct {
+	grpc.ClientStream
+}
+
+func (x *managerServiceGetExpectedChunksClient) Recv() (*ExpectedChunkResponse, error) {
+	m := new(ExpectedChunkResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *managerServiceClient) ReportReconciliation(ctx context.Context, in *ReconciliationReport, opts ...grpc.CallOption) (*ReconciliationAck, error) {
+	out := new(ReconciliationAck)
+	err := c.cc.Invoke(ctx, ManagerService_ReportReconciliation_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) TriggerReconciliation(ctx context.Context, in *TriggerReconciliationRequest, opts ...grpc.CallOption) (*TriggerReconciliationResponse, error) {
+	out := new(TriggerReconciliationResponse)
+	err := c.cc.Invoke(ctx, ManagerService_TriggerReconciliation_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) CreateBackup(ctx context.Context, in *CreateBackupRequest, opts ...grpc.CallOption) (*CreateBackupResponse, error) {
+	out := new(CreateBackupResponse)
+	err := c.cc.Invoke(ctx, ManagerService_CreateBackup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) GetBackupStatus(ctx context.Context, in *GetBackupStatusRequest, opts ...grpc.CallOption) (*GetBackupStatusResponse, error) {
+	out := new(GetBackupStatusResponse)
+	err := c.cc.Invoke(ctx, ManagerService_GetBackupStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResponse, error) {
+	out := new(ListBackupsResponse)
+	err := c.cc.Invoke(ctx, ManagerService_ListBackups_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) DeleteBackup(ctx context.Context, in *DeleteBackupRequest, opts ...grpc.CallOption) (*DeleteBackupResponse, error) {
+	out := new(DeleteBackupResponse)
+	err := c.cc.Invoke(ctx, ManagerService_DeleteBackup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) GetClusterStatus(ctx context.Context, in *GetClusterStatusRequest, opts ...grpc.CallOption) (*GetClusterStatusResponse, error) {
+	out := new(GetClusterStatusResponse)
+	err := c.cc.Invoke(ctx, ManagerService_GetClusterStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) CalculateRebalancePlan(ctx context.Context, in *CalculateRebalancePlanRequest, opts ...grpc.CallOption) (*CalculateRebalancePlanResponse, error) {
+	out := new(CalculateRebalancePlanResponse)
+	err := c.cc.Invoke(ctx, ManagerService_CalculateRebalancePlan_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managerServiceClient) ExecuteRebalance(ctx context.Context, in *ExecuteRebalanceRequest, opts ...grpc.CallOption) (ManagerService_ExecuteRebalanceClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ManagerService_ServiceDesc.Streams[4], ManagerService_ExecuteRebalance_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &managerServiceExecuteRebalanceClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ManagerService_ExecuteRebalanceClient interface {
+	Recv() (*RebalanceProgress, error)
+	grpc.ClientStream
+}
+
+type managerServiceExecuteRebalanceClient struct {
+	grpc.ClientStream
+}
+
+func (x *managerServiceExecuteRebalanceClient) Recv() (*RebalanceProgress, error) {
+	m := new(RebalanceProgress)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ManagerServiceServer is the server API for ManagerService service.
 // All implementations must embed UnimplementedManagerServiceServer
 // for forward compatibility
@@ -280,6 +442,22 @@ type ManagerServiceServer interface {
 	// WatchCollections streams collection changes for multi-region cache sync.
 	// Sends initial sync of collections since the requested time, then pushes updates.
 	WatchCollections(*WatchCollectionsRequest, ManagerService_WatchCollectionsServer) error
+	// Reconciliation - File server calls this to get expected chunks.
+	// Manager queries metadata service and streams chunk IDs.
+	GetExpectedChunks(*GetExpectedChunksRequest, ManagerService_GetExpectedChunksServer) error
+	// ReportReconciliation - File server reports reconciliation results.
+	ReportReconciliation(context.Context, *ReconciliationReport) (*ReconciliationAck, error)
+	// TriggerReconciliation - Admin API to manually trigger reconciliation for a server.
+	TriggerReconciliation(context.Context, *TriggerReconciliationRequest) (*TriggerReconciliationResponse, error)
+	// Backup RPCs (enterprise - requires FeatureBackup license)
+	CreateBackup(context.Context, *CreateBackupRequest) (*CreateBackupResponse, error)
+	GetBackupStatus(context.Context, *GetBackupStatusRequest) (*GetBackupStatusResponse, error)
+	ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResponse, error)
+	DeleteBackup(context.Context, *DeleteBackupRequest) (*DeleteBackupResponse, error)
+	// Cluster rebalancing RPCs
+	GetClusterStatus(context.Context, *GetClusterStatusRequest) (*GetClusterStatusResponse, error)
+	CalculateRebalancePlan(context.Context, *CalculateRebalancePlanRequest) (*CalculateRebalancePlanResponse, error)
+	ExecuteRebalance(*ExecuteRebalanceRequest, ManagerService_ExecuteRebalanceServer) error
 	mustEmbedUnimplementedManagerServiceServer()
 }
 
@@ -328,6 +506,36 @@ func (UnimplementedManagerServiceServer) WatchTopology(*WatchTopologyRequest, Ma
 }
 func (UnimplementedManagerServiceServer) WatchCollections(*WatchCollectionsRequest, ManagerService_WatchCollectionsServer) error {
 	return status.Errorf(codes.Unimplemented, "method WatchCollections not implemented")
+}
+func (UnimplementedManagerServiceServer) GetExpectedChunks(*GetExpectedChunksRequest, ManagerService_GetExpectedChunksServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetExpectedChunks not implemented")
+}
+func (UnimplementedManagerServiceServer) ReportReconciliation(context.Context, *ReconciliationReport) (*ReconciliationAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportReconciliation not implemented")
+}
+func (UnimplementedManagerServiceServer) TriggerReconciliation(context.Context, *TriggerReconciliationRequest) (*TriggerReconciliationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TriggerReconciliation not implemented")
+}
+func (UnimplementedManagerServiceServer) CreateBackup(context.Context, *CreateBackupRequest) (*CreateBackupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateBackup not implemented")
+}
+func (UnimplementedManagerServiceServer) GetBackupStatus(context.Context, *GetBackupStatusRequest) (*GetBackupStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBackupStatus not implemented")
+}
+func (UnimplementedManagerServiceServer) ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBackups not implemented")
+}
+func (UnimplementedManagerServiceServer) DeleteBackup(context.Context, *DeleteBackupRequest) (*DeleteBackupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteBackup not implemented")
+}
+func (UnimplementedManagerServiceServer) GetClusterStatus(context.Context, *GetClusterStatusRequest) (*GetClusterStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetClusterStatus not implemented")
+}
+func (UnimplementedManagerServiceServer) CalculateRebalancePlan(context.Context, *CalculateRebalancePlanRequest) (*CalculateRebalancePlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CalculateRebalancePlan not implemented")
+}
+func (UnimplementedManagerServiceServer) ExecuteRebalance(*ExecuteRebalanceRequest, ManagerService_ExecuteRebalanceServer) error {
+	return status.Errorf(codes.Unimplemented, "method ExecuteRebalance not implemented")
 }
 func (UnimplementedManagerServiceServer) mustEmbedUnimplementedManagerServiceServer() {}
 
@@ -603,6 +811,192 @@ func (x *managerServiceWatchCollectionsServer) Send(m *CollectionEvent) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _ManagerService_GetExpectedChunks_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetExpectedChunksRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ManagerServiceServer).GetExpectedChunks(m, &managerServiceGetExpectedChunksServer{stream})
+}
+
+type ManagerService_GetExpectedChunksServer interface {
+	Send(*ExpectedChunkResponse) error
+	grpc.ServerStream
+}
+
+type managerServiceGetExpectedChunksServer struct {
+	grpc.ServerStream
+}
+
+func (x *managerServiceGetExpectedChunksServer) Send(m *ExpectedChunkResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _ManagerService_ReportReconciliation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconciliationReport)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).ReportReconciliation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_ReportReconciliation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).ReportReconciliation(ctx, req.(*ReconciliationReport))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_TriggerReconciliation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerReconciliationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).TriggerReconciliation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_TriggerReconciliation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).TriggerReconciliation(ctx, req.(*TriggerReconciliationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_CreateBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).CreateBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_CreateBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).CreateBackup(ctx, req.(*CreateBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_GetBackupStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBackupStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).GetBackupStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_GetBackupStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).GetBackupStatus(ctx, req.(*GetBackupStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_ListBackups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBackupsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).ListBackups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_ListBackups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).ListBackups(ctx, req.(*ListBackupsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_DeleteBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).DeleteBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_DeleteBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).DeleteBackup(ctx, req.(*DeleteBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_GetClusterStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetClusterStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).GetClusterStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_GetClusterStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).GetClusterStatus(ctx, req.(*GetClusterStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_CalculateRebalancePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CalculateRebalancePlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagerServiceServer).CalculateRebalancePlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagerService_CalculateRebalancePlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagerServiceServer).CalculateRebalancePlan(ctx, req.(*CalculateRebalancePlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagerService_ExecuteRebalance_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ExecuteRebalanceRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ManagerServiceServer).ExecuteRebalance(m, &managerServiceExecuteRebalanceServer{stream})
+}
+
+type ManagerService_ExecuteRebalanceServer interface {
+	Send(*RebalanceProgress) error
+	grpc.ServerStream
+}
+
+type managerServiceExecuteRebalanceServer struct {
+	grpc.ServerStream
+}
+
+func (x *managerServiceExecuteRebalanceServer) Send(m *RebalanceProgress) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // ManagerService_ServiceDesc is the grpc.ServiceDesc for ManagerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -654,6 +1048,38 @@ var ManagerService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetReplicationTargets",
 			Handler:    _ManagerService_GetReplicationTargets_Handler,
 		},
+		{
+			MethodName: "ReportReconciliation",
+			Handler:    _ManagerService_ReportReconciliation_Handler,
+		},
+		{
+			MethodName: "TriggerReconciliation",
+			Handler:    _ManagerService_TriggerReconciliation_Handler,
+		},
+		{
+			MethodName: "CreateBackup",
+			Handler:    _ManagerService_CreateBackup_Handler,
+		},
+		{
+			MethodName: "GetBackupStatus",
+			Handler:    _ManagerService_GetBackupStatus_Handler,
+		},
+		{
+			MethodName: "ListBackups",
+			Handler:    _ManagerService_ListBackups_Handler,
+		},
+		{
+			MethodName: "DeleteBackup",
+			Handler:    _ManagerService_DeleteBackup_Handler,
+		},
+		{
+			MethodName: "GetClusterStatus",
+			Handler:    _ManagerService_GetClusterStatus_Handler,
+		},
+		{
+			MethodName: "CalculateRebalancePlan",
+			Handler:    _ManagerService_CalculateRebalancePlan_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -669,6 +1095,16 @@ var ManagerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchCollections",
 			Handler:       _ManagerService_WatchCollections_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetExpectedChunks",
+			Handler:       _ManagerService_GetExpectedChunks_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ExecuteRebalance",
+			Handler:       _ManagerService_ExecuteRebalance_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -22,6 +22,21 @@ service FileService {
   // RefCount management for GC
   rpc DecrementRefCount(DecrementRefCountRequest) returns (DecrementRefCountResponse);
   rpc DecrementRefCountBatch(DecrementRefCountBatchRequest) returns (DecrementRefCountBatchResponse);
+
+  // Chunk migration for cluster rebalancing
+  // MigrateChunk transfers a chunk to a target server (called by manager or admin)
+  rpc MigrateChunk(MigrateChunkRequest) returns (MigrateChunkResponse);
+
+  // ReceiveChunk receives a chunk from a peer file server (peer-to-peer transfer)
+  rpc ReceiveChunk(stream ReceiveChunkRequest) returns (ReceiveChunkResponse);
+
+  // GetChunk retrieves raw chunk data by ID (used for migration)
+  rpc GetChunk(GetChunkRequest) returns (stream GetChunkResponse);
+
+  // Debug RPCs for testing and diagnostics
+  rpc ListLocalChunks(ListLocalChunksRequest) returns (stream LocalChunkInfo);
+  rpc GetLocalChunk(GetLocalChunkRequest) returns (LocalChunkInfo);
+  rpc DeleteLocalChunk(DeleteLocalChunkRequest) returns (DeleteLocalChunkResponse);
 }
 
 message MemStatus {
@@ -73,6 +88,14 @@ message PutObjectResponse {
   uint64 size = 2;
   string etag = 3;
   google.protobuf.Timestamp modified_at = 4;
+  repeated ChunkInfo chunks = 5;  // Actual chunk IDs (SHA-256 content hashes)
+}
+
+// ChunkInfo describes a chunk written by the file server
+message ChunkInfo {
+  string chunk_id = 1;  // SHA-256 content hash
+  uint64 size = 2;
+  uint64 offset = 3;    // Offset within the object
 }
 
 message GetObjectRequest {
@@ -140,4 +163,86 @@ message DecrementRefCountBatchRequest {
 
 message DecrementRefCountBatchResponse {
   repeated DecrementRefCountResponse results = 1;
+}
+
+// Chunk migration messages
+
+message MigrateChunkRequest {
+  string chunk_id = 1;
+  string target_server = 2;        // Target file server address (e.g., "file-2:8001")
+  string target_backend_id = 3;    // Optional: specific backend on target
+  bool delete_after_migrate = 4;   // Delete source chunk after successful migration
+}
+
+message MigrateChunkResponse {
+  bool success = 1;
+  string error = 2;
+  int64 bytes_transferred = 3;
+  int64 duration_ms = 4;
+}
+
+message ReceiveChunkRequest {
+  oneof payload {
+    ReceiveChunkMeta meta = 1;
+    bytes data = 2;
+  }
+}
+
+message ReceiveChunkMeta {
+  string chunk_id = 1;
+  string backend_id = 2;          // Target backend on this server
+  uint64 size = 3;
+  string checksum = 4;            // Expected checksum for verification
+  string source_server = 5;       // For logging/debugging
+}
+
+message ReceiveChunkResponse {
+  bool success = 1;
+  string error = 2;
+  string chunk_id = 3;
+}
+
+message GetChunkRequest {
+  string chunk_id = 1;
+}
+
+message GetChunkResponse {
+  oneof payload {
+    GetChunkMeta meta = 1;
+    bytes data = 2;
+  }
+}
+
+message GetChunkMeta {
+  string chunk_id = 1;
+  uint64 size = 2;
+  string checksum = 3;
+  string backend_id = 4;
+}
+
+// Debug messages for testing and diagnostics
+
+message ListLocalChunksRequest {}
+
+message LocalChunkInfo {
+  string chunk_id = 1;
+  int64 size = 2;
+  int64 created_at = 3;
+  string backend_id = 4;
+  string path = 5;
+  uint32 ref_count = 6;
+  int64 zero_ref_since = 7;
+}
+
+message GetLocalChunkRequest {
+  string chunk_id = 1;
+}
+
+message DeleteLocalChunkRequest {
+  string chunk_id = 1;
+}
+
+message DeleteLocalChunkResponse {
+  bool success = 1;
+  string error = 2;
 }

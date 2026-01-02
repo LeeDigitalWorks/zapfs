@@ -647,3 +647,90 @@ func (_c *MockMetadataServiceClient_Ping_Call) RunAndReturn(run func(ctx context
 	_c.Call.Return(run)
 	return _c
 }
+
+// StreamChunksForServer provides a mock function for the type MockMetadataServiceClient
+func (_mock *MockMetadataServiceClient) StreamChunksForServer(ctx context.Context, in *metadata_pb.StreamChunksForServerRequest, opts ...grpc.CallOption) (metadata_pb.MetadataService_StreamChunksForServerClient, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for StreamChunksForServer")
+	}
+
+	var r0 metadata_pb.MetadataService_StreamChunksForServerClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *metadata_pb.StreamChunksForServerRequest, ...grpc.CallOption) (metadata_pb.MetadataService_StreamChunksForServerClient, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *metadata_pb.StreamChunksForServerRequest, ...grpc.CallOption) metadata_pb.MetadataService_StreamChunksForServerClient); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(metadata_pb.MetadataService_StreamChunksForServerClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *metadata_pb.StreamChunksForServerRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMetadataServiceClient_StreamChunksForServer_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'StreamChunksForServer'
+type MockMetadataServiceClient_StreamChunksForServer_Call struct {
+	*mock.Call
+}
+
+// StreamChunksForServer is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *metadata_pb.StreamChunksForServerRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMetadataServiceClient_Expecter) StreamChunksForServer(ctx interface{}, in interface{}, opts ...interface{}) *MockMetadataServiceClient_StreamChunksForServer_Call {
+	return &MockMetadataServiceClient_StreamChunksForServer_Call{Call: _e.mock.On("StreamChunksForServer",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMetadataServiceClient_StreamChunksForServer_Call) Run(run func(ctx context.Context, in *metadata_pb.StreamChunksForServerRequest, opts ...grpc.CallOption)) *MockMetadataServiceClient_StreamChunksForServer_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *metadata_pb.StreamChunksForServerRequest
+		if args[1] != nil {
+			arg1 = args[1].(*metadata_pb.StreamChunksForServerRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMetadataServiceClient_StreamChunksForServer_Call) Return(metadataService_StreamChunksForServerClient metadata_pb.MetadataService_StreamChunksForServerClient, err error) *MockMetadataServiceClient_StreamChunksForServer_Call {
+	_c.Call.Return(metadataService_StreamChunksForServerClient, err)
+	return _c
+}
+
+func (_c *MockMetadataServiceClient_StreamChunksForServer_Call) RunAndReturn(run func(ctx context.Context, in *metadata_pb.StreamChunksForServerRequest, opts ...grpc.CallOption) (metadata_pb.MetadataService_StreamChunksForServerClient, error)) *MockMetadataServiceClient_StreamChunksForServer_Call {
+	_c.Call.Return(run)
+	return _c
+}

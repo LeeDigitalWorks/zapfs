@@ -32,6 +32,8 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto"
+	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"github.com/spf13/cobra"
@@ -48,6 +50,10 @@ type MetadataServerOpts struct {
 	CertFile  string
 	KeyFile   string
 	LogLevel  string
+
+	// Service identity for manager registration
+	NodeID        string
+	AdvertiseAddr string
 
 	ManagerAddr string
 	S3Domains   []string
@@ -74,7 +80,7 @@ type MetadataServerOpts struct {
 	RateLimitRedisPoolSize  int
 	RateLimitRedisFailOpen  bool
 
-	// Access logging (enterprise: FeatureAuditLog)
+	// Access logging (enterprise: FeatureAccessLog)
 	AccessLogsEnabled       bool
 	ClickHouseDSN           string
 	AccessLogBatchSize      int
@@ -114,6 +120,11 @@ func init() {
 	f.String("cert_file", "", "Path to TLS certificate file")
 	f.String("key_file", "", "Path to TLS key file")
 	f.String("log_level", "info", "Log level (debug, info, warn, error, fatal)")
+
+	// Service identity for manager registration
+	f.String("node_id", "", "Stable node identifier (e.g., 'metadata-1' in Docker, pod name in K8s)")
+	f.String("advertise_addr", "", "Address to advertise to peers (host:port). Env: ADVERTISE_ADDR")
+
 	f.String("manager_addr", "localhost:8050", "Manager server gRPC address")
 	f.StringSlice("s3_domains", []string{"localhost"}, "S3 domain names for virtual-hosted style")
 	f.String("region_id", "us-west", "Region ID for this metadata server")
@@ -137,7 +148,7 @@ func init() {
 	f.Int("rate_limit_redis_pool_size", 10, "Redis connection pool size")
 	f.Bool("rate_limit_redis_fail_open", true, "Allow requests when Redis is unavailable")
 
-	// Access logging (enterprise: FeatureAuditLog)
+	// Access logging (enterprise: FeatureAccessLog)
 	f.Bool("access_logs_enabled", false, "Enable access logging (enterprise)")
 	f.String("clickhouse_dsn", "", "ClickHouse DSN for access logs")
 	f.Int("access_log_batch_size", 10000, "Batch size for access log inserts")
@@ -337,7 +348,7 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Access logging (enterprise: FeatureAuditLog)
+	// Access logging (enterprise: FeatureAccessLog)
 	accessLogMgr, err := InitializeAccessLog(cmd.Context(), AccessLogConfig{
 		Enabled:        opts.AccessLogsEnabled,
 		ClickHouseDSN:  opts.ClickHouseDSN,
@@ -421,6 +432,18 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 	grpcServer := startMetadataGRPCServer(opts, metadataServer)
 	debugServer := startHTTPServer(debug.GetMux(), opts.IP, opts.DebugPort)
 
+	// Register with manager and start heartbeat loop (if configured)
+	if opts.NodeID != "" && opts.AdvertiseAddr != "" {
+		if err := registerMetadataServer(cmd.Context(), managerClient, metadataDB, opts); err != nil {
+			logger.Warn().Err(err).Msg("failed to register with manager (will retry via heartbeat)")
+		} else {
+			logger.Info().Msg("Successfully registered metadata server with manager")
+		}
+		go heartbeatMetadataServer(cmd.Context(), managerClient, metadataDB, opts)
+	} else {
+		logger.Info().Msg("Manager registration skipped (no node_id/advertise_addr configured)")
+	}
+
 	debug.SetReady()
 	waitForShutdown()
 	debug.SetNotReady()
@@ -432,6 +455,16 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 
 func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 	f := NewFlagLoader(cmd)
+
+	// Get node_id (optional for backward compatibility)
+	nodeID := f.String("node_id")
+	if nodeID == "" {
+		nodeID = os.Getenv("NODE_ID")
+	}
+
+	// Get advertise address (optional for backward compatibility)
+	advertiseAddr := getAdvertiseAddr(f.String("advertise_addr"))
+
 	return MetadataServerOpts{
 		IP:             f.String("ip"),
 		HTTPPort:       f.Int("http_port"),
@@ -440,6 +473,8 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		CertFile:       f.String("cert_file"),
 		KeyFile:        f.String("key_file"),
 		LogLevel:       f.String("log_level"),
+		NodeID:         nodeID,
+		AdvertiseAddr:  advertiseAddr,
 		ManagerAddr:    f.String("manager_addr"),
 		S3Domains:      f.StringSlice("s3_domains"),
 		RegionID:       f.String("region_id"),
@@ -653,4 +688,109 @@ func startMetadataGRPCServer(opts MetadataServerOpts, ms *api.MetadataServer) *g
 	}()
 
 	return grpcServer
+}
+
+// registerMetadataServer registers the metadata server with the manager
+func registerMetadataServer(ctx context.Context, managerClient *client.ManagerClientPool, metadataDB db.DB, opts MetadataServerOpts) error {
+	// Get bucket count for data loss detection
+	bucketCount, err := metadataDB.CountBuckets(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to count buckets: %w", err)
+	}
+
+	// Build registration request using advertised address
+	location := &common_pb.Location{
+		Address: opts.AdvertiseAddr,
+		Node:    opts.NodeID,
+	}
+
+	req := &manager_pb.RegisterServiceRequest{
+		ServiceType: manager_pb.ServiceType_METADATA_SERVICE,
+		Location:    location,
+		ServiceMetadata: &manager_pb.RegisterServiceRequest_MetadataService{
+			MetadataService: &manager_pb.MetadataServiceMetadata{
+				BucketCount: uint64(bucketCount),
+			},
+		},
+	}
+
+	// Register with manager
+	resp, err := managerClient.RegisterService(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to register service: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("registration failed: %s", resp.Message)
+	}
+
+	logger.Info().
+		Str("manager", opts.ManagerAddr).
+		Str("advertise_addr", opts.AdvertiseAddr).
+		Str("node_id", opts.NodeID).
+		Int64("bucket_count", bucketCount).
+		Uint64("topology_version", resp.Version).
+		Msg("Metadata server registered with manager")
+
+	return nil
+}
+
+// heartbeatMetadataServer sends periodic heartbeats to the manager
+// This includes bucket count for data loss detection.
+func heartbeatMetadataServer(ctx context.Context, managerClient *client.ManagerClientPool, metadataDB db.DB, opts MetadataServerOpts) {
+	ticker := time.NewTicker(30 * time.Second) // Heartbeat every 30 seconds
+	defer ticker.Stop()
+
+	var topologyVersion uint64
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Get current bucket count for data loss detection
+			bucketCount, err := metadataDB.CountBuckets(ctx)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to count buckets for heartbeat")
+				continue
+			}
+
+			// Build heartbeat request
+			location := &common_pb.Location{
+				Address: opts.AdvertiseAddr,
+				Node:    opts.NodeID,
+			}
+
+			req := &manager_pb.HeartbeatRequest{
+				ServiceType: manager_pb.ServiceType_METADATA_SERVICE,
+				Location:    location,
+				Version:     topologyVersion,
+				ServiceMetadata: &manager_pb.HeartbeatRequest_MetadataService{
+					MetadataService: &manager_pb.MetadataServiceMetadata{
+						BucketCount: uint64(bucketCount),
+					},
+				},
+			}
+
+			// Send heartbeat
+			heartbeatCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			resp, err := managerClient.Heartbeat(heartbeatCtx, req)
+			cancel()
+
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to send heartbeat to manager")
+				continue
+			}
+
+			if resp.TopologyChanged {
+				logger.Info().
+					Uint64("old_version", topologyVersion).
+					Uint64("new_version", resp.TopologyVersion).
+					Msg("Topology changed")
+				topologyVersion = resp.TopologyVersion
+			} else {
+				topologyVersion = resp.TopologyVersion
+			}
+		}
+	}
 }

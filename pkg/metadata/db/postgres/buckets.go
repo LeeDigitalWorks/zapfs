@@ -146,3 +146,12 @@ func (p *Postgres) UpdateBucketVersioning(ctx context.Context, bucket string, ve
 	}
 	return nil
 }
+
+func (p *Postgres) CountBuckets(ctx context.Context) (int64, error) {
+	var count int64
+	err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM buckets`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count buckets: %w", err)
+	}
+	return count, nil
+}

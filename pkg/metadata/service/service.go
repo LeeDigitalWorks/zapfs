@@ -166,7 +166,8 @@ func NewService(cfg Config) (*Service, error) {
 		})
 
 		// Register community handlers
-		worker.RegisterHandler(handlers.NewGCDecrementHandler(cfg.FileClientPool))
+		// Note: GC RefCount decrements are now handled by the centralized chunk_registry
+		// in the metadata database, not by the task queue.
 		worker.RegisterHandler(handlers.NewLifecycleHandler(cfg.DB, cfg.FileClientPool))
 
 		// Register enterprise handlers (returns nil in community edition)

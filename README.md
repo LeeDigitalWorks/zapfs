@@ -238,12 +238,12 @@ export ZAPFS_LICENSE_KEY=$(cat ~/Downloads/zapfs-license.key)
 | Lifecycle Rules | FeatureLifecycle | Object expiration and transitions |
 | Object Lock (WORM) | FeatureObjectLock | Retention and legal hold |
 | SSE-KMS Encryption | FeatureKMS | KMS-managed encryption keys |
-| Bucket Logging | FeatureAuditLog | Access logging to target bucket |
-| Intelligent Tiering | FeatureLifecycle | Automatic storage class optimization |
+| Bucket Access Logging | FeatureAccessLog | S3 access logs to target bucket |
 | Cross-Region Replication | FeatureMultiRegion | Replicate to remote regions |
-| LDAP/AD Integration | FeatureMultiRegion | Directory service authentication |
-| External KMS | FeatureKMS | HashiCorp Vault, AWS KMS, etc. |
-| Audit Logging | FeatureAuditLog | Compliance audit trails |
+| LDAP/AD Integration | FeatureLDAP | Directory service authentication |
+| OIDC/SSO Integration | FeatureOIDC | OpenID Connect single sign-on |
+| Event Notifications | FeatureEvents | S3 event notifications (SNS/SQS/Lambda) |
+| Backup & DR | FeatureBackup | Raft state backup and restore |
 
 See [LICENSE](LICENSE) and [LICENSE.enterprise](LICENSE.enterprise) for details.
 

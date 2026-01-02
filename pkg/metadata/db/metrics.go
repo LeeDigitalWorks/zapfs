@@ -230,6 +230,13 @@ func (m *MetricsDB) UpdateBucketVersioning(ctx context.Context, bucket string, v
 	return err
 }
 
+func (m *MetricsDB) CountBuckets(ctx context.Context) (int64, error) {
+	start := time.Now()
+	count, err := m.db.CountBuckets(ctx)
+	recordMetric("count_buckets", start, err)
+	return count, err
+}
+
 // ============================================================================
 // MultipartStore implementation
 // ============================================================================
@@ -816,6 +823,13 @@ func (m *metricsTxStore) UpdateBucketVersioning(ctx context.Context, bucket stri
 	return err
 }
 
+func (m *metricsTxStore) CountBuckets(ctx context.Context) (int64, error) {
+	start := time.Now()
+	count, err := m.tx.CountBuckets(ctx)
+	recordMetric("tx_count_buckets", start, err)
+	return count, err
+}
+
 func (m *metricsTxStore) CreateMultipartUpload(ctx context.Context, upload *types.MultipartUpload) error {
 	start := time.Now()
 	err := m.tx.CreateMultipartUpload(ctx, upload)
@@ -869,5 +883,167 @@ func (m *metricsTxStore) DeleteParts(ctx context.Context, uploadID string) error
 	start := time.Now()
 	err := m.tx.DeleteParts(ctx, uploadID)
 	recordMetric("tx_delete_parts", start, err)
+	return err
+}
+
+// ============================================================================
+// ChunkRegistryStore implementation for metricsTxStore
+// ============================================================================
+
+func (m *metricsTxStore) IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error {
+	start := time.Now()
+	err := m.tx.IncrementChunkRefCount(ctx, chunkID, size)
+	recordMetric("tx_increment_chunk_ref_count", start, err)
+	return err
+}
+
+func (m *metricsTxStore) DecrementChunkRefCount(ctx context.Context, chunkID string) error {
+	start := time.Now()
+	err := m.tx.DecrementChunkRefCount(ctx, chunkID)
+	recordMetric("tx_decrement_chunk_ref_count", start, err)
+	return err
+}
+
+func (m *metricsTxStore) IncrementChunkRefCountBatch(ctx context.Context, chunks []ChunkInfo) error {
+	start := time.Now()
+	err := m.tx.IncrementChunkRefCountBatch(ctx, chunks)
+	recordMetric("tx_increment_chunk_ref_count_batch", start, err)
+	return err
+}
+
+func (m *metricsTxStore) DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []string) error {
+	start := time.Now()
+	err := m.tx.DecrementChunkRefCountBatch(ctx, chunkIDs)
+	recordMetric("tx_decrement_chunk_ref_count_batch", start, err)
+	return err
+}
+
+func (m *metricsTxStore) GetChunkRefCount(ctx context.Context, chunkID string) (int, error) {
+	start := time.Now()
+	count, err := m.tx.GetChunkRefCount(ctx, chunkID)
+	recordMetric("tx_get_chunk_ref_count", start, err)
+	return count, err
+}
+
+func (m *metricsTxStore) AddChunkReplica(ctx context.Context, chunkID, serverID, backendID string) error {
+	start := time.Now()
+	err := m.tx.AddChunkReplica(ctx, chunkID, serverID, backendID)
+	recordMetric("tx_add_chunk_replica", start, err)
+	return err
+}
+
+func (m *metricsTxStore) RemoveChunkReplica(ctx context.Context, chunkID, serverID string) error {
+	start := time.Now()
+	err := m.tx.RemoveChunkReplica(ctx, chunkID, serverID)
+	recordMetric("tx_remove_chunk_replica", start, err)
+	return err
+}
+
+func (m *metricsTxStore) GetChunkReplicas(ctx context.Context, chunkID string) ([]ReplicaInfo, error) {
+	start := time.Now()
+	replicas, err := m.tx.GetChunkReplicas(ctx, chunkID)
+	recordMetric("tx_get_chunk_replicas", start, err)
+	return replicas, err
+}
+
+func (m *metricsTxStore) GetChunksByServer(ctx context.Context, serverID string) ([]string, error) {
+	start := time.Now()
+	chunks, err := m.tx.GetChunksByServer(ctx, serverID)
+	recordMetric("tx_get_chunks_by_server", start, err)
+	return chunks, err
+}
+
+func (m *metricsTxStore) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]ZeroRefChunk, error) {
+	start := time.Now()
+	chunks, err := m.tx.GetZeroRefChunks(ctx, olderThan, limit)
+	recordMetric("tx_get_zero_ref_chunks", start, err)
+	return chunks, err
+}
+
+func (m *metricsTxStore) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
+	start := time.Now()
+	err := m.tx.DeleteChunkRegistry(ctx, chunkID)
+	recordMetric("tx_delete_chunk_registry", start, err)
+	return err
+}
+
+// ============================================================================
+// ChunkRegistryStore implementation for MetricsDB
+// ============================================================================
+
+func (m *MetricsDB) IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error {
+	start := time.Now()
+	err := m.db.IncrementChunkRefCount(ctx, chunkID, size)
+	recordMetric("increment_chunk_ref_count", start, err)
+	return err
+}
+
+func (m *MetricsDB) DecrementChunkRefCount(ctx context.Context, chunkID string) error {
+	start := time.Now()
+	err := m.db.DecrementChunkRefCount(ctx, chunkID)
+	recordMetric("decrement_chunk_ref_count", start, err)
+	return err
+}
+
+func (m *MetricsDB) IncrementChunkRefCountBatch(ctx context.Context, chunks []ChunkInfo) error {
+	start := time.Now()
+	err := m.db.IncrementChunkRefCountBatch(ctx, chunks)
+	recordMetric("increment_chunk_ref_count_batch", start, err)
+	return err
+}
+
+func (m *MetricsDB) DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []string) error {
+	start := time.Now()
+	err := m.db.DecrementChunkRefCountBatch(ctx, chunkIDs)
+	recordMetric("decrement_chunk_ref_count_batch", start, err)
+	return err
+}
+
+func (m *MetricsDB) GetChunkRefCount(ctx context.Context, chunkID string) (int, error) {
+	start := time.Now()
+	count, err := m.db.GetChunkRefCount(ctx, chunkID)
+	recordMetric("get_chunk_ref_count", start, err)
+	return count, err
+}
+
+func (m *MetricsDB) AddChunkReplica(ctx context.Context, chunkID, serverID, backendID string) error {
+	start := time.Now()
+	err := m.db.AddChunkReplica(ctx, chunkID, serverID, backendID)
+	recordMetric("add_chunk_replica", start, err)
+	return err
+}
+
+func (m *MetricsDB) RemoveChunkReplica(ctx context.Context, chunkID, serverID string) error {
+	start := time.Now()
+	err := m.db.RemoveChunkReplica(ctx, chunkID, serverID)
+	recordMetric("remove_chunk_replica", start, err)
+	return err
+}
+
+func (m *MetricsDB) GetChunkReplicas(ctx context.Context, chunkID string) ([]ReplicaInfo, error) {
+	start := time.Now()
+	replicas, err := m.db.GetChunkReplicas(ctx, chunkID)
+	recordMetric("get_chunk_replicas", start, err)
+	return replicas, err
+}
+
+func (m *MetricsDB) GetChunksByServer(ctx context.Context, serverID string) ([]string, error) {
+	start := time.Now()
+	chunks, err := m.db.GetChunksByServer(ctx, serverID)
+	recordMetric("get_chunks_by_server", start, err)
+	return chunks, err
+}
+
+func (m *MetricsDB) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]ZeroRefChunk, error) {
+	start := time.Now()
+	chunks, err := m.db.GetZeroRefChunks(ctx, olderThan, limit)
+	recordMetric("get_zero_ref_chunks", start, err)
+	return chunks, err
+}
+
+func (m *MetricsDB) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
+	start := time.Now()
+	err := m.db.DeleteChunkRegistry(ctx, chunkID)
+	recordMetric("delete_chunk_registry", start, err)
 	return err
 }

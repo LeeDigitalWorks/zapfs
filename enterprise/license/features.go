@@ -32,7 +32,7 @@ type Feature = pkglicense.Feature
 // Re-export feature constants from pkg/license for convenience.
 // This ensures enterprise/license and pkg/license stay in sync.
 const (
-	FeatureAuditLog        = pkglicense.FeatureAuditLog
+	FeatureAccessLog       = pkglicense.FeatureAccessLog
 	FeatureEvents          = pkglicense.FeatureEvents
 	FeatureLDAP            = pkglicense.FeatureLDAP
 	FeatureOIDC            = pkglicense.FeatureOIDC
@@ -40,14 +40,14 @@ const (
 	FeatureMultiRegion     = pkglicense.FeatureMultiRegion
 	FeatureObjectLock      = pkglicense.FeatureObjectLock
 	FeatureLifecycle       = pkglicense.FeatureLifecycle
-	FeatureMultiTenancy    = pkglicense.FeatureMultiTenancy
 	FeatureAdvancedMetrics = pkglicense.FeatureAdvancedMetrics
+	FeatureBackup          = pkglicense.FeatureBackup
 )
 
 // AllFeatures returns all available enterprise features.
 func AllFeatures() []Feature {
 	return []Feature{
-		FeatureAuditLog,
+		FeatureAccessLog,
 		FeatureEvents,
 		FeatureLDAP,
 		FeatureOIDC,
@@ -55,7 +55,7 @@ func AllFeatures() []Feature {
 		FeatureMultiRegion,
 		FeatureObjectLock,
 		FeatureLifecycle,
-		FeatureMultiTenancy,
 		FeatureAdvancedMetrics,
+		FeatureBackup,
 	}
 }

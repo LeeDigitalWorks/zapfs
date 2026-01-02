@@ -157,11 +157,22 @@ func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) erro
 		return status.Errorf(codes.Internal, "failed to write to storage: %v", err)
 	}
 
+	// Build chunk info response with actual content-hash based chunk IDs
+	chunks := make([]*file_pb.ChunkInfo, 0, len(obj.ChunkRefs))
+	for _, ref := range obj.ChunkRefs {
+		chunks = append(chunks, &file_pb.ChunkInfo{
+			ChunkId: string(ref.ChunkID),
+			Size:    ref.Size,
+			Offset:  ref.Offset,
+		})
+	}
+
 	return stream.SendAndClose(&file_pb.PutObjectResponse{
 		ObjectId:   objectID,
 		Size:       obj.Size,
 		Etag:       obj.ETag,
 		ModifiedAt: timestamppb.Now(),
+		Chunks:     chunks,
 	})
 }
 

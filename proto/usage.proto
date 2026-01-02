@@ -6,7 +6,7 @@ option go_package = "github.com/LeeDigitalWorks/zapfs/proto/usage_pb";
 import "google/protobuf/timestamp.proto";
 
 // UsageReportingService provides usage metrics for billing and analytics.
-// This is an enterprise feature requiring FeatureAdvancedMetrics or FeatureMultiTenancy license.
+// This is an enterprise feature requiring FeatureAdvancedMetrics license.
 service UsageReportingService {
     // RequestReport queues an async usage report generation job.
     rpc RequestReport(ReportRequest) returns (ReportJob);

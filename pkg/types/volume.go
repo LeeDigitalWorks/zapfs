@@ -71,6 +71,7 @@ type Chunk struct {
 	Checksum     string    `json:"checksum"`
 	RefCount     uint32    `json:"ref_count"`      // Reference count for deduplication
 	ZeroRefSince int64     `json:"zero_ref_since"` // Unix timestamp when RefCount first became 0 (for GC grace period)
+	CreatedAt    int64     `json:"created_at"`     // Unix timestamp when chunk was created (for reconciliation grace period)
 	ECGroupID    uuid.UUID `json:"ec_group_id,omitempty"`
 	ShardIdx     int       `json:"shard_idx,omitempty"` // Index within EC group (0 = first data shard)
 	IsParity     bool      `json:"is_parity,omitempty"` // True if this is a parity shard

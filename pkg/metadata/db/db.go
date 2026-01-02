@@ -123,6 +123,9 @@ type DB interface {
 	// Notification operations (event notifications)
 	NotificationStore
 
+	// Chunk registry operations (centralized RefCount tracking)
+	ChunkRegistryStore
+
 	// Transaction support - executes fn within a transaction.
 	// If fn returns an error, the transaction is rolled back.
 	// If fn returns nil, the transaction is committed.
@@ -141,6 +144,7 @@ type TxStore interface {
 	ObjectStore
 	BucketStore
 	MultipartStore
+	ChunkRegistryStore
 }
 
 // ObjectStore provides CRUD operations for object metadata
@@ -225,6 +229,10 @@ type BucketStore interface {
 
 	// UpdateBucketVersioning updates the versioning state of a bucket
 	UpdateBucketVersioning(ctx context.Context, bucket string, versioning string) error
+
+	// CountBuckets returns the total number of buckets in the database.
+	// Used by metadata service to report bucket count to manager for data loss detection.
+	CountBuckets(ctx context.Context) (int64, error)
 }
 
 // VersionStore provides operations for object versioning
@@ -506,6 +514,84 @@ type NotificationStore interface {
 	// DeleteNotificationConfiguration removes the notification config for a bucket.
 	DeleteNotificationConfiguration(ctx context.Context, bucket string) error
 }
+
+// ChunkInfo contains information about a chunk for registry operations
+type ChunkInfo struct {
+	ChunkID   string
+	Size      int64
+	ServerID  string
+	BackendID string
+}
+
+// ReplicaInfo contains information about a chunk replica location
+type ReplicaInfo struct {
+	ServerID   string
+	BackendID  string
+	VerifiedAt int64
+}
+
+// ZeroRefChunk contains a chunk with zero references and its replicas (for GC)
+type ZeroRefChunk struct {
+	ChunkID  string
+	Size     int64
+	Replicas []ReplicaInfo
+}
+
+// ChunkRegistryStore provides operations for centralized chunk reference counting.
+// This eliminates the need for distributed gc_decrement tasks by tracking RefCount
+// in the metadata database rather than on individual file servers.
+type ChunkRegistryStore interface {
+	// RefCount operations (used in transactions with object operations)
+
+	// IncrementChunkRefCount increments the reference count for a chunk.
+	// If the chunk doesn't exist, it creates it with ref_count=1.
+	// Clears zero_ref_since if the chunk was previously at ref_count=0.
+	IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error
+
+	// DecrementChunkRefCount decrements the reference count for a chunk.
+	// If ref_count reaches 0, sets zero_ref_since to current time for GC grace period.
+	DecrementChunkRefCount(ctx context.Context, chunkID string) error
+
+	// IncrementChunkRefCountBatch increments ref counts for multiple chunks atomically.
+	IncrementChunkRefCountBatch(ctx context.Context, chunks []ChunkInfo) error
+
+	// DecrementChunkRefCountBatch decrements ref counts for multiple chunks atomically.
+	DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []string) error
+
+	// GetChunkRefCount returns the current reference count for a chunk.
+	// Used by GC to re-check ref count within a transaction before deleting.
+	GetChunkRefCount(ctx context.Context, chunkID string) (int, error)
+
+	// Replica tracking operations
+
+	// AddChunkReplica records that a chunk exists on a specific file server.
+	AddChunkReplica(ctx context.Context, chunkID, serverID, backendID string) error
+
+	// RemoveChunkReplica removes the record of a chunk on a file server.
+	RemoveChunkReplica(ctx context.Context, chunkID, serverID string) error
+
+	// GetChunkReplicas returns all replica locations for a chunk.
+	GetChunkReplicas(ctx context.Context, chunkID string) ([]ReplicaInfo, error)
+
+	// GetChunksByServer returns all chunk IDs stored on a specific server.
+	// Used for server decommissioning and rebalancing.
+	GetChunksByServer(ctx context.Context, serverID string) ([]string, error)
+
+	// GC operations
+
+	// GetZeroRefChunks returns chunks with ref_count=0 where zero_ref_since is older
+	// than the given time (past the grace period). Includes replica info for deletion.
+	GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]ZeroRefChunk, error)
+
+	// DeleteChunkRegistry removes a chunk from the registry.
+	// The chunk_replicas entries are automatically deleted via CASCADE.
+	DeleteChunkRegistry(ctx context.Context, chunkID string) error
+}
+
+// Common ChunkRegistry errors
+var (
+	ErrChunkNotFound = fmt.Errorf("chunk not found in registry")
+)
 
 // Common Lifecycle/ObjectLock errors
 var (

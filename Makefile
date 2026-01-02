@@ -57,6 +57,39 @@ integration-metadata:
 integration-manager:
 	go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/manager/...
 
+integration-resiliency:
+	DB_DSN="$(DB_DSN)" go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/resiliency/...
+
+# =============================================================================
+# Minimal Cluster (Benchmarks & Resiliency Tests)
+# =============================================================================
+
+# Build minimal cluster image
+minimal-build:
+	DOCKER_BUILDKIT=1 docker build -t zapfs:minimal -f docker/Dockerfile .
+
+# Start minimal cluster (1 manager, 2 file servers, 1 metadata, 1 mysql)
+minimal-up: minimal-build
+	cd docker && docker compose -f docker-compose.minimal.yml up -d
+	@echo "Waiting for services to be healthy..."
+	@sleep 10
+
+minimal-down:
+	cd docker && docker compose -f docker-compose.minimal.yml down -v
+
+minimal-logs:
+	cd docker && docker compose -f docker-compose.minimal.yml logs -f
+
+# Run resiliency tests on minimal cluster
+minimal-test: minimal-up
+	DB_DSN="$(DB_DSN)" go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/resiliency/...
+	$(MAKE) minimal-down
+
+# Run benchmarks on minimal cluster
+benchmark: minimal-up
+	./scripts/benchmark.sh --host localhost:8082
+	$(MAKE) minimal-down
+
 # =============================================================================
 # Mock Generation (mockery v3)
 # =============================================================================

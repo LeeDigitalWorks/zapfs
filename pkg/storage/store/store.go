@@ -4,6 +4,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -378,4 +379,78 @@ func (fs *FileStore) ForceGC(backendID string) int {
 		}
 	}
 	return workersRun
+}
+
+// IterateChunks iterates over all chunks in the index.
+// Used by reconciliation to compare local chunks with expected chunks.
+func (fs *FileStore) IterateChunks(fn func(id types.ChunkID, chunk types.Chunk) error) error {
+	return fs.chunkIdx.Iterate(fn)
+}
+
+// DeleteChunk removes a chunk from the index.
+// Note: This does NOT delete the chunk from backend storage.
+// Use with GetBackendStorage().Delete() to fully remove a chunk.
+func (fs *FileStore) DeleteChunk(ctx context.Context, id types.ChunkID) error {
+	return fs.chunkIdx.Delete(id)
+}
+
+// WriteChunk writes a chunk directly to storage.
+// Used by migration to receive chunks from peer servers.
+// Returns the chunk reference on success.
+func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data []byte, backendID string) (*types.ChunkRef, error) {
+	// Check if chunk already exists
+	if existing, err := fs.chunkIdx.Get(chunkID); err == nil {
+		// Chunk exists - this is fine for migration (idempotent)
+		return &types.ChunkRef{
+			ChunkID:   chunkID,
+			Size:      existing.Size,
+			BackendID: existing.BackendID,
+		}, nil
+	}
+
+	// Get backend
+	backend, ok := fs.backends[backendID]
+	if !ok {
+		// Fall back to placer selection
+		var err error
+		backend, err = fs.placer.SelectBackend(ctx, uint64(len(data)), "")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	store, ok := fs.manager.Get(backend.ID)
+	if !ok {
+		return nil, fmt.Errorf("backend %s not found", backend.ID)
+	}
+
+	// Write to backend
+	path := chunkID.FullPath("")
+	if err := store.Write(ctx, path, bytes.NewReader(data), int64(len(data))); err != nil {
+		return nil, err
+	}
+
+	// Index chunk - RefCount=0 since chunk_registry tracks refs centrally
+	chunk := types.Chunk{
+		ID:        chunkID,
+		BackendID: backend.ID,
+		Path:      path,
+		Size:      uint64(len(data)),
+		RefCount:  0, // Managed by chunk_registry
+		CreatedAt: time.Now().Unix(),
+	}
+	if err := fs.chunkIdx.PutSync(chunkID, chunk); err != nil {
+		return nil, err
+	}
+
+	// Update metrics
+	ChunkTotalCount.Inc()
+	ChunkTotalBytes.Add(float64(len(data)))
+	ChunkOperations.WithLabelValues("migrate_receive").Inc()
+
+	return &types.ChunkRef{
+		ChunkID:   chunkID,
+		Size:      uint64(len(data)),
+		BackendID: backend.ID,
+	}, nil
 }

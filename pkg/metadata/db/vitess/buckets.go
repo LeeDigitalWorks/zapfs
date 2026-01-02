@@ -193,3 +193,12 @@ func (v *Vitess) UpdateBucketVersioning(ctx context.Context, bucket string, vers
 	}
 	return nil
 }
+
+func (v *Vitess) CountBuckets(ctx context.Context) (int64, error) {
+	var count int64
+	err := v.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM buckets`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count buckets: %w", err)
+	}
+	return count, nil
+}

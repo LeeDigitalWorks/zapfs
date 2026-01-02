@@ -19,13 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	MetadataService_Ping_FullMethodName             = "/metadata_pb.MetadataService/Ping"
-	MetadataService_GetObject_FullMethodName        = "/metadata_pb.MetadataService/GetObject"
-	MetadataService_DeleteObject_FullMethodName     = "/metadata_pb.MetadataService/DeleteObject"
-	MetadataService_ListObjects_FullMethodName      = "/metadata_pb.MetadataService/ListObjects"
-	MetadataService_CreateCollection_FullMethodName = "/metadata_pb.MetadataService/CreateCollection"
-	MetadataService_DeleteCollection_FullMethodName = "/metadata_pb.MetadataService/DeleteCollection"
-	MetadataService_ListCollections_FullMethodName  = "/metadata_pb.MetadataService/ListCollections"
+	MetadataService_Ping_FullMethodName                  = "/metadata_pb.MetadataService/Ping"
+	MetadataService_GetObject_FullMethodName             = "/metadata_pb.MetadataService/GetObject"
+	MetadataService_DeleteObject_FullMethodName          = "/metadata_pb.MetadataService/DeleteObject"
+	MetadataService_ListObjects_FullMethodName           = "/metadata_pb.MetadataService/ListObjects"
+	MetadataService_CreateCollection_FullMethodName      = "/metadata_pb.MetadataService/CreateCollection"
+	MetadataService_DeleteCollection_FullMethodName      = "/metadata_pb.MetadataService/DeleteCollection"
+	MetadataService_ListCollections_FullMethodName       = "/metadata_pb.MetadataService/ListCollections"
+	MetadataService_StreamChunksForServer_FullMethodName = "/metadata_pb.MetadataService/StreamChunksForServer"
 )
 
 // MetadataServiceClient is the client API for MetadataService service.
@@ -39,6 +40,9 @@ type MetadataServiceClient interface {
 	CreateCollection(ctx context.Context, in *CreateCollectionRequest, opts ...grpc.CallOption) (*CreateCollectionResponse, error)
 	DeleteCollection(ctx context.Context, in *DeleteCollectionRequest, opts ...grpc.CallOption) (*DeleteCollectionResponse, error)
 	ListCollections(ctx context.Context, in *ListCollectionsRequest, opts ...grpc.CallOption) (*ListCollectionsResponse, error)
+	// Reconciliation - streams all chunk IDs expected on a file server.
+	// Used by Manager to coordinate file server reconciliation.
+	StreamChunksForServer(ctx context.Context, in *StreamChunksForServerRequest, opts ...grpc.CallOption) (MetadataService_StreamChunksForServerClient, error)
 }
 
 type metadataServiceClient struct {
@@ -112,6 +116,38 @@ func (c *metadataServiceClient) ListCollections(ctx context.Context, in *ListCol
 	return out, nil
 }
 
+func (c *metadataServiceClient) StreamChunksForServer(ctx context.Context, in *StreamChunksForServerRequest, opts ...grpc.CallOption) (MetadataService_StreamChunksForServerClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MetadataService_ServiceDesc.Streams[0], MetadataService_StreamChunksForServer_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &metadataServiceStreamChunksForServerClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type MetadataService_StreamChunksForServerClient interface {
+	Recv() (*ChunkIDResponse, error)
+	grpc.ClientStream
+}
+
+type metadataServiceStreamChunksForServerClient struct {
+	grpc.ClientStream
+}
+
+func (x *metadataServiceStreamChunksForServerClient) Recv() (*ChunkIDResponse, error) {
+	m := new(ChunkIDResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // MetadataServiceServer is the server API for MetadataService service.
 // All implementations must embed UnimplementedMetadataServiceServer
 // for forward compatibility
@@ -123,6 +159,9 @@ type MetadataServiceServer interface {
 	CreateCollection(context.Context, *CreateCollectionRequest) (*CreateCollectionResponse, error)
 	DeleteCollection(context.Context, *DeleteCollectionRequest) (*DeleteCollectionResponse, error)
 	ListCollections(context.Context, *ListCollectionsRequest) (*ListCollectionsResponse, error)
+	// Reconciliation - streams all chunk IDs expected on a file server.
+	// Used by Manager to coordinate file server reconciliation.
+	StreamChunksForServer(*StreamChunksForServerRequest, MetadataService_StreamChunksForServerServer) error
 	mustEmbedUnimplementedMetadataServiceServer()
 }
 
@@ -150,6 +189,9 @@ func (UnimplementedMetadataServiceServer) DeleteCollection(context.Context, *Del
 }
 func (UnimplementedMetadataServiceServer) ListCollections(context.Context, *ListCollectionsRequest) (*ListCollectionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListCollections not implemented")
+}
+func (UnimplementedMetadataServiceServer) StreamChunksForServer(*StreamChunksForServerRequest, MetadataService_StreamChunksForServerServer) error {
+	return status.Errorf(codes.Unimplemented, "method StreamChunksForServer not implemented")
 }
 func (UnimplementedMetadataServiceServer) mustEmbedUnimplementedMetadataServiceServer() {}
 
@@ -290,6 +332,27 @@ func _MetadataService_ListCollections_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MetadataService_StreamChunksForServer_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamChunksForServerRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(MetadataServiceServer).StreamChunksForServer(m, &metadataServiceStreamChunksForServerServer{stream})
+}
+
+type MetadataService_StreamChunksForServerServer interface {
+	Send(*ChunkIDResponse) error
+	grpc.ServerStream
+}
+
+type metadataServiceStreamChunksForServerServer struct {
+	grpc.ServerStream
+}
+
+func (x *metadataServiceStreamChunksForServerServer) Send(m *ChunkIDResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // MetadataService_ServiceDesc is the grpc.ServiceDesc for MetadataService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -326,6 +389,12 @@ var MetadataService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MetadataService_ListCollections_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamChunksForServer",
+			Handler:       _MetadataService_StreamChunksForServer_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "metadata.proto",
 }

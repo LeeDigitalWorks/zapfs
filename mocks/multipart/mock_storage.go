@@ -9,7 +9,6 @@ import (
 	"io"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
-	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -38,65 +37,6 @@ type MockStorage_Expecter struct {
 
 func (_m *MockStorage) EXPECT() *MockStorage_Expecter {
 	return &MockStorage_Expecter{mock: &_m.Mock}
-}
-
-// DecrementChunkRefCounts provides a mock function for the type MockStorage
-func (_mock *MockStorage) DecrementChunkRefCounts(ctx context.Context, chunks []types.ChunkRef) []storage.FailedDecrement {
-	ret := _mock.Called(ctx, chunks)
-
-	if len(ret) == 0 {
-		panic("no return value specified for DecrementChunkRefCounts")
-	}
-
-	var r0 []storage.FailedDecrement
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []types.ChunkRef) []storage.FailedDecrement); ok {
-		r0 = returnFunc(ctx, chunks)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]storage.FailedDecrement)
-		}
-	}
-	return r0
-}
-
-// MockStorage_DecrementChunkRefCounts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DecrementChunkRefCounts'
-type MockStorage_DecrementChunkRefCounts_Call struct {
-	*mock.Call
-}
-
-// DecrementChunkRefCounts is a helper method to define mock.On call
-//   - ctx context.Context
-//   - chunks []types.ChunkRef
-func (_e *MockStorage_Expecter) DecrementChunkRefCounts(ctx interface{}, chunks interface{}) *MockStorage_DecrementChunkRefCounts_Call {
-	return &MockStorage_DecrementChunkRefCounts_Call{Call: _e.mock.On("DecrementChunkRefCounts", ctx, chunks)}
-}
-
-func (_c *MockStorage_DecrementChunkRefCounts_Call) Run(run func(ctx context.Context, chunks []types.ChunkRef)) *MockStorage_DecrementChunkRefCounts_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 []types.ChunkRef
-		if args[1] != nil {
-			arg1 = args[1].([]types.ChunkRef)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *MockStorage_DecrementChunkRefCounts_Call) Return(failedDecrements []storage.FailedDecrement) *MockStorage_DecrementChunkRefCounts_Call {
-	_c.Call.Return(failedDecrements)
-	return _c
-}
-
-func (_c *MockStorage_DecrementChunkRefCounts_Call) RunAndReturn(run func(ctx context.Context, chunks []types.ChunkRef) []storage.FailedDecrement) *MockStorage_DecrementChunkRefCounts_Call {
-	_c.Call.Return(run)
-	return _c
 }
 
 // ReadObject provides a mock function for the type MockStorage

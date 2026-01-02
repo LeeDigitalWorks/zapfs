@@ -100,6 +100,39 @@ func init() {
 	f.String("region_id", "default", "Region ID for this manager")
 	f.Uint32("default_num_replicas", 3, "Default replication factor when not specified per-request")
 
+	// Backup scheduling flags (Enterprise feature: FeatureBackup)
+	f.Bool("backup_enabled", false, "Enable automatic backup scheduling")
+	f.Duration("backup_interval", 24*time.Hour, "Interval between backups")
+	f.String("backup_dir", "/var/lib/zapfs/backups", "Directory to store backups")
+	f.Int("backup_retain_count", 7, "Number of backups to retain")
+	f.Int("backup_retain_days", 30, "Days to retain backups")
+	f.String("backup_prefix", "manager", "Prefix for backup files")
+
+	// LDAP integration flags (Enterprise feature: FeatureLDAP)
+	f.String("ldap_url", "", "LDAP server URL (ldap://host:389 or ldaps://host:636)")
+	f.String("ldap_bind_dn", "", "LDAP bind DN (cn=admin,dc=example,dc=com)")
+	f.String("ldap_bind_pass", "", "LDAP bind password")
+	f.String("ldap_base_dn", "", "LDAP base DN for user searches (dc=example,dc=com)")
+	f.String("ldap_user_filter", "(uid=%s)", "LDAP user search filter")
+	f.String("ldap_username_attr", "uid", "LDAP username attribute")
+	f.String("ldap_email_attr", "mail", "LDAP email attribute")
+	f.String("ldap_group_attr", "memberOf", "LDAP group membership attribute")
+	f.String("ldap_required_group", "", "Required LDAP group for access (optional)")
+	f.Bool("ldap_start_tls", false, "Use StartTLS for LDAP connection")
+	f.Int("ldap_pool_size", 5, "LDAP connection pool size")
+	f.Duration("ldap_timeout", 10*time.Second, "LDAP connection timeout")
+
+	// OIDC integration flags (Enterprise feature: FeatureOIDC)
+	f.String("oidc_issuer", "", "OIDC provider issuer URL (e.g., https://accounts.google.com)")
+	f.String("oidc_client_id", "", "OIDC client ID")
+	f.String("oidc_client_secret", "", "OIDC client secret (optional for public clients)")
+	f.String("oidc_redirect_url", "", "OIDC callback URL (e.g., http://localhost:8060/v1/oidc/callback)")
+	f.StringSlice("oidc_scopes", []string{"openid", "email", "profile"}, "OIDC scopes to request")
+	f.String("oidc_username_claim", "email", "OIDC claim to use as username")
+	f.String("oidc_groups_claim", "", "OIDC claim containing group memberships")
+	f.StringSlice("oidc_required_groups", nil, "Required OIDC groups for access")
+	f.StringSlice("oidc_allowed_domains", nil, "Allowed email domains for OIDC users")
+
 	viper.BindPFlags(f)
 }
 
@@ -140,7 +173,7 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 		Msg("Starting manager server")
 
 	// Initialize IAM service first
-	iamService, err := initializeManagerIAM()
+	iamService, oidcHandler, err := initializeManagerIAM()
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize IAM service")
 	}
@@ -148,6 +181,7 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 		Int("cache_size", iamService.Manager().CacheSize()).
 		Bool("sts_enabled", iamService.STS() != nil).
 		Bool("kms_enabled", iamService.KMS() != nil).
+		Bool("oidc_enabled", oidcHandler != nil).
 		Msg("IAM service initialized")
 
 	// Get license checker for limit enforcement (noopChecker for community edition)
@@ -176,6 +210,19 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Configure backup scheduling (enterprise feature: FeatureBackup)
+	backupConfig := manager.BackupSchedulerConfig{
+		Enabled:        viper.GetBool("backup_enabled"),
+		Interval:       viper.GetDuration("backup_interval"),
+		DestinationDir: viper.GetString("backup_dir"),
+		RetainCount:    viper.GetInt("backup_retain_count"),
+		RetainDays:     viper.GetInt("backup_retain_days"),
+		Prefix:         viper.GetString("backup_prefix"),
+	}
+	if err := managerServer.ConfigureBackupScheduler(backupConfig); err != nil {
+		logger.Fatal().Err(err).Msg("failed to configure backup scheduler")
+	}
+
 	// Join existing cluster if specified AND this is a fresh node (no existing Raft state)
 	// On restart, nodes already have their Raft configuration and just need to participate in election
 	if opts.JoinAddr != "" && !opts.Bootstrap {
@@ -199,7 +246,7 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 
 	grpcServer := startManagerGRPCServer(opts, managerServer)
 	debugServer := startHTTPServer(debug.GetMux(), opts.IP, opts.DebugPort)
-	adminServer := startManagerAdminServer(opts, managerServer)
+	adminServer := startManagerAdminServer(opts, managerServer, oidcHandler)
 
 	logger.Info().
 		Str("grpc_addr", fmt.Sprintf("%s:%d", opts.IP, opts.GRPCPort)).
@@ -271,31 +318,60 @@ func loadManagerOpts(cmd *cobra.Command) ManagerServerOpts {
 	return opts
 }
 
-func initializeManagerIAM() (*iam.Service, error) {
+func initializeManagerIAM() (*iam.Service, http.Handler, error) {
+	// Check for LDAP configuration first (Enterprise feature)
+	// Support both CLI flag (ldap_url) and TOML config ([ldap] url = ...)
+	ldapURL := viper.GetString("ldap_url")
+	if ldapURL == "" {
+		ldapURL = viper.GetString("ldap.url")
+	}
+	if ldapURL != "" {
+		svc, err := initializeLDAPBackedIAM(ldapURL)
+		return svc, nil, err // LDAP doesn't have HTTP handlers
+	}
+
+	// Check for OIDC configuration (Enterprise feature)
+	// Support both CLI flag (oidc_issuer) and TOML config ([oidc] issuer = ...)
+	oidcIssuer := viper.GetString("oidc_issuer")
+	if oidcIssuer == "" {
+		oidcIssuer = viper.GetString("oidc.issuer")
+	}
+	if oidcIssuer != "" {
+		return initializeOIDCBackedIAM(oidcIssuer)
+	}
+
 	// Try to load IAM config from Viper (which may have loaded from TOML)
 	var iamCfg iam.IAMConfig
 
 	// Check if we have IAM config in Viper
 	if viper.IsSet("iam") {
 		if err := viper.UnmarshalKey("iam", &iamCfg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal IAM config: %w", err)
+			return nil, nil, fmt.Errorf("failed to unmarshal IAM config: %w", err)
 		}
 		logger.Info().Int("users", len(iamCfg.Users)).Int("groups", len(iamCfg.Groups)).Msg("loaded IAM config from file")
-		return iam.LoadFromConfig(iamCfg)
+		svc, err := iam.LoadFromConfig(iamCfg)
+		return svc, nil, err
 	}
 
 	// Fall back to defaults
 	logger.Warn().Msg("no IAM config found, using defaults (test credentials)")
-	return iam.NewServiceWithDefaults()
+	svc, err := iam.NewServiceWithDefaults()
+	return svc, nil, err
 }
 
-func startManagerAdminServer(opts ManagerServerOpts, ms *manager.ManagerServer) *http.Server {
+// initializeLDAPBackedIAM is defined in manager_ldap_enterprise.go (enterprise) or
+// manager_ldap_stub.go (community). See those files for implementation.
+
+func startManagerAdminServer(opts ManagerServerOpts, ms *manager.ManagerServer, oidcHandler http.Handler) *http.Server {
 	mux := http.NewServeMux()
 
 	// Mount IAM admin handlers (uses ManagerServer to notify subscribers on changes)
 	iamHandler := manager.NewIAMAdminHandler(ms.GetIAMService())
 	iamHandler.SetNotifier(ms) // ManagerServer implements CredentialNotifier
 	mux.Handle("/v1/iam/", iamHandler)
+
+	// Register OIDC handlers if configured (enterprise feature)
+	registerOIDCHandlers(mux, oidcHandler)
 
 	// Health and status endpoints
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {

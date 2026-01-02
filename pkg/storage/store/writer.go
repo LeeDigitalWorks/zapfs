@@ -139,6 +139,7 @@ func (fs *FileStore) writeChunk(ctx context.Context, data []byte) (*types.ChunkR
 		Path:      path,
 		Size:      uint64(len(data)),
 		RefCount:  1,
+		CreatedAt: time.Now().Unix(),
 	}
 	if err := fs.chunkIdx.PutSync(chunkID, chunk); err != nil {
 		return nil, err

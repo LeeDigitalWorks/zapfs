@@ -28,6 +28,27 @@ service ManagerService {
   // WatchCollections streams collection changes for multi-region cache sync.
   // Sends initial sync of collections since the requested time, then pushes updates.
   rpc WatchCollections(WatchCollectionsRequest) returns (stream CollectionEvent);
+
+  // Reconciliation - File server calls this to get expected chunks.
+  // Manager queries metadata service and streams chunk IDs.
+  rpc GetExpectedChunks(GetExpectedChunksRequest) returns (stream ExpectedChunkResponse);
+
+  // ReportReconciliation - File server reports reconciliation results.
+  rpc ReportReconciliation(ReconciliationReport) returns (ReconciliationAck);
+
+  // TriggerReconciliation - Admin API to manually trigger reconciliation for a server.
+  rpc TriggerReconciliation(TriggerReconciliationRequest) returns (TriggerReconciliationResponse);
+
+  // Backup RPCs (enterprise - requires FeatureBackup license)
+  rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
+  rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+  rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
+
+  // Cluster rebalancing RPCs
+  rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+  rpc CalculateRebalancePlan(CalculateRebalancePlanRequest) returns (CalculateRebalancePlanResponse);
+  rpc ExecuteRebalance(ExecuteRebalanceRequest) returns (stream RebalanceProgress);
 }
 
 enum ServiceType {
@@ -64,7 +85,11 @@ message FileServiceMetadata {
   repeated StorageBackend storage_backends = 1;
 }
 
-message MetadataServiceMetadata {}
+message MetadataServiceMetadata {
+  // Number of buckets in this metadata service's local database.
+  // Used by manager to detect data loss (manager has 0 collections but metadata has buckets).
+  uint64 bucket_count = 1;
+}
 
 message RegisterServiceRequest {
   ServiceType service_type = 1;
@@ -275,3 +300,190 @@ message DeleteCollectionResponse {
   string message = 2;
 }
 
+// File Server State for reconciliation tracking
+enum FileServerState {
+  FILE_SERVER_STATE_UNKNOWN = 0;
+  FILE_SERVER_STATE_ONLINE = 1;       // Normal operation, can receive writes
+  FILE_SERVER_STATE_RECONCILING = 2;  // Syncing chunks, excluded from placement
+  FILE_SERVER_STATE_OFFLINE = 3;      // Not responding to heartbeats
+}
+
+// Reconciliation messages
+
+message GetExpectedChunksRequest {
+  string server_id = 1;  // File server address requesting reconciliation
+}
+
+message ExpectedChunkResponse {
+  string chunk_id = 1;
+}
+
+message ReconciliationReport {
+  string server_id = 1;
+  int64 total_chunks = 2;           // Total chunks on file server
+  int64 expected_chunks = 3;        // Chunks expected (from registry)
+  int64 orphans_deleted = 4;        // Orphan chunks deleted
+  int64 orphans_skipped = 5;        // Orphan chunks skipped (too new, within grace period)
+  repeated string missing_chunks = 6; // Chunks in registry but not on disk
+  int64 duration_ms = 7;            // How long reconciliation took
+}
+
+message ReconciliationAck {
+  bool success = 1;
+  string message = 2;
+}
+
+message TriggerReconciliationRequest {
+  string server_id = 1;  // Empty = all servers
+}
+
+message TriggerReconciliationResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string servers_triggered = 3;
+}
+
+// Backup messages
+
+message CreateBackupRequest {
+  // Optional description for this backup
+  string description = 1;
+}
+
+message CreateBackupResponse {
+  bool success = 1;
+  string backup_id = 2;
+  bytes snapshot_data = 3;  // JSON-encoded FSM snapshot
+  string error = 4;
+}
+
+message GetBackupStatusRequest {}
+
+message GetBackupStatusResponse {
+  uint64 topology_version = 1;
+  uint64 collections_version = 2;
+  int32 file_services_count = 3;
+  int32 metadata_services_count = 4;
+  int32 collections_count = 5;
+  bool is_leader = 6;
+}
+
+message ListBackupsRequest {}
+
+message ListBackupsResponse {
+  repeated BackupInfo backups = 1;
+}
+
+message BackupInfo {
+  string backup_id = 1;
+  int64 created_at = 2;  // Unix timestamp
+  uint64 topology_version = 3;
+  uint64 collections_version = 4;
+  int32 file_services_count = 5;
+  int32 metadata_services_count = 6;
+  int32 collections_count = 7;
+  int64 size_bytes = 8;
+  string filename = 9;
+  string description = 10;
+  bool scheduled = 11;  // true if created by scheduler
+}
+
+message DeleteBackupRequest {
+  string backup_id = 1;
+}
+
+message DeleteBackupResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Cluster rebalancing messages
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+  repeated FileServerStatus file_servers = 1;
+  ClusterCapacitySummary capacity = 2;
+}
+
+message FileServerStatus {
+  string server_id = 1;
+  string address = 2;
+  int64 total_bytes = 3;
+  int64 used_bytes = 4;
+  int64 chunk_count = 5;
+  double usage_percent = 6;
+  string status = 7;  // "online", "offline", "draining"
+  google.protobuf.Timestamp last_heartbeat = 8;
+}
+
+message ClusterCapacitySummary {
+  int64 total_bytes = 1;
+  int64 used_bytes = 2;
+  double avg_usage_percent = 3;
+  double max_usage_percent = 4;
+  double min_usage_percent = 5;
+  double imbalance_percent = 6;  // max - min usage
+  int32 online_servers = 7;
+}
+
+message CalculateRebalancePlanRequest {
+  // Target usage variance (default: 5%)
+  // Servers within this % of average won't be touched
+  double target_variance_percent = 1;
+
+  // Max bytes to move (0 = unlimited)
+  int64 max_bytes_to_move = 2;
+
+  // Dry run - just calculate, don't store plan
+  bool dry_run = 3;
+}
+
+message CalculateRebalancePlanResponse {
+  bool success = 1;
+  string error = 2;
+  RebalancePlan plan = 3;
+}
+
+message RebalancePlan {
+  string plan_id = 1;
+  repeated ChunkMigration migrations = 2;
+  int64 total_bytes = 3;
+  int32 total_chunks = 4;
+  int64 estimated_duration_ms = 5;  // Based on bandwidth estimate
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ChunkMigration {
+  string chunk_id = 1;
+  string from_server = 2;
+  string to_server = 3;
+  int64 size_bytes = 4;
+  int32 priority = 5;  // Higher = more urgent
+}
+
+message ExecuteRebalanceRequest {
+  // Plan ID from CalculateRebalancePlan (empty = calculate new plan)
+  string plan_id = 1;
+
+  // Rate limit in bytes/second (0 = unlimited)
+  int64 rate_limit_bps = 2;
+
+  // Max concurrent migrations per server
+  int32 max_concurrent = 3;
+
+  // Delete source chunk after migration
+  bool delete_source = 4;
+}
+
+message RebalanceProgress {
+  string plan_id = 1;
+  int32 migrations_completed = 2;
+  int32 migrations_total = 3;
+  int64 bytes_moved = 4;
+  int64 bytes_total = 5;
+  double progress_percent = 6;
+  string current_chunk = 7;
+  string status = 8;  // "running", "completed", "failed", "cancelled"
+  string error = 9;
+}

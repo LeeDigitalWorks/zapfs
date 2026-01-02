@@ -25,13 +25,21 @@ import (
 type CommandType string
 
 const (
-	CommandRegisterService   CommandType = "register_service"
-	CommandUnregisterService CommandType = "unregister_service"
-	CommandUpdatePolicy      CommandType = "update_policy"
-	CommandCreateCollection  CommandType = "create_collection"
-	CommandDeleteCollection  CommandType = "delete_collection"
-	CommandUpdateCollection  CommandType = "update_collection"
+	CommandRegisterService     CommandType = "register_service"
+	CommandUnregisterService   CommandType = "unregister_service"
+	CommandUpdatePolicy        CommandType = "update_policy"
+	CommandCreateCollection    CommandType = "create_collection"
+	CommandDeleteCollection    CommandType = "delete_collection"
+	CommandUpdateCollection    CommandType = "update_collection"
+	CommandUpdateServiceStatus CommandType = "update_service_status"
 )
+
+// ServiceStatusUpdate represents a status change for a service (goes through Raft)
+type ServiceStatusUpdate struct {
+	ServiceType manager_pb.ServiceType `json:"service_type"`
+	ServiceID   string                 `json:"service_id"`
+	NewStatus   ServiceStatus          `json:"new_status"`
+}
 
 type RaftCommand struct {
 	Type CommandType     `json:"type"`
@@ -63,6 +71,8 @@ func (ms *ManagerServer) Apply(l *raft.Log) interface{} {
 		return ms.applyDeleteCollection(cmd.Data)
 	case CommandUpdateCollection:
 		return ms.applyUpdateCollection(cmd.Data)
+	case CommandUpdateServiceStatus:
+		return ms.applyUpdateServiceStatus(cmd.Data)
 	default:
 		return fmt.Errorf("unknown command type: %s", cmd.Type)
 	}
@@ -249,6 +259,71 @@ func (ms *ManagerServer) applyUnregisterService(data json.RawMessage) interface{
 	})
 
 	return nil
+}
+
+func (ms *ManagerServer) applyUpdateServiceStatus(data json.RawMessage) interface{} {
+	var update ServiceStatusUpdate
+	if err := json.Unmarshal(data, &update); err != nil {
+		return err
+	}
+
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	registry := ms.getRegistry(update.ServiceType)
+	reg, exists := registry[update.ServiceID]
+	if !exists {
+		logger.Warn().
+			Str("service_id", update.ServiceID).
+			Msg("Ignoring status update for unknown service")
+		return nil
+	}
+
+	oldStatus := reg.Status
+	if oldStatus == update.NewStatus {
+		// No change needed
+		return nil
+	}
+
+	reg.Status = update.NewStatus
+	ms.topologyVersion++
+
+	logger.Info().
+		Str("service_id", update.ServiceID).
+		Str("old_status", statusToString(oldStatus)).
+		Str("new_status", statusToString(update.NewStatus)).
+		Uint64("topology_version", ms.topologyVersion).
+		Msg("Service status updated via Raft")
+
+	// Notify topology subscribers
+	eventType := manager_pb.TopologyEvent_SERVICE_UPDATED
+	if update.NewStatus == ServiceActive {
+		eventType = manager_pb.TopologyEvent_SERVICE_ADDED // Semantically "came back online"
+	} else if update.NewStatus == ServiceOffline {
+		eventType = manager_pb.TopologyEvent_SERVICE_REMOVED // Semantically "went offline"
+	}
+
+	ms.notifyTopologySubscribers(eventType, []*manager_pb.ServiceInfo{
+		{
+			ServiceType:   reg.ServiceType,
+			Location:      reg.Location,
+			LastHeartbeat: timestamppb.New(reg.LastHeartbeat),
+		},
+	})
+
+	return nil
+}
+
+// statusToString converts ServiceStatus to a string for logging
+func statusToString(s ServiceStatus) string {
+	switch s {
+	case ServiceActive:
+		return "active"
+	case ServiceOffline:
+		return "offline"
+	default:
+		return "unknown"
+	}
 }
 
 func (ms *ManagerServer) applyUpdatePolicy(data json.RawMessage) interface{} {

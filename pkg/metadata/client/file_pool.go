@@ -132,10 +132,21 @@ func (p *FileClientPool) PutObject(
 		return nil, fmt.Errorf("failed to complete PutObject: %w", err)
 	}
 
+	// Extract chunk information from response
+	chunks := make([]ChunkInfo, len(resp.Chunks))
+	for i, c := range resp.Chunks {
+		chunks[i] = ChunkInfo{
+			ChunkID: c.ChunkId,
+			Size:    c.Size,
+			Offset:  c.Offset,
+		}
+	}
+
 	return &PutObjectResult{
-		ObjectID:          resp.ObjectId,
-		Size:              resp.Size,
-		ETag:              resp.Etag,
+		ObjectID: resp.ObjectId,
+		Size:     resp.Size,
+		ETag:     resp.Etag,
+		Chunks:   chunks,
 	}, nil
 }
 

@@ -237,6 +237,11 @@ func TestDeleteObject(t *testing.T) {
 			bucket: "test-bucket",
 			key:    "test-key",
 			setupMock: func(mockDB *dbmocks.MockDB) {
+				// WithTx executes the callback with the mock as TxStore
+				mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+					RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+						return fn(mockDB)
+					})
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "test-key").
 					Return(&types.ObjectRef{
 						ID:     uuid.New(),
@@ -246,6 +251,8 @@ func TestDeleteObject(t *testing.T) {
 					}, nil)
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "test-key", mock.AnythingOfType("int64")).
 					Return(nil)
+				mockDB.EXPECT().DecrementChunkRefCount(mock.Anything, mock.Anything).
+					Return(db.ErrChunkNotFound).Maybe()
 			},
 			wantErr: false,
 		},
@@ -254,6 +261,10 @@ func TestDeleteObject(t *testing.T) {
 			bucket: "test-bucket",
 			key:    "nonexistent",
 			setupMock: func(mockDB *dbmocks.MockDB) {
+				mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+					RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+						return fn(mockDB)
+					})
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "nonexistent").
 					Return(nil, db.ErrObjectNotFound)
 			},
@@ -294,10 +305,16 @@ func TestDeleteObjectWithCRRHook(t *testing.T) {
 		Size:   1024,
 	}
 
+	mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+		RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+			return fn(mockDB)
+		})
 	mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "test-key").
 		Return(objRef, nil)
 	mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "test-key", mock.AnythingOfType("int64")).
 		Return(nil)
+	mockDB.EXPECT().DecrementChunkRefCount(mock.Anything, mock.Anything).
+		Return(db.ErrChunkNotFound).Maybe()
 
 	profiles := types.NewProfileSet()
 	profiles.Add(&types.StorageProfile{Name: "STANDARD", Replication: 2})
@@ -354,13 +371,18 @@ func TestDeleteObjects(t *testing.T) {
 				{Key: "key3"},
 			},
 			setupMock: func(mockDB *dbmocks.MockDB) {
-				// GetObject is called first to collect chunk refs
+				// Each object is now processed in its own transaction
+				mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+					RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+						return fn(mockDB)
+					}).Times(3)
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "key1").Return(&types.ObjectRef{Key: "key1"}, nil)
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "key2").Return(&types.ObjectRef{Key: "key2"}, nil)
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "key3").Return(&types.ObjectRef{Key: "key3"}, nil)
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "key1", mock.AnythingOfType("int64")).Return(nil)
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "key2", mock.AnythingOfType("int64")).Return(nil)
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "key3", mock.AnythingOfType("int64")).Return(nil)
+				mockDB.EXPECT().DecrementChunkRefCount(mock.Anything, mock.Anything).Return(db.ErrChunkNotFound).Maybe()
 			},
 			wantDeletedLen: 3,
 			wantErrorsLen:  0,
@@ -373,13 +395,18 @@ func TestDeleteObjects(t *testing.T) {
 				{Key: "key3"},
 			},
 			setupMock: func(mockDB *dbmocks.MockDB) {
-				// GetObject is called first to collect chunk refs
+				// Each object is now processed in its own transaction
+				mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+					RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+						return fn(mockDB)
+					}).Times(3)
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "key1").Return(&types.ObjectRef{Key: "key1"}, nil)
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "key2").Return(&types.ObjectRef{Key: "key2"}, nil)
 				mockDB.EXPECT().GetObject(mock.Anything, "test-bucket", "key3").Return(&types.ObjectRef{Key: "key3"}, nil)
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "key1", mock.AnythingOfType("int64")).Return(nil)
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "key2", mock.AnythingOfType("int64")).Return(errors.New("database error"))
 				mockDB.EXPECT().MarkObjectDeleted(mock.Anything, "test-bucket", "key3", mock.AnythingOfType("int64")).Return(nil)
+				mockDB.EXPECT().DecrementChunkRefCount(mock.Anything, mock.Anything).Return(db.ErrChunkNotFound).Maybe()
 			},
 			wantDeletedLen: 2,
 			wantErrorsLen:  1,
@@ -443,9 +470,14 @@ func TestCopyObject(t *testing.T) {
 						CreatedAt: time.Now().UnixNano(),
 						ChunkRefs: []types.ChunkRef{{ChunkID: "chunk1", Size: 1024}},
 					}, nil)
+				mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+					RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+						return fn(mockDB)
+					})
 				mockDB.EXPECT().PutObject(mock.Anything, mock.MatchedBy(func(obj *types.ObjectRef) bool {
 					return obj.Bucket == "dest-bucket" && obj.Key == "dest-key" && obj.ETag == "abc123"
 				})).Return(nil)
+				mockDB.EXPECT().IncrementChunkRefCount(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 				mockDB.EXPECT().GetObjectTagging(mock.Anything, "src-bucket", "src-key").
 					Return(nil, db.ErrObjectNotFound)
 			},
@@ -539,7 +571,12 @@ func TestCopyObjectWithTags(t *testing.T) {
 	}
 
 	mockDB.EXPECT().GetObject(mock.Anything, "src-bucket", "src-key").Return(srcObj, nil)
+	mockDB.EXPECT().WithTx(mock.Anything, mock.AnythingOfType("func(db.TxStore) error")).
+		RunAndReturn(func(ctx context.Context, fn func(db.TxStore) error) error {
+			return fn(mockDB)
+		})
 	mockDB.EXPECT().PutObject(mock.Anything, mock.Anything).Return(nil)
+	mockDB.EXPECT().IncrementChunkRefCount(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	mockDB.EXPECT().GetObjectTagging(mock.Anything, "src-bucket", "src-key").Return(srcTags, nil)
 	mockDB.EXPECT().SetObjectTagging(mock.Anything, "dest-bucket", "dest-key", srcTags).Return(nil)
 

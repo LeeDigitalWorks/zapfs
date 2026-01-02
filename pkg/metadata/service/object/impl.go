@@ -267,8 +267,29 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 		}
 	}
 
-	// Store metadata
-	if err := s.db.PutObject(ctx, objRef); err != nil {
+	// Store metadata and register chunks atomically
+	err = s.db.WithTx(ctx, func(tx db.TxStore) error {
+		// Insert object
+		if err := tx.PutObject(ctx, objRef); err != nil {
+			return err
+		}
+
+		// Register chunks in chunk_registry and track replicas
+		for _, ref := range writeResult.ChunkRefs {
+			// Increment ref_count (or insert with ref_count=1)
+			if err := tx.IncrementChunkRefCount(ctx, ref.ChunkID.String(), int64(ref.Size)); err != nil {
+				return err
+			}
+			// Track replica location
+			if ref.FileServerAddr != "" {
+				if err := tx.AddChunkReplica(ctx, ref.ChunkID.String(), ref.FileServerAddr, ref.BackendID); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, newInternalError(err)
 	}
 
@@ -581,38 +602,38 @@ func (s *serviceImpl) HeadObject(ctx context.Context, bucket, key string) (*Head
 
 // DeleteObject soft-deletes an object and decrements chunk reference counts
 func (s *serviceImpl) DeleteObject(ctx context.Context, bucket, key string) (*DeleteObjectResult, error) {
-	// Look up object to get its chunk refs before deletion
-	objRef, err := s.db.GetObject(ctx, bucket, key)
+	// Perform delete and ref count decrements atomically in a transaction
+	now := time.Now().Unix()
+
+	err := s.db.WithTx(ctx, func(tx db.TxStore) error {
+		// Look up object to get its chunk refs
+		objRef, err := tx.GetObject(ctx, bucket, key)
+		if err != nil {
+			return err
+		}
+
+		// Mark object deleted
+		if err := tx.MarkObjectDeleted(ctx, bucket, key, now); err != nil {
+			return err
+		}
+
+		// Decrement ref counts atomically (sets zero_ref_since if hits 0)
+		for _, ref := range objRef.ChunkRefs {
+			if err := tx.DecrementChunkRefCount(ctx, ref.ChunkID.String()); err != nil {
+				// Continue on ErrChunkNotFound - chunk may not be in registry yet (legacy)
+				if err != db.ErrChunkNotFound {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		if errors.Is(err, db.ErrObjectNotFound) {
 			// S3 returns success even for non-existent objects
 			return &DeleteObjectResult{}, nil
 		}
 		return nil, newInternalError(err)
-	}
-
-	// Soft delete first
-	now := time.Now().Unix()
-	if err := s.db.MarkObjectDeleted(ctx, bucket, key, now); err != nil {
-		return nil, newInternalError(err)
-	}
-
-	// Decrement reference counts on file servers
-	// This is done after marking deleted to ensure the object is gone even if
-	// ref count decrements fail (they can be retried)
-	if len(objRef.ChunkRefs) > 0 {
-		failed := s.storage.DecrementChunkRefCounts(ctx, objRef.ChunkRefs)
-		if len(failed) > 0 {
-			// Failed decrements are automatically queued for retry by the coordinator
-			// if a task queue is configured. Log for visibility.
-			for _, f := range failed {
-				logger.Warn().
-					Str("chunk_id", f.ChunkID).
-					Str("file_server", f.FileServerAddr).
-					Str("error", f.Error).
-					Msg("failed to decrement chunk ref count (queued for retry if task queue enabled)")
-			}
-		}
 	}
 
 	// Trigger CRR hook if configured
@@ -673,38 +694,46 @@ func (s *serviceImpl) DeleteObjectWithVersion(ctx context.Context, bucket, key, 
 func (s *serviceImpl) DeleteObjects(ctx context.Context, req *DeleteObjectsRequest) (*DeleteObjectsResult, error) {
 	var deleted []DeletedObject
 	var errs []DeleteError
-	var allChunkRefs []types.ChunkRef
 
 	now := time.Now().Unix()
+
+	// Process each object in its own transaction for partial success handling
 	for _, obj := range req.Objects {
-		// Get object first to collect chunk refs
-		objRef, err := s.db.GetObject(ctx, req.Bucket, obj.Key)
+		err := s.db.WithTx(ctx, func(tx db.TxStore) error {
+			// Get object to collect chunk refs
+			objRef, err := tx.GetObject(ctx, req.Bucket, obj.Key)
+			if err != nil {
+				return err
+			}
+
+			// Mark object deleted
+			if err := tx.MarkObjectDeleted(ctx, req.Bucket, obj.Key, now); err != nil {
+				return err
+			}
+
+			// Decrement ref counts atomically
+			for _, ref := range objRef.ChunkRefs {
+				if err := tx.DecrementChunkRefCount(ctx, ref.ChunkID.String()); err != nil {
+					// Continue on ErrChunkNotFound - chunk may not be in registry yet (legacy)
+					if err != db.ErrChunkNotFound {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+
 		if err != nil {
 			if !errors.Is(err, db.ErrObjectNotFound) {
 				errs = append(errs, DeleteError{
 					Key:     obj.Key,
 					Code:    "InternalError",
-					Message: "Failed to get object",
+					Message: "Failed to delete object",
 				})
+				continue
 			}
 			// S3 returns success for non-existent objects
-			deleted = append(deleted, DeletedObject{Key: obj.Key})
-			continue
 		}
-
-		// Mark object deleted
-		err = s.db.MarkObjectDeleted(ctx, req.Bucket, obj.Key, now)
-		if err != nil {
-			errs = append(errs, DeleteError{
-				Key:     obj.Key,
-				Code:    "InternalError",
-				Message: "Failed to delete object",
-			})
-			continue
-		}
-
-		// Collect chunk refs for batch decrement
-		allChunkRefs = append(allChunkRefs, objRef.ChunkRefs...)
 
 		deleted = append(deleted, DeletedObject{
 			Key: obj.Key,
@@ -720,22 +749,6 @@ func (s *serviceImpl) DeleteObjects(ctx context.Context, req *DeleteObjectsReque
 		if s.emitter != nil {
 			s.emitter.EmitObjectRemoved(ctx, events.EventObjectRemovedDelete,
 				req.Bucket, obj.Key, "", "", "", "")
-		}
-	}
-
-	// Batch decrement all chunk ref counts
-	if len(allChunkRefs) > 0 {
-		failed := s.storage.DecrementChunkRefCounts(ctx, allChunkRefs)
-		if len(failed) > 0 {
-			// Failed decrements are automatically queued for retry by the coordinator
-			// if a task queue is configured. Log for visibility.
-			for _, f := range failed {
-				logger.Warn().
-					Str("chunk_id", f.ChunkID).
-					Str("file_server", f.FileServerAddr).
-					Str("error", f.Error).
-					Msg("failed to decrement chunk ref count (queued for retry if task queue enabled)")
-			}
 		}
 	}
 
@@ -817,8 +830,21 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 		}
 	}
 
-	// Store in database
-	if err := s.db.PutObject(ctx, newObjRef); err != nil {
+	// Store in database and increment chunk ref counts atomically
+	err = s.db.WithTx(ctx, func(tx db.TxStore) error {
+		if err := tx.PutObject(ctx, newObjRef); err != nil {
+			return err
+		}
+
+		// Increment ref counts for shared chunks
+		for _, ref := range srcObj.ChunkRefs {
+			if err := tx.IncrementChunkRefCount(ctx, ref.ChunkID.String(), int64(ref.Size)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, newInternalError(err)
 	}
 

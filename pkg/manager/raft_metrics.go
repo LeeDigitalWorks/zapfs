@@ -94,6 +94,55 @@ var (
 		Help:      "Duration of Raft snapshot operations",
 		Buckets:   []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
 	})
+
+	// ManagerDataLossDetected is 1 if manager detected potential data loss
+	// (metadata services have buckets but manager has none)
+	ManagerDataLossDetected = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "zapfs",
+		Subsystem: "manager",
+		Name:      "data_loss_detected",
+		Help:      "1 if potential data loss detected (metadata has buckets but manager has 0 collections), 0 otherwise",
+	})
+
+	// ManagerRecoveryRequired is 1 if bucket creates are frozen pending recovery
+	ManagerRecoveryRequired = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "zapfs",
+		Subsystem: "manager",
+		Name:      "recovery_required",
+		Help:      "1 if bucket creates are frozen pending data recovery, 0 otherwise",
+	})
+
+	// ManagerCollectionsTotal tracks the total number of collections
+	ManagerCollectionsTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "zapfs",
+		Subsystem: "manager",
+		Name:      "collections_total",
+		Help:      "Total number of collections (buckets) in the manager",
+	})
+
+	// TopologyEventsDropped counts events dropped due to slow subscribers
+	TopologyEventsDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "zapfs",
+		Subsystem: "manager",
+		Name:      "topology_events_dropped_total",
+		Help:      "Total number of topology events dropped due to slow subscribers (channel full)",
+	})
+
+	// IAMEventsDropped counts IAM events dropped due to slow subscribers
+	IAMEventsDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "zapfs",
+		Subsystem: "manager",
+		Name:      "iam_events_dropped_total",
+		Help:      "Total number of IAM credential events dropped due to slow subscribers",
+	})
+
+	// CollectionEventsDropped counts collection events dropped due to slow subscribers
+	CollectionEventsDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "zapfs",
+		Subsystem: "manager",
+		Name:      "collection_events_dropped_total",
+		Help:      "Total number of collection events dropped due to slow subscribers",
+	})
 )
 
 func init() {
@@ -108,6 +157,12 @@ func init() {
 		RaftPeers,
 		RaftFSMApplyLatency,
 		RaftSnapshotLatency,
+		ManagerDataLossDetected,
+		ManagerRecoveryRequired,
+		ManagerCollectionsTotal,
+		TopologyEventsDropped,
+		IAMEventsDropped,
+		CollectionEventsDropped,
 	)
 }
 

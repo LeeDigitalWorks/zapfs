@@ -42,6 +42,75 @@ func (_m *MockDB) EXPECT() *MockDB_Expecter {
 	return &MockDB_Expecter{mock: &_m.Mock}
 }
 
+// AddChunkReplica provides a mock function for the type MockDB
+func (_mock *MockDB) AddChunkReplica(ctx context.Context, chunkID string, serverID string, backendID string) error {
+	ret := _mock.Called(ctx, chunkID, serverID, backendID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddChunkReplica")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = returnFunc(ctx, chunkID, serverID, backendID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_AddChunkReplica_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddChunkReplica'
+type MockDB_AddChunkReplica_Call struct {
+	*mock.Call
+}
+
+// AddChunkReplica is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+//   - serverID string
+//   - backendID string
+func (_e *MockDB_Expecter) AddChunkReplica(ctx interface{}, chunkID interface{}, serverID interface{}, backendID interface{}) *MockDB_AddChunkReplica_Call {
+	return &MockDB_AddChunkReplica_Call{Call: _e.mock.On("AddChunkReplica", ctx, chunkID, serverID, backendID)}
+}
+
+func (_c *MockDB_AddChunkReplica_Call) Run(run func(ctx context.Context, chunkID string, serverID string, backendID string)) *MockDB_AddChunkReplica_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_AddChunkReplica_Call) Return(err error) *MockDB_AddChunkReplica_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_AddChunkReplica_Call) RunAndReturn(run func(ctx context.Context, chunkID string, serverID string, backendID string) error) *MockDB_AddChunkReplica_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Close provides a mock function for the type MockDB
 func (_mock *MockDB) Close() error {
 	ret := _mock.Called()
@@ -82,6 +151,66 @@ func (_c *MockDB_Close_Call) Return(err error) *MockDB_Close_Call {
 }
 
 func (_c *MockDB_Close_Call) RunAndReturn(run func() error) *MockDB_Close_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CountBuckets provides a mock function for the type MockDB
+func (_mock *MockDB) CountBuckets(ctx context.Context) (int64, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountBuckets")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (int64, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) int64); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_CountBuckets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountBuckets'
+type MockDB_CountBuckets_Call struct {
+	*mock.Call
+}
+
+// CountBuckets is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockDB_Expecter) CountBuckets(ctx interface{}) *MockDB_CountBuckets_Call {
+	return &MockDB_CountBuckets_Call{Call: _e.mock.On("CountBuckets", ctx)}
+}
+
+func (_c *MockDB_CountBuckets_Call) Run(run func(ctx context.Context)) *MockDB_CountBuckets_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_CountBuckets_Call) Return(n int64, err error) *MockDB_CountBuckets_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockDB_CountBuckets_Call) RunAndReturn(run func(ctx context.Context) (int64, error)) *MockDB_CountBuckets_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -196,6 +325,120 @@ func (_c *MockDB_CreateMultipartUpload_Call) Return(err error) *MockDB_CreateMul
 }
 
 func (_c *MockDB_CreateMultipartUpload_Call) RunAndReturn(run func(ctx context.Context, upload *types.MultipartUpload) error) *MockDB_CreateMultipartUpload_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DecrementChunkRefCount provides a mock function for the type MockDB
+func (_mock *MockDB) DecrementChunkRefCount(ctx context.Context, chunkID string) error {
+	ret := _mock.Called(ctx, chunkID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DecrementChunkRefCount")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, chunkID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DecrementChunkRefCount_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DecrementChunkRefCount'
+type MockDB_DecrementChunkRefCount_Call struct {
+	*mock.Call
+}
+
+// DecrementChunkRefCount is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+func (_e *MockDB_Expecter) DecrementChunkRefCount(ctx interface{}, chunkID interface{}) *MockDB_DecrementChunkRefCount_Call {
+	return &MockDB_DecrementChunkRefCount_Call{Call: _e.mock.On("DecrementChunkRefCount", ctx, chunkID)}
+}
+
+func (_c *MockDB_DecrementChunkRefCount_Call) Run(run func(ctx context.Context, chunkID string)) *MockDB_DecrementChunkRefCount_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DecrementChunkRefCount_Call) Return(err error) *MockDB_DecrementChunkRefCount_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DecrementChunkRefCount_Call) RunAndReturn(run func(ctx context.Context, chunkID string) error) *MockDB_DecrementChunkRefCount_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DecrementChunkRefCountBatch provides a mock function for the type MockDB
+func (_mock *MockDB) DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []string) error {
+	ret := _mock.Called(ctx, chunkIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DecrementChunkRefCountBatch")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []string) error); ok {
+		r0 = returnFunc(ctx, chunkIDs)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DecrementChunkRefCountBatch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DecrementChunkRefCountBatch'
+type MockDB_DecrementChunkRefCountBatch_Call struct {
+	*mock.Call
+}
+
+// DecrementChunkRefCountBatch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkIDs []string
+func (_e *MockDB_Expecter) DecrementChunkRefCountBatch(ctx interface{}, chunkIDs interface{}) *MockDB_DecrementChunkRefCountBatch_Call {
+	return &MockDB_DecrementChunkRefCountBatch_Call{Call: _e.mock.On("DecrementChunkRefCountBatch", ctx, chunkIDs)}
+}
+
+func (_c *MockDB_DecrementChunkRefCountBatch_Call) Run(run func(ctx context.Context, chunkIDs []string)) *MockDB_DecrementChunkRefCountBatch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []string
+		if args[1] != nil {
+			arg1 = args[1].([]string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DecrementChunkRefCountBatch_Call) Return(err error) *MockDB_DecrementChunkRefCountBatch_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DecrementChunkRefCountBatch_Call) RunAndReturn(run func(ctx context.Context, chunkIDs []string) error) *MockDB_DecrementChunkRefCountBatch_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -652,6 +895,63 @@ func (_c *MockDB_DeleteBucketWebsite_Call) Return(err error) *MockDB_DeleteBucke
 }
 
 func (_c *MockDB_DeleteBucketWebsite_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteBucketWebsite_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteChunkRegistry provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
+	ret := _mock.Called(ctx, chunkID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteChunkRegistry")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, chunkID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteChunkRegistry_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteChunkRegistry'
+type MockDB_DeleteChunkRegistry_Call struct {
+	*mock.Call
+}
+
+// DeleteChunkRegistry is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+func (_e *MockDB_Expecter) DeleteChunkRegistry(ctx interface{}, chunkID interface{}) *MockDB_DeleteChunkRegistry_Call {
+	return &MockDB_DeleteChunkRegistry_Call{Call: _e.mock.On("DeleteChunkRegistry", ctx, chunkID)}
+}
+
+func (_c *MockDB_DeleteChunkRegistry_Call) Run(run func(ctx context.Context, chunkID string)) *MockDB_DeleteChunkRegistry_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteChunkRegistry_Call) Return(err error) *MockDB_DeleteChunkRegistry_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteChunkRegistry_Call) RunAndReturn(run func(ctx context.Context, chunkID string) error) *MockDB_DeleteChunkRegistry_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1834,6 +2134,208 @@ func (_c *MockDB_GetBucketsNeedingScan_Call) RunAndReturn(run func(ctx context.C
 	return _c
 }
 
+// GetChunkRefCount provides a mock function for the type MockDB
+func (_mock *MockDB) GetChunkRefCount(ctx context.Context, chunkID string) (int, error) {
+	ret := _mock.Called(ctx, chunkID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChunkRefCount")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (int, error)); ok {
+		return returnFunc(ctx, chunkID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) int); ok {
+		r0 = returnFunc(ctx, chunkID)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, chunkID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetChunkRefCount_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChunkRefCount'
+type MockDB_GetChunkRefCount_Call struct {
+	*mock.Call
+}
+
+// GetChunkRefCount is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+func (_e *MockDB_Expecter) GetChunkRefCount(ctx interface{}, chunkID interface{}) *MockDB_GetChunkRefCount_Call {
+	return &MockDB_GetChunkRefCount_Call{Call: _e.mock.On("GetChunkRefCount", ctx, chunkID)}
+}
+
+func (_c *MockDB_GetChunkRefCount_Call) Run(run func(ctx context.Context, chunkID string)) *MockDB_GetChunkRefCount_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetChunkRefCount_Call) Return(n int, err error) *MockDB_GetChunkRefCount_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockDB_GetChunkRefCount_Call) RunAndReturn(run func(ctx context.Context, chunkID string) (int, error)) *MockDB_GetChunkRefCount_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetChunkReplicas provides a mock function for the type MockDB
+func (_mock *MockDB) GetChunkReplicas(ctx context.Context, chunkID string) ([]db.ReplicaInfo, error) {
+	ret := _mock.Called(ctx, chunkID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChunkReplicas")
+	}
+
+	var r0 []db.ReplicaInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]db.ReplicaInfo, error)); ok {
+		return returnFunc(ctx, chunkID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []db.ReplicaInfo); ok {
+		r0 = returnFunc(ctx, chunkID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]db.ReplicaInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, chunkID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetChunkReplicas_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChunkReplicas'
+type MockDB_GetChunkReplicas_Call struct {
+	*mock.Call
+}
+
+// GetChunkReplicas is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+func (_e *MockDB_Expecter) GetChunkReplicas(ctx interface{}, chunkID interface{}) *MockDB_GetChunkReplicas_Call {
+	return &MockDB_GetChunkReplicas_Call{Call: _e.mock.On("GetChunkReplicas", ctx, chunkID)}
+}
+
+func (_c *MockDB_GetChunkReplicas_Call) Run(run func(ctx context.Context, chunkID string)) *MockDB_GetChunkReplicas_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetChunkReplicas_Call) Return(replicaInfos []db.ReplicaInfo, err error) *MockDB_GetChunkReplicas_Call {
+	_c.Call.Return(replicaInfos, err)
+	return _c
+}
+
+func (_c *MockDB_GetChunkReplicas_Call) RunAndReturn(run func(ctx context.Context, chunkID string) ([]db.ReplicaInfo, error)) *MockDB_GetChunkReplicas_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetChunksByServer provides a mock function for the type MockDB
+func (_mock *MockDB) GetChunksByServer(ctx context.Context, serverID string) ([]string, error) {
+	ret := _mock.Called(ctx, serverID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChunksByServer")
+	}
+
+	var r0 []string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]string, error)); ok {
+		return returnFunc(ctx, serverID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []string); ok {
+		r0 = returnFunc(ctx, serverID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, serverID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetChunksByServer_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChunksByServer'
+type MockDB_GetChunksByServer_Call struct {
+	*mock.Call
+}
+
+// GetChunksByServer is a helper method to define mock.On call
+//   - ctx context.Context
+//   - serverID string
+func (_e *MockDB_Expecter) GetChunksByServer(ctx interface{}, serverID interface{}) *MockDB_GetChunksByServer_Call {
+	return &MockDB_GetChunksByServer_Call{Call: _e.mock.On("GetChunksByServer", ctx, serverID)}
+}
+
+func (_c *MockDB_GetChunksByServer_Call) Run(run func(ctx context.Context, serverID string)) *MockDB_GetChunksByServer_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetChunksByServer_Call) Return(strings []string, err error) *MockDB_GetChunksByServer_Call {
+	_c.Call.Return(strings, err)
+	return _c
+}
+
+func (_c *MockDB_GetChunksByServer_Call) RunAndReturn(run func(ctx context.Context, serverID string) ([]string, error)) *MockDB_GetChunksByServer_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetMultipartUpload provides a mock function for the type MockDB
 func (_mock *MockDB) GetMultipartUpload(ctx context.Context, bucket string, key string, uploadID string) (*types.MultipartUpload, error) {
 	ret := _mock.Called(ctx, bucket, key, uploadID)
@@ -2842,6 +3344,200 @@ func (_c *MockDB_GetScanState_Call) Return(lifecycleScanState *db.LifecycleScanS
 }
 
 func (_c *MockDB_GetScanState_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*db.LifecycleScanState, error)) *MockDB_GetScanState_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetZeroRefChunks provides a mock function for the type MockDB
+func (_mock *MockDB) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]db.ZeroRefChunk, error) {
+	ret := _mock.Called(ctx, olderThan, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetZeroRefChunks")
+	}
+
+	var r0 []db.ZeroRefChunk
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) ([]db.ZeroRefChunk, error)); ok {
+		return returnFunc(ctx, olderThan, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) []db.ZeroRefChunk); ok {
+		r0 = returnFunc(ctx, olderThan, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]db.ZeroRefChunk)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, int) error); ok {
+		r1 = returnFunc(ctx, olderThan, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetZeroRefChunks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetZeroRefChunks'
+type MockDB_GetZeroRefChunks_Call struct {
+	*mock.Call
+}
+
+// GetZeroRefChunks is a helper method to define mock.On call
+//   - ctx context.Context
+//   - olderThan time.Time
+//   - limit int
+func (_e *MockDB_Expecter) GetZeroRefChunks(ctx interface{}, olderThan interface{}, limit interface{}) *MockDB_GetZeroRefChunks_Call {
+	return &MockDB_GetZeroRefChunks_Call{Call: _e.mock.On("GetZeroRefChunks", ctx, olderThan, limit)}
+}
+
+func (_c *MockDB_GetZeroRefChunks_Call) Run(run func(ctx context.Context, olderThan time.Time, limit int)) *MockDB_GetZeroRefChunks_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetZeroRefChunks_Call) Return(zeroRefChunks []db.ZeroRefChunk, err error) *MockDB_GetZeroRefChunks_Call {
+	_c.Call.Return(zeroRefChunks, err)
+	return _c
+}
+
+func (_c *MockDB_GetZeroRefChunks_Call) RunAndReturn(run func(ctx context.Context, olderThan time.Time, limit int) ([]db.ZeroRefChunk, error)) *MockDB_GetZeroRefChunks_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IncrementChunkRefCount provides a mock function for the type MockDB
+func (_mock *MockDB) IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error {
+	ret := _mock.Called(ctx, chunkID, size)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IncrementChunkRefCount")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, chunkID, size)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_IncrementChunkRefCount_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IncrementChunkRefCount'
+type MockDB_IncrementChunkRefCount_Call struct {
+	*mock.Call
+}
+
+// IncrementChunkRefCount is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+//   - size int64
+func (_e *MockDB_Expecter) IncrementChunkRefCount(ctx interface{}, chunkID interface{}, size interface{}) *MockDB_IncrementChunkRefCount_Call {
+	return &MockDB_IncrementChunkRefCount_Call{Call: _e.mock.On("IncrementChunkRefCount", ctx, chunkID, size)}
+}
+
+func (_c *MockDB_IncrementChunkRefCount_Call) Run(run func(ctx context.Context, chunkID string, size int64)) *MockDB_IncrementChunkRefCount_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_IncrementChunkRefCount_Call) Return(err error) *MockDB_IncrementChunkRefCount_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_IncrementChunkRefCount_Call) RunAndReturn(run func(ctx context.Context, chunkID string, size int64) error) *MockDB_IncrementChunkRefCount_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IncrementChunkRefCountBatch provides a mock function for the type MockDB
+func (_mock *MockDB) IncrementChunkRefCountBatch(ctx context.Context, chunks []db.ChunkInfo) error {
+	ret := _mock.Called(ctx, chunks)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IncrementChunkRefCountBatch")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []db.ChunkInfo) error); ok {
+		r0 = returnFunc(ctx, chunks)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_IncrementChunkRefCountBatch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IncrementChunkRefCountBatch'
+type MockDB_IncrementChunkRefCountBatch_Call struct {
+	*mock.Call
+}
+
+// IncrementChunkRefCountBatch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunks []db.ChunkInfo
+func (_e *MockDB_Expecter) IncrementChunkRefCountBatch(ctx interface{}, chunks interface{}) *MockDB_IncrementChunkRefCountBatch_Call {
+	return &MockDB_IncrementChunkRefCountBatch_Call{Call: _e.mock.On("IncrementChunkRefCountBatch", ctx, chunks)}
+}
+
+func (_c *MockDB_IncrementChunkRefCountBatch_Call) Run(run func(ctx context.Context, chunks []db.ChunkInfo)) *MockDB_IncrementChunkRefCountBatch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []db.ChunkInfo
+		if args[1] != nil {
+			arg1 = args[1].([]db.ChunkInfo)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_IncrementChunkRefCountBatch_Call) Return(err error) *MockDB_IncrementChunkRefCountBatch_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_IncrementChunkRefCountBatch_Call) RunAndReturn(run func(ctx context.Context, chunks []db.ChunkInfo) error) *MockDB_IncrementChunkRefCountBatch_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -3868,6 +4564,69 @@ func (_c *MockDB_PutPart_Call) Return(err error) *MockDB_PutPart_Call {
 }
 
 func (_c *MockDB_PutPart_Call) RunAndReturn(run func(ctx context.Context, part *types.MultipartPart) error) *MockDB_PutPart_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RemoveChunkReplica provides a mock function for the type MockDB
+func (_mock *MockDB) RemoveChunkReplica(ctx context.Context, chunkID string, serverID string) error {
+	ret := _mock.Called(ctx, chunkID, serverID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RemoveChunkReplica")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, chunkID, serverID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_RemoveChunkReplica_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemoveChunkReplica'
+type MockDB_RemoveChunkReplica_Call struct {
+	*mock.Call
+}
+
+// RemoveChunkReplica is a helper method to define mock.On call
+//   - ctx context.Context
+//   - chunkID string
+//   - serverID string
+func (_e *MockDB_Expecter) RemoveChunkReplica(ctx interface{}, chunkID interface{}, serverID interface{}) *MockDB_RemoveChunkReplica_Call {
+	return &MockDB_RemoveChunkReplica_Call{Call: _e.mock.On("RemoveChunkReplica", ctx, chunkID, serverID)}
+}
+
+func (_c *MockDB_RemoveChunkReplica_Call) Run(run func(ctx context.Context, chunkID string, serverID string)) *MockDB_RemoveChunkReplica_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_RemoveChunkReplica_Call) Return(err error) *MockDB_RemoveChunkReplica_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_RemoveChunkReplica_Call) RunAndReturn(run func(ctx context.Context, chunkID string, serverID string) error) *MockDB_RemoveChunkReplica_Call {
 	_c.Call.Return(run)
 	return _c
 }

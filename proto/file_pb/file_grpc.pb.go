@@ -31,6 +31,12 @@ const (
 	FileService_BatchDeleteObjects_FullMethodName     = "/file_pb.FileService/BatchDeleteObjects"
 	FileService_DecrementRefCount_FullMethodName      = "/file_pb.FileService/DecrementRefCount"
 	FileService_DecrementRefCountBatch_FullMethodName = "/file_pb.FileService/DecrementRefCountBatch"
+	FileService_MigrateChunk_FullMethodName           = "/file_pb.FileService/MigrateChunk"
+	FileService_ReceiveChunk_FullMethodName           = "/file_pb.FileService/ReceiveChunk"
+	FileService_GetChunk_FullMethodName               = "/file_pb.FileService/GetChunk"
+	FileService_ListLocalChunks_FullMethodName        = "/file_pb.FileService/ListLocalChunks"
+	FileService_GetLocalChunk_FullMethodName          = "/file_pb.FileService/GetLocalChunk"
+	FileService_DeleteLocalChunk_FullMethodName       = "/file_pb.FileService/DeleteLocalChunk"
 )
 
 // FileServiceClient is the client API for FileService service.
@@ -49,6 +55,17 @@ type FileServiceClient interface {
 	// RefCount management for GC
 	DecrementRefCount(ctx context.Context, in *DecrementRefCountRequest, opts ...grpc.CallOption) (*DecrementRefCountResponse, error)
 	DecrementRefCountBatch(ctx context.Context, in *DecrementRefCountBatchRequest, opts ...grpc.CallOption) (*DecrementRefCountBatchResponse, error)
+	// Chunk migration for cluster rebalancing
+	// MigrateChunk transfers a chunk to a target server (called by manager or admin)
+	MigrateChunk(ctx context.Context, in *MigrateChunkRequest, opts ...grpc.CallOption) (*MigrateChunkResponse, error)
+	// ReceiveChunk receives a chunk from a peer file server (peer-to-peer transfer)
+	ReceiveChunk(ctx context.Context, opts ...grpc.CallOption) (FileService_ReceiveChunkClient, error)
+	// GetChunk retrieves raw chunk data by ID (used for migration)
+	GetChunk(ctx context.Context, in *GetChunkRequest, opts ...grpc.CallOption) (FileService_GetChunkClient, error)
+	// Debug RPCs for testing and diagnostics
+	ListLocalChunks(ctx context.Context, in *ListLocalChunksRequest, opts ...grpc.CallOption) (FileService_ListLocalChunksClient, error)
+	GetLocalChunk(ctx context.Context, in *GetLocalChunkRequest, opts ...grpc.CallOption) (*LocalChunkInfo, error)
+	DeleteLocalChunk(ctx context.Context, in *DeleteLocalChunkRequest, opts ...grpc.CallOption) (*DeleteLocalChunkResponse, error)
 }
 
 type fileServiceClient struct {
@@ -229,6 +246,131 @@ func (c *fileServiceClient) DecrementRefCountBatch(ctx context.Context, in *Decr
 	return out, nil
 }
 
+func (c *fileServiceClient) MigrateChunk(ctx context.Context, in *MigrateChunkRequest, opts ...grpc.CallOption) (*MigrateChunkResponse, error) {
+	out := new(MigrateChunkResponse)
+	err := c.cc.Invoke(ctx, FileService_MigrateChunk_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) ReceiveChunk(ctx context.Context, opts ...grpc.CallOption) (FileService_ReceiveChunkClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileService_ServiceDesc.Streams[3], FileService_ReceiveChunk_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileServiceReceiveChunkClient{stream}
+	return x, nil
+}
+
+type FileService_ReceiveChunkClient interface {
+	Send(*ReceiveChunkRequest) error
+	CloseAndRecv() (*ReceiveChunkResponse, error)
+	grpc.ClientStream
+}
+
+type fileServiceReceiveChunkClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileServiceReceiveChunkClient) Send(m *ReceiveChunkRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *fileServiceReceiveChunkClient) CloseAndRecv() (*ReceiveChunkResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(ReceiveChunkResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileServiceClient) GetChunk(ctx context.Context, in *GetChunkRequest, opts ...grpc.CallOption) (FileService_GetChunkClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileService_ServiceDesc.Streams[4], FileService_GetChunk_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileServiceGetChunkClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type FileService_GetChunkClient interface {
+	Recv() (*GetChunkResponse, error)
+	grpc.ClientStream
+}
+
+type fileServiceGetChunkClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileServiceGetChunkClient) Recv() (*GetChunkResponse, error) {
+	m := new(GetChunkResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileServiceClient) ListLocalChunks(ctx context.Context, in *ListLocalChunksRequest, opts ...grpc.CallOption) (FileService_ListLocalChunksClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileService_ServiceDesc.Streams[5], FileService_ListLocalChunks_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileServiceListLocalChunksClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type FileService_ListLocalChunksClient interface {
+	Recv() (*LocalChunkInfo, error)
+	grpc.ClientStream
+}
+
+type fileServiceListLocalChunksClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileServiceListLocalChunksClient) Recv() (*LocalChunkInfo, error) {
+	m := new(LocalChunkInfo)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileServiceClient) GetLocalChunk(ctx context.Context, in *GetLocalChunkRequest, opts ...grpc.CallOption) (*LocalChunkInfo, error) {
+	out := new(LocalChunkInfo)
+	err := c.cc.Invoke(ctx, FileService_GetLocalChunk_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileServiceClient) DeleteLocalChunk(ctx context.Context, in *DeleteLocalChunkRequest, opts ...grpc.CallOption) (*DeleteLocalChunkResponse, error) {
+	out := new(DeleteLocalChunkResponse)
+	err := c.cc.Invoke(ctx, FileService_DeleteLocalChunk_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FileServiceServer is the server API for FileService service.
 // All implementations must embed UnimplementedFileServiceServer
 // for forward compatibility
@@ -245,6 +387,17 @@ type FileServiceServer interface {
 	// RefCount management for GC
 	DecrementRefCount(context.Context, *DecrementRefCountRequest) (*DecrementRefCountResponse, error)
 	DecrementRefCountBatch(context.Context, *DecrementRefCountBatchRequest) (*DecrementRefCountBatchResponse, error)
+	// Chunk migration for cluster rebalancing
+	// MigrateChunk transfers a chunk to a target server (called by manager or admin)
+	MigrateChunk(context.Context, *MigrateChunkRequest) (*MigrateChunkResponse, error)
+	// ReceiveChunk receives a chunk from a peer file server (peer-to-peer transfer)
+	ReceiveChunk(FileService_ReceiveChunkServer) error
+	// GetChunk retrieves raw chunk data by ID (used for migration)
+	GetChunk(*GetChunkRequest, FileService_GetChunkServer) error
+	// Debug RPCs for testing and diagnostics
+	ListLocalChunks(*ListLocalChunksRequest, FileService_ListLocalChunksServer) error
+	GetLocalChunk(context.Context, *GetLocalChunkRequest) (*LocalChunkInfo, error)
+	DeleteLocalChunk(context.Context, *DeleteLocalChunkRequest) (*DeleteLocalChunkResponse, error)
 	mustEmbedUnimplementedFileServiceServer()
 }
 
@@ -284,6 +437,24 @@ func (UnimplementedFileServiceServer) DecrementRefCount(context.Context, *Decrem
 }
 func (UnimplementedFileServiceServer) DecrementRefCountBatch(context.Context, *DecrementRefCountBatchRequest) (*DecrementRefCountBatchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DecrementRefCountBatch not implemented")
+}
+func (UnimplementedFileServiceServer) MigrateChunk(context.Context, *MigrateChunkRequest) (*MigrateChunkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MigrateChunk not implemented")
+}
+func (UnimplementedFileServiceServer) ReceiveChunk(FileService_ReceiveChunkServer) error {
+	return status.Errorf(codes.Unimplemented, "method ReceiveChunk not implemented")
+}
+func (UnimplementedFileServiceServer) GetChunk(*GetChunkRequest, FileService_GetChunkServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetChunk not implemented")
+}
+func (UnimplementedFileServiceServer) ListLocalChunks(*ListLocalChunksRequest, FileService_ListLocalChunksServer) error {
+	return status.Errorf(codes.Unimplemented, "method ListLocalChunks not implemented")
+}
+func (UnimplementedFileServiceServer) GetLocalChunk(context.Context, *GetLocalChunkRequest) (*LocalChunkInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLocalChunk not implemented")
+}
+func (UnimplementedFileServiceServer) DeleteLocalChunk(context.Context, *DeleteLocalChunkRequest) (*DeleteLocalChunkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteLocalChunk not implemented")
 }
 func (UnimplementedFileServiceServer) mustEmbedUnimplementedFileServiceServer() {}
 
@@ -510,6 +681,128 @@ func _FileService_DecrementRefCountBatch_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FileService_MigrateChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MigrateChunkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).MigrateChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_MigrateChunk_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).MigrateChunk(ctx, req.(*MigrateChunkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_ReceiveChunk_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FileServiceServer).ReceiveChunk(&fileServiceReceiveChunkServer{stream})
+}
+
+type FileService_ReceiveChunkServer interface {
+	SendAndClose(*ReceiveChunkResponse) error
+	Recv() (*ReceiveChunkRequest, error)
+	grpc.ServerStream
+}
+
+type fileServiceReceiveChunkServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileServiceReceiveChunkServer) SendAndClose(m *ReceiveChunkResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *fileServiceReceiveChunkServer) Recv() (*ReceiveChunkRequest, error) {
+	m := new(ReceiveChunkRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _FileService_GetChunk_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetChunkRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FileServiceServer).GetChunk(m, &fileServiceGetChunkServer{stream})
+}
+
+type FileService_GetChunkServer interface {
+	Send(*GetChunkResponse) error
+	grpc.ServerStream
+}
+
+type fileServiceGetChunkServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileServiceGetChunkServer) Send(m *GetChunkResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _FileService_ListLocalChunks_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ListLocalChunksRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FileServiceServer).ListLocalChunks(m, &fileServiceListLocalChunksServer{stream})
+}
+
+type FileService_ListLocalChunksServer interface {
+	Send(*LocalChunkInfo) error
+	grpc.ServerStream
+}
+
+type fileServiceListLocalChunksServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileServiceListLocalChunksServer) Send(m *LocalChunkInfo) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _FileService_GetLocalChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLocalChunkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).GetLocalChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_GetLocalChunk_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).GetLocalChunk(ctx, req.(*GetLocalChunkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FileService_DeleteLocalChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteLocalChunkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServiceServer).DeleteLocalChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FileService_DeleteLocalChunk_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServiceServer).DeleteLocalChunk(ctx, req.(*DeleteLocalChunkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // FileService_ServiceDesc is the grpc.ServiceDesc for FileService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -549,6 +842,18 @@ var FileService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DecrementRefCountBatch",
 			Handler:    _FileService_DecrementRefCountBatch_Handler,
 		},
+		{
+			MethodName: "MigrateChunk",
+			Handler:    _FileService_MigrateChunk_Handler,
+		},
+		{
+			MethodName: "GetLocalChunk",
+			Handler:    _FileService_GetLocalChunk_Handler,
+		},
+		{
+			MethodName: "DeleteLocalChunk",
+			Handler:    _FileService_DeleteLocalChunk_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -564,6 +869,21 @@ var FileService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "GetObjectRange",
 			Handler:       _FileService_GetObjectRange_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ReceiveChunk",
+			Handler:       _FileService_ReceiveChunk_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "GetChunk",
+			Handler:       _FileService_GetChunk_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ListLocalChunks",
+			Handler:       _FileService_ListLocalChunks_Handler,
 			ServerStreams: true,
 		},
 	},

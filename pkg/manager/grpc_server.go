@@ -113,14 +113,14 @@ func (ms *ManagerServer) UnregisterService(ctx context.Context, req *manager_pb.
 }
 
 func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.HeartbeatRequest) (*manager_pb.HeartbeatResponse, error) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
 	serviceID := deriveServiceID(req.ServiceType, req.Location)
+
+	ms.mu.Lock()
 	registry := ms.getRegistry(req.ServiceType)
 
 	reg, exists := registry[serviceID]
 	if !exists {
+		ms.mu.Unlock()
 		logger.Warn().
 			Str("service_id", serviceID).
 			Msg("Received heartbeat from unregistered service")
@@ -132,12 +132,51 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 
 	reg.LastHeartbeat = time.Now()
 
-	if reg.Status == ServiceOffline {
+	// Check if status change is needed (Offline → Active)
+	needsStatusUpdate := reg.Status == ServiceOffline
+	ms.mu.Unlock()
+
+	// Route status change through Raft for atomicity
+	if needsStatusUpdate {
 		logger.Info().
 			Str("service_id", serviceID).
-			Msg("Service came back online")
-		reg.Status = ServiceActive
-		ms.topologyVersion++
+			Msg("Service came back online - updating via Raft")
+
+		// Check if we're leader
+		leaderAddr, err := forwardOrError(ms.raftNode)
+		if err != nil {
+			logger.Warn().Err(err).Str("service_id", serviceID).Msg("Failed to check leader for status update")
+			// Continue anyway - status will be updated on next heartbeat
+		} else if leaderAddr != "" {
+			// We're not the leader - the actual status update should happen on leader
+			// Heartbeats are processed locally, but status changes need leader consensus
+			// This is expected: follower heartbeat updates LastHeartbeat locally, but
+			// status recovery will only be durable when heartbeat reaches leader
+			logger.Debug().Str("leader", leaderAddr).Msg("Not leader, skipping status update (will sync via heartbeat to leader)")
+		} else {
+			// We are the leader - apply through Raft
+			statusUpdate := ServiceStatusUpdate{
+				ServiceType: req.ServiceType,
+				ServiceID:   serviceID,
+				NewStatus:   ServiceActive,
+			}
+			if err := ms.applyCommand(CommandUpdateServiceStatus, statusUpdate); err != nil {
+				logger.Warn().Err(err).Str("service_id", serviceID).Msg("Failed to apply status update via Raft")
+			}
+		}
+	}
+
+	// Re-acquire lock for the rest of the updates
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	// Re-fetch reg in case it was modified
+	reg, exists = registry[serviceID]
+	if !exists {
+		return &manager_pb.HeartbeatResponse{
+			TopologyChanged: false,
+			TopologyVersion: ms.topologyVersion,
+		}, nil
 	}
 
 	// Track if we need to update capacity cache
@@ -149,6 +188,13 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 				reg.StorageBackends = fileMetadata.StorageBackends
 				capacityUpdated = true
 			}
+		}
+	}
+
+	// Check for data loss condition from metadata service heartbeats
+	if req.ServiceType == manager_pb.ServiceType_METADATA_SERVICE {
+		if metadataInfo := req.GetMetadataService(); metadataInfo != nil {
+			ms.checkDataLossCondition(serviceID, metadataInfo.BucketCount)
 		}
 	}
 
@@ -293,6 +339,7 @@ func (ms *ManagerServer) notifyTopologySubscribers(eventType manager_pb.Topology
 		case ch <- event:
 		default:
 			logger.Warn().Uint64("sub_id", subID).Msg("Topology subscriber channel full, dropping event")
+			TopologyEventsDropped.Inc()
 		}
 	}
 }
@@ -396,6 +443,7 @@ func (ms *ManagerServer) notifyCollectionSubscribers(eventType manager_pb.Collec
 		case ch <- event:
 		default:
 			logger.Warn().Uint64("sub_id", subID).Msg("Collection subscriber channel full, dropping event")
+			CollectionEventsDropped.Inc()
 		}
 	}
 }
@@ -558,6 +606,18 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 		logger.Debug().Str("leader", leaderAddr).Str("bucket", req.Name).Msg("Forwarding CreateCollection to leader")
 		return ms.leaderForwarder.ForwardCreateCollection(ctx, leaderAddr, req)
 	}
+
+	// Check if bucket creates are frozen due to data loss detection
+	ms.mu.RLock()
+	if ms.collectionsRecoveryRequired {
+		ms.mu.RUnlock()
+		logger.Warn().Str("bucket", req.Name).Msg("CreateCollection rejected: manager in recovery mode")
+		return &manager_pb.CreateCollectionResponse{
+			Success: false,
+			Message: "manager in recovery mode - bucket creates frozen until data reconciliation",
+		}, status.Error(codes.FailedPrecondition, "manager in recovery mode - bucket creates frozen until data reconciliation")
+	}
+	ms.mu.RUnlock()
 
 	// We are the local leader. Check if we need to forward to primary region.
 	// First do a fast local cache check - if bucket exists locally, reject immediately.

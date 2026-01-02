@@ -155,3 +155,60 @@ func (fc *FileClient) Ping() *file_pb.PingResponse {
 	require.NoError(fc.t, err, "failed to ping file server")
 	return resp
 }
+
+// ListLocalChunks returns all chunks stored locally on the file server
+func (fc *FileClient) ListLocalChunks() []*file_pb.LocalChunkInfo {
+	fc.t.Helper()
+
+	ctx, cancel := WithTimeout(context.Background())
+	defer cancel()
+
+	stream, err := fc.FileServiceClient.ListLocalChunks(ctx, &file_pb.ListLocalChunksRequest{})
+	require.NoError(fc.t, err, "failed to open ListLocalChunks stream")
+
+	var chunks []*file_pb.LocalChunkInfo
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(fc.t, err, "failed to receive chunk info")
+		chunks = append(chunks, chunk)
+	}
+	return chunks
+}
+
+// GetLocalChunk returns info about a specific locally stored chunk
+func (fc *FileClient) GetLocalChunk(chunkID string) (*file_pb.LocalChunkInfo, error) {
+	fc.t.Helper()
+
+	ctx, cancel := WithShortTimeout(context.Background())
+	defer cancel()
+
+	return fc.FileServiceClient.GetLocalChunk(ctx, &file_pb.GetLocalChunkRequest{
+		ChunkId: chunkID,
+	})
+}
+
+// GetLocalChunkOrFail returns info about a specific locally stored chunk, failing on error
+func (fc *FileClient) GetLocalChunkOrFail(chunkID string) *file_pb.LocalChunkInfo {
+	fc.t.Helper()
+
+	chunk, err := fc.GetLocalChunk(chunkID)
+	require.NoError(fc.t, err, "failed to get local chunk %s", chunkID)
+	return chunk
+}
+
+// DeleteLocalChunk deletes a chunk from local storage (debug/test only)
+func (fc *FileClient) DeleteLocalChunk(chunkID string) *file_pb.DeleteLocalChunkResponse {
+	fc.t.Helper()
+
+	ctx, cancel := WithShortTimeout(context.Background())
+	defer cancel()
+
+	resp, err := fc.FileServiceClient.DeleteLocalChunk(ctx, &file_pb.DeleteLocalChunkRequest{
+		ChunkId: chunkID,
+	})
+	require.NoError(fc.t, err, "failed to delete local chunk %s", chunkID)
+	return resp
+}

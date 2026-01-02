@@ -20,7 +20,7 @@ import (
 // GET /{bucket}?logging
 //
 // This API works in both community and enterprise editions.
-// Actual log collection and delivery requires enterprise license with FeatureAuditLog.
+// Actual log collection and delivery requires enterprise license with FeatureAccessLog.
 func (s *MetadataServer) GetBucketLoggingHandler(d *data.Data, w http.ResponseWriter) {
 	// Build response
 	response := s3types.BucketLoggingStatus{}
@@ -70,7 +70,7 @@ func (s *MetadataServer) GetBucketLoggingHandler(d *data.Data, w http.ResponseWr
 // PUT /{bucket}?logging
 //
 // This API works in both community and enterprise editions.
-// Actual log collection and delivery requires enterprise license with FeatureAuditLog.
+// Actual log collection and delivery requires enterprise license with FeatureAccessLog.
 func (s *MetadataServer) PutBucketLoggingHandler(d *data.Data, w http.ResponseWriter) {
 	// Parse request body
 	body, err := io.ReadAll(d.Req.Body)
@@ -130,18 +130,6 @@ func (s *MetadataServer) PutBucketLoggingHandler(d *data.Data, w http.ResponseWr
 			bucket.Logging = nil
 		}
 		s.bucketStore.SetBucket(d.S3Info.Bucket, bucket)
-	}
-
-	if config.TargetBucket != "" {
-		logger.Info().
-			Str("source", d.S3Info.Bucket).
-			Str("target", config.TargetBucket).
-			Str("prefix", config.TargetPrefix).
-			Msg("bucket logging enabled")
-	} else {
-		logger.Info().
-			Str("bucket", d.S3Info.Bucket).
-			Msg("bucket logging disabled")
 	}
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))

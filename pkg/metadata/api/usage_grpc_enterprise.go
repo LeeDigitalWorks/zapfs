@@ -41,7 +41,7 @@ func newUsageService(cfg UsageServiceConfig) usage_pb.UsageReportingServiceServe
 // RequestReport queues an async usage report generation job.
 func (s *usageServiceEnterprise) RequestReport(ctx context.Context, req *usage_pb.ReportRequest) (*usage_pb.ReportJob, error) {
 	if !usage.IsUsageReportingEnabled() {
-		return nil, status.Error(codes.FailedPrecondition, "usage reporting requires enterprise license with AdvancedMetrics or MultiTenancy feature")
+		return nil, status.Error(codes.FailedPrecondition, "usage reporting requires enterprise license with AdvancedMetrics feature")
 	}
 
 	if req.OwnerId == "" {

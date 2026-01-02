@@ -9,14 +9,12 @@ package usage
 import "github.com/LeeDigitalWorks/zapfs/enterprise/license"
 
 // IsUsageReportingEnabled checks if usage reporting is enabled via license.
-// Returns true if the license includes FeatureAdvancedMetrics or FeatureMultiTenancy.
+// Returns true if the license includes FeatureAdvancedMetrics.
 func IsUsageReportingEnabled() bool {
 	mgr := license.GetManager()
 	if mgr == nil {
 		return false
 	}
 
-	// Check for either AdvancedMetrics or MultiTenancy feature
-	return mgr.CheckFeature(license.FeatureAdvancedMetrics) == nil ||
-		mgr.CheckFeature(license.FeatureMultiTenancy) == nil
+	return mgr.CheckFeature(license.FeatureAdvancedMetrics) == nil
 }

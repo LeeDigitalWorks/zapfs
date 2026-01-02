@@ -8,7 +8,6 @@
 // - In-memory - for testing only
 //
 // Community use cases:
-// - GC RefCount decrements (retry failed operations)
 // - Object/version cleanup
 // - Lifecycle transitions
 //
@@ -16,6 +15,9 @@
 // - Cross-region replication (CRR)
 // - Audit log shipping
 // - Webhook delivery
+//
+// Note: GC RefCount decrements are now handled by the centralized chunk_registry
+// in the metadata database, eliminating the need for distributed task queues.
 package taskqueue
 
 import (
@@ -36,10 +38,9 @@ type TaskType string
 
 // Community task types
 const (
-	TaskTypeGCDecrement TaskType = "gc_decrement" // RefCount decrements
-	TaskTypeCleanup     TaskType = "cleanup"      // Object/version cleanup
-	TaskTypeLifecycle   TaskType = "lifecycle"    // Lifecycle transitions
-	TaskTypeEvent       TaskType = "event"        // S3 event notification
+	TaskTypeCleanup   TaskType = "cleanup"   // Object/version cleanup
+	TaskTypeLifecycle TaskType = "lifecycle" // Lifecycle transitions
+	TaskTypeEvent     TaskType = "event"     // S3 event notification
 )
 
 // LifecyclePayload is the payload for TaskTypeLifecycle tasks.

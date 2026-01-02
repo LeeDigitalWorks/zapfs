@@ -151,3 +151,107 @@ document = '''
 }
 '''
 
+# =============================================================================
+# LDAP Integration (Enterprise Feature)
+# =============================================================================
+# Enables LDAP/Active Directory authentication for S3 access keys.
+# Users are authenticated against LDAP, but S3 access keys are stored locally.
+# Requires FeatureLDAP license.
+#
+# Uncomment and configure for LDAP authentication:
+#
+# [ldap]
+# url = "ldap://ldap.example.com:389"       # or ldaps://ldap.example.com:636
+# bind_dn = "cn=admin,dc=example,dc=com"    # Service account for LDAP queries
+# bind_pass = "admin_password"              # Service account password
+# base_dn = "dc=example,dc=com"             # Base DN for user searches
+# user_filter = "(uid=%s)"                  # User search filter (%s = username)
+# username_attr = "uid"                     # Attribute containing username
+# email_attr = "mail"                       # Attribute containing email
+# group_attr = "memberOf"                   # Attribute containing group memberships
+# required_group = ""                       # Optional: require membership in this group
+# start_tls = false                         # Upgrade connection with StartTLS
+# pool_size = 5                             # Connection pool size
+# timeout = "10s"                           # Connection timeout
+#
+# # Group to policy mapping (LDAP group DN -> ZapFS policy names)
+# [ldap.group_policy_map]
+# "cn=admins,ou=groups,dc=example,dc=com" = ["FullAccess"]
+# "cn=developers,ou=groups,dc=example,dc=com" = ["DevBucketAccess", "ReadOnly"]
+# "cn=readonly,ou=groups,dc=example,dc=com" = ["ReadOnly"]
+
+# =============================================================================
+# OIDC Integration (Enterprise Feature)
+# =============================================================================
+# Enables OpenID Connect authentication for S3 access keys.
+# Users authenticate via SSO, then S3 access keys are issued locally.
+# Requires FeatureOIDC license.
+#
+# Uncomment and configure for OIDC authentication:
+#
+# [oidc]
+# issuer = "https://accounts.google.com"              # OIDC provider issuer URL
+# client_id = "your-client-id.apps.googleusercontent.com"
+# client_secret = "your-client-secret"                # Optional for public clients
+# redirect_url = "http://localhost:8060/v1/oidc/callback"  # Must match provider config
+# scopes = ["openid", "email", "profile"]             # Scopes to request
+# username_claim = "email"                            # Claim to use as username (email, sub, preferred_username)
+# groups_claim = "groups"                             # Claim containing group memberships (optional)
+# required_groups = []                                # Optional: require membership in these groups
+# allowed_domains = []                                # Optional: restrict to email domains (e.g., ["example.com"])
+#
+# # Group to policy mapping (OIDC group claim -> ZapFS policy names)
+# [oidc.group_policy_map]
+# "admin" = ["FullAccess"]
+# "developers" = ["DevBucketAccess", "ReadOnly"]
+# "readonly" = ["ReadOnly"]
+
+# =============================================================================
+# External KMS Integration (Enterprise Feature)
+# =============================================================================
+# Enables external Key Management Service for encryption keys.
+# Supports AWS KMS, HashiCorp Vault Transit, and more.
+# Requires FeatureKMS license.
+#
+# When configured, external KMS is used for master key operations instead of
+# the internal ZAPFS_IAM_MASTER_KEY environment variable.
+
+# -----------------------------------------------------------------------------
+# AWS KMS Configuration
+# -----------------------------------------------------------------------------
+# Uses AWS Key Management Service for envelope encryption.
+#
+# [kms]
+# provider = "aws"
+# default_key_id = "alias/zapfs-master-key"  # Key alias or ARN
+#
+# [kms.aws]
+# region = "us-east-1"
+# # Optional: explicit credentials (otherwise uses AWS credential chain)
+# # access_key_id = "AKIAIOSFODNN7EXAMPLE"
+# # secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+# # Optional: custom endpoint (for LocalStack testing)
+# # endpoint = "http://localhost:4566"
+# # Optional: cross-account access via role assumption
+# # role_arn = "arn:aws:iam::123456789012:role/ZapFSKMSRole"
+
+# -----------------------------------------------------------------------------
+# HashiCorp Vault Transit Configuration
+# -----------------------------------------------------------------------------
+# Uses Vault Transit secrets engine for envelope encryption.
+#
+# [kms]
+# provider = "vault"
+# default_key_id = "zapfs-master-key"  # Transit key name
+#
+# [kms.vault]
+# address = "https://vault.example.com:8200"
+# # Token authentication (or use VAULT_TOKEN env var)
+# # token = "hvs.xxxxxxxxxxxxx"
+# # Optional: Transit mount path (default: "transit")
+# # mount_path = "transit"
+# # Optional: Vault Enterprise namespace
+# # namespace = "my-namespace"
+# # Optional: TLS configuration
+# # tls_ca_cert = "/etc/vault/ca.pem"
+# # tls_insecure = false

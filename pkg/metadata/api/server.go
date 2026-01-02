@@ -86,7 +86,7 @@ type MetadataServer struct {
 	usageAggregator *usage.Aggregator
 	usageReporter   *usage.Reporter
 
-	// Access log collector (enterprise: FeatureAuditLog)
+	// Access log collector (enterprise: FeatureAccessLog)
 	accessLogCollector AccessLogCollector
 }
 
@@ -112,7 +112,7 @@ type ServerConfig struct {
 	ReplicationCredentials ReplicationCredentials  // For authenticating to remote regions
 	UsageConfig        usage.Config         // Usage reporting configuration
 	UsageStore         usage.Store          // Usage data store (nil = use NopStore)
-	AccessLogCollector AccessLogCollector   // Access log collector (enterprise: FeatureAuditLog)
+	AccessLogCollector AccessLogCollector   // Access log collector (enterprise: FeatureAccessLog)
 	Emitter            *events.Emitter      // Event emitter for S3 notifications (enterprise: FeatureEvents)
 
 	// Lifecycle scanner configuration (community feature)
@@ -220,7 +220,7 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 	// Set IAM service if provided (for KMS operations)
 	ms.iamService = cfg.IAMService
 
-	// Set access log collector if provided (enterprise: FeatureAuditLog)
+	// Set access log collector if provided (enterprise: FeatureAccessLog)
 	ms.accessLogCollector = cfg.AccessLogCollector
 
 	// Start usage collector, aggregator, and report processor
@@ -362,8 +362,8 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		// =====================================================================
 		// bucket_config.go - Logging, payment, acceleration, notifications
 		// =====================================================================
-		s3action.GetBucketLogging:                   ms.GetBucketLoggingHandler,    // Enterprise: FeatureAuditLog
-		s3action.PutBucketLogging:                   ms.PutBucketLoggingHandler,    // Enterprise: FeatureAuditLog
+		s3action.GetBucketLogging:                   ms.GetBucketLoggingHandler,    // Enterprise: FeatureAccessLog
+		s3action.PutBucketLogging:                   ms.PutBucketLoggingHandler,    // Enterprise: FeatureAccessLog
 		s3action.GetBucketRequestPayment:            ms.GetBucketRequestPaymentHandler,
 		s3action.PutBucketRequestPayment:            ms.PutBucketRequestPaymentHandler,
 		s3action.GetBucketAccelerateConfiguration:   ms.GetBucketAccelerateConfigurationHandler,

@@ -20,6 +20,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// chunkRegistryEntry is an in-memory chunk registry entry
+type chunkRegistryEntry struct {
+	size         int64
+	refCount     int
+	zeroRefSince int64
+	createdAt    int64
+}
+
 // DB is an in-memory database implementation for testing.
 // It stores data in maps and provides basic CRUD operations.
 type DB struct {
@@ -43,6 +51,10 @@ type DB struct {
 	ownershipControls map[string]*s3types.OwnershipControls
 	logging           map[string]*db.BucketLoggingConfig
 	notifications     map[string]*s3types.NotificationConfiguration
+
+	// Chunk registry for centralized RefCount tracking
+	chunkRegistry map[string]*chunkRegistryEntry         // key: chunkID
+	chunkReplicas map[string]map[string]db.ReplicaInfo   // key: chunkID -> serverID -> ReplicaInfo
 }
 
 // New creates a new in-memory database for testing.
@@ -66,6 +78,8 @@ func New() *DB {
 		ownershipControls: make(map[string]*s3types.OwnershipControls),
 		logging:           make(map[string]*db.BucketLoggingConfig),
 		notifications:     make(map[string]*s3types.NotificationConfiguration),
+		chunkRegistry:     make(map[string]*chunkRegistryEntry),
+		chunkReplicas:     make(map[string]map[string]db.ReplicaInfo),
 	}
 }
 
@@ -354,6 +368,12 @@ func (d *DB) UpdateBucketVersioning(ctx context.Context, bucket string, versioni
 	}
 	b.Versioning = versioning
 	return nil
+}
+
+func (d *DB) CountBuckets(ctx context.Context) (int64, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return int64(len(d.buckets)), nil
 }
 
 // ============================================================================
@@ -1003,6 +1023,173 @@ func (d *DB) GetBucketsNeedingScan(ctx context.Context, minAge time.Duration, li
 }
 
 func (d *DB) ResetScanState(ctx context.Context, bucket string) error {
+	return nil
+}
+
+// ============================================================================
+// Chunk Registry Store
+// ============================================================================
+
+func (d *DB) IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if entry, exists := d.chunkRegistry[chunkID]; exists {
+		entry.refCount++
+		entry.zeroRefSince = 0
+	} else {
+		d.chunkRegistry[chunkID] = &chunkRegistryEntry{
+			size:      size,
+			refCount:  1,
+			createdAt: time.Now().UnixNano(),
+		}
+	}
+	return nil
+}
+
+func (d *DB) DecrementChunkRefCount(ctx context.Context, chunkID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	entry, exists := d.chunkRegistry[chunkID]
+	if !exists {
+		return db.ErrChunkNotFound
+	}
+
+	if entry.refCount <= 0 {
+		return db.ErrChunkNotFound
+	}
+
+	entry.refCount--
+	if entry.refCount == 0 {
+		entry.zeroRefSince = time.Now().UnixNano()
+	}
+	return nil
+}
+
+func (d *DB) IncrementChunkRefCountBatch(ctx context.Context, chunks []db.ChunkInfo) error {
+	for _, chunk := range chunks {
+		if err := d.IncrementChunkRefCount(ctx, chunk.ChunkID, chunk.Size); err != nil {
+			return err
+		}
+		if chunk.ServerID != "" {
+			if err := d.AddChunkReplica(ctx, chunk.ChunkID, chunk.ServerID, chunk.BackendID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (d *DB) DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []string) error {
+	for _, chunkID := range chunkIDs {
+		if err := d.DecrementChunkRefCount(ctx, chunkID); err != nil && err != db.ErrChunkNotFound {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *DB) GetChunkRefCount(ctx context.Context, chunkID string) (int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	entry, exists := d.chunkRegistry[chunkID]
+	if !exists {
+		return 0, db.ErrChunkNotFound
+	}
+	return entry.refCount, nil
+}
+
+func (d *DB) AddChunkReplica(ctx context.Context, chunkID, serverID, backendID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.chunkReplicas[chunkID] == nil {
+		d.chunkReplicas[chunkID] = make(map[string]db.ReplicaInfo)
+	}
+	d.chunkReplicas[chunkID][serverID] = db.ReplicaInfo{
+		ServerID:   serverID,
+		BackendID:  backendID,
+		VerifiedAt: time.Now().UnixNano(),
+	}
+	return nil
+}
+
+func (d *DB) RemoveChunkReplica(ctx context.Context, chunkID, serverID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if replicas, exists := d.chunkReplicas[chunkID]; exists {
+		delete(replicas, serverID)
+	}
+	return nil
+}
+
+func (d *DB) GetChunkReplicas(ctx context.Context, chunkID string) ([]db.ReplicaInfo, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	replicas, exists := d.chunkReplicas[chunkID]
+	if !exists {
+		return nil, nil
+	}
+
+	result := make([]db.ReplicaInfo, 0, len(replicas))
+	for _, r := range replicas {
+		result = append(result, r)
+	}
+	return result, nil
+}
+
+func (d *DB) GetChunksByServer(ctx context.Context, serverID string) ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var chunkIDs []string
+	for chunkID, replicas := range d.chunkReplicas {
+		if _, exists := replicas[serverID]; exists {
+			chunkIDs = append(chunkIDs, chunkID)
+		}
+	}
+	return chunkIDs, nil
+}
+
+func (d *DB) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]db.ZeroRefChunk, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	cutoff := olderThan.UnixNano()
+	var result []db.ZeroRefChunk
+
+	for chunkID, entry := range d.chunkRegistry {
+		if entry.refCount == 0 && entry.zeroRefSince > 0 && entry.zeroRefSince < cutoff {
+			chunk := db.ZeroRefChunk{
+				ChunkID: chunkID,
+				Size:    entry.size,
+			}
+
+			if replicas, exists := d.chunkReplicas[chunkID]; exists {
+				for _, r := range replicas {
+					chunk.Replicas = append(chunk.Replicas, r)
+				}
+			}
+
+			result = append(result, chunk)
+			if len(result) >= limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+func (d *DB) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	delete(d.chunkRegistry, chunkID)
+	delete(d.chunkReplicas, chunkID)
 	return nil
 }
 

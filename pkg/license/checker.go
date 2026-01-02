@@ -17,7 +17,7 @@ type Feature string
 
 // Enterprise features that require a license.
 const (
-	FeatureAuditLog        Feature = "audit_log"
+	FeatureAccessLog       Feature = "access_log"
 	FeatureEvents          Feature = "events"
 	FeatureLDAP            Feature = "ldap"
 	FeatureOIDC            Feature = "oidc"
@@ -25,8 +25,8 @@ const (
 	FeatureMultiRegion     Feature = "multi_region"
 	FeatureObjectLock      Feature = "object_lock"
 	FeatureLifecycle       Feature = "lifecycle"
-	FeatureMultiTenancy    Feature = "multi_tenancy"
 	FeatureAdvancedMetrics Feature = "advanced_metrics"
+	FeatureBackup          Feature = "backup"
 )
 
 // Checker is the interface for license validation.
@@ -93,9 +93,9 @@ func Info() map[string]interface{} {
 
 // Convenience functions for common feature checks.
 
-// CheckAuditLog checks if audit logging feature is licensed.
-func CheckAuditLog() bool {
-	return checker.CheckFeature(FeatureAuditLog) == nil
+// CheckAccessLog checks if access logging feature is licensed.
+func CheckAccessLog() bool {
+	return checker.CheckFeature(FeatureAccessLog) == nil
 }
 
 // CheckKMS checks if KMS integration feature is licensed.
@@ -121,4 +121,14 @@ func CheckObjectLock() bool {
 // CheckEvents checks if event notifications feature is licensed.
 func CheckEvents() bool {
 	return checker.CheckFeature(FeatureEvents) == nil
+}
+
+// CheckLDAP checks if LDAP integration feature is licensed.
+func CheckLDAP() bool {
+	return checker.CheckFeature(FeatureLDAP) == nil
+}
+
+// CheckBackup checks if backup/restore feature is licensed.
+func CheckBackup() bool {
+	return checker.CheckFeature(FeatureBackup) == nil
 }

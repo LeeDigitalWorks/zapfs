@@ -20,14 +20,17 @@ import (
 
 	"github.com/dustin/go-humanize"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/grpc/pool"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
+	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
 	"github.com/google/btree"
+	"google.golang.org/grpc"
 )
 
 // ClusterCapacity holds cached cluster-wide capacity metrics.
@@ -99,6 +102,15 @@ type ManagerServer struct {
 	// Leader forwarding for transparent write routing
 	leaderForwarder *LeaderForwarder
 
+	// Data loss detection / recovery
+	collectionsRecoveryRequired bool // Set true if data loss detected, freezes bucket creates
+
+	// Metadata client pool for reconciliation queries
+	metadataClientPool *pool.Pool[metadata_pb.MetadataServiceClient]
+
+	// Backup scheduler (enterprise)
+	backupScheduler *BackupScheduler
+
 	// Shutdown
 	shutdownCh chan struct{}
 	shutdownWg sync.WaitGroup
@@ -128,6 +140,11 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 	if defaultNumReplicas == 0 {
 		defaultNumReplicas = 3 // sensible default
 	}
+	// Create metadata client factory
+	metadataClientFactory := func(cc grpc.ClientConnInterface) metadata_pb.MetadataServiceClient {
+		return metadata_pb.NewMetadataServiceClient(cc)
+	}
+
 	ms := &ManagerServer{
 		regionID:             regionID,
 		fileServices:         make(map[string]*ServiceRegistration),
@@ -141,14 +158,15 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 		placementPolicy: &manager_pb.PlacementPolicy{
 			NumReplicas: defaultNumReplicas,
 		},
-		topologyVersion:   1,
-		leaderForwarder:   NewLeaderForwarder(),
-		iamService:        iamService,
-		licenseChecker:    licenseChecker,
-		iamSubs:           make(map[uint64]chan *iam_pb.CredentialEvent),
-		topoSubs:          make(map[uint64]chan *manager_pb.TopologyEvent),
-		colSubs:           make(map[uint64]chan *manager_pb.CollectionEvent),
-		shutdownCh:        make(chan struct{}),
+		topologyVersion:      1,
+		leaderForwarder:      NewLeaderForwarder(),
+		iamService:           iamService,
+		licenseChecker:       licenseChecker,
+		iamSubs:              make(map[uint64]chan *iam_pb.CredentialEvent),
+		topoSubs:             make(map[uint64]chan *manager_pb.TopologyEvent),
+		colSubs:              make(map[uint64]chan *manager_pb.CollectionEvent),
+		metadataClientPool:   pool.NewPool(metadataClientFactory),
+		shutdownCh:           make(chan struct{}),
 	}
 
 	// Initialize IAM version to current timestamp (nanoseconds)
@@ -217,6 +235,70 @@ func (ms *ManagerServer) IsPrimaryRegion() bool {
 	return ms.regionConfig.IsPrimary()
 }
 
+// ConfigureBackupScheduler sets up automatic backup scheduling.
+// This is an enterprise feature requiring FeatureBackup license.
+func (ms *ManagerServer) ConfigureBackupScheduler(config BackupSchedulerConfig) error {
+	if !config.Enabled {
+		logger.Info().Msg("Backup scheduler disabled")
+		return nil
+	}
+
+	ms.backupScheduler = NewBackupScheduler(ms, config)
+	if err := ms.backupScheduler.Start(); err != nil {
+		return fmt.Errorf("failed to start backup scheduler: %w", err)
+	}
+
+	return nil
+}
+
+// checkDataLossCondition checks if metadata services have buckets but manager has none.
+// This indicates potential data loss (Raft data corrupted/deleted but metadata DBs intact).
+// If detected, sets collectionsRecoveryRequired to freeze bucket creates.
+// IMPORTANT: Must be called while holding ms.mu lock.
+func (ms *ManagerServer) checkDataLossCondition(serviceID string, metadataBucketCount uint64) {
+	// Only check if manager has 0 collections and metadata has some
+	if len(ms.collections) == 0 && metadataBucketCount > 0 {
+		if !ms.collectionsRecoveryRequired {
+			// First detection - log critical error and set flag
+			logger.Error().
+				Str("service_id", serviceID).
+				Uint64("metadata_buckets", metadataBucketCount).
+				Int("manager_collections", len(ms.collections)).
+				Msg("DATA LOSS DETECTED: metadata service has buckets but manager has 0 collections. " +
+					"Bucket creates frozen until recovery. Use 'zapfs manager recover' to restore.")
+			ms.collectionsRecoveryRequired = true
+			ManagerDataLossDetected.Set(1)
+			ManagerRecoveryRequired.Set(1)
+		}
+	}
+
+	// Update collections metric
+	ManagerCollectionsTotal.Set(float64(len(ms.collections)))
+}
+
+// IsRecoveryRequired returns true if the manager detected data loss and
+// bucket creates are frozen pending recovery.
+func (ms *ManagerServer) IsRecoveryRequired() bool {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	return ms.collectionsRecoveryRequired
+}
+
+// ClearRecoveryMode clears the recovery required flag after successful recovery.
+// This should only be called after explicit recovery operation.
+func (ms *ManagerServer) ClearRecoveryMode() {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if ms.collectionsRecoveryRequired {
+		logger.Info().
+			Int("collections", len(ms.collections)).
+			Msg("Recovery mode cleared - bucket creates enabled")
+		ms.collectionsRecoveryRequired = false
+		ManagerDataLossDetected.Set(0)
+		ManagerRecoveryRequired.Set(0)
+	}
+}
+
 // GetIAMService returns the IAM service
 func (ms *ManagerServer) GetIAMService() *iam.Service {
 	return ms.iamService
@@ -261,6 +343,10 @@ func (ms *ManagerServer) GetClusterState() map[string]interface{} {
 
 // Shutdown gracefully shuts down the manager server
 func (ms *ManagerServer) Shutdown() {
+	if ms.backupScheduler != nil {
+		ms.backupScheduler.Stop()
+	}
+
 	if ms.leaderForwarder != nil {
 		ms.leaderForwarder.Close()
 	}

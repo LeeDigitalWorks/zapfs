@@ -174,9 +174,7 @@ func (c *enterpriseCollector) isEnabled() bool {
 		return false
 	}
 
-	// Check for either AdvancedMetrics or MultiTenancy feature
-	return mgr.CheckFeature(license.FeatureAdvancedMetrics) == nil ||
-		mgr.CheckFeature(license.FeatureMultiTenancy) == nil
+	return mgr.CheckFeature(license.FeatureAdvancedMetrics) == nil
 }
 
 // addEvent adds an event to the buffer and notifies subscribers.

@@ -39,6 +39,180 @@ func (_m *MockManagerServiceClient) EXPECT() *MockManagerServiceClient_Expecter 
 	return &MockManagerServiceClient_Expecter{mock: &_m.Mock}
 }
 
+// CalculateRebalancePlan provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) CalculateRebalancePlan(ctx context.Context, in *manager_pb.CalculateRebalancePlanRequest, opts ...grpc.CallOption) (*manager_pb.CalculateRebalancePlanResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CalculateRebalancePlan")
+	}
+
+	var r0 *manager_pb.CalculateRebalancePlanResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.CalculateRebalancePlanRequest, ...grpc.CallOption) (*manager_pb.CalculateRebalancePlanResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.CalculateRebalancePlanRequest, ...grpc.CallOption) *manager_pb.CalculateRebalancePlanResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.CalculateRebalancePlanResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.CalculateRebalancePlanRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_CalculateRebalancePlan_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CalculateRebalancePlan'
+type MockManagerServiceClient_CalculateRebalancePlan_Call struct {
+	*mock.Call
+}
+
+// CalculateRebalancePlan is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.CalculateRebalancePlanRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) CalculateRebalancePlan(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_CalculateRebalancePlan_Call {
+	return &MockManagerServiceClient_CalculateRebalancePlan_Call{Call: _e.mock.On("CalculateRebalancePlan",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_CalculateRebalancePlan_Call) Run(run func(ctx context.Context, in *manager_pb.CalculateRebalancePlanRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_CalculateRebalancePlan_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.CalculateRebalancePlanRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.CalculateRebalancePlanRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_CalculateRebalancePlan_Call) Return(calculateRebalancePlanResponse *manager_pb.CalculateRebalancePlanResponse, err error) *MockManagerServiceClient_CalculateRebalancePlan_Call {
+	_c.Call.Return(calculateRebalancePlanResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_CalculateRebalancePlan_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.CalculateRebalancePlanRequest, opts ...grpc.CallOption) (*manager_pb.CalculateRebalancePlanResponse, error)) *MockManagerServiceClient_CalculateRebalancePlan_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreateBackup provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) CreateBackup(ctx context.Context, in *manager_pb.CreateBackupRequest, opts ...grpc.CallOption) (*manager_pb.CreateBackupResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateBackup")
+	}
+
+	var r0 *manager_pb.CreateBackupResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.CreateBackupRequest, ...grpc.CallOption) (*manager_pb.CreateBackupResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.CreateBackupRequest, ...grpc.CallOption) *manager_pb.CreateBackupResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.CreateBackupResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.CreateBackupRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_CreateBackup_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateBackup'
+type MockManagerServiceClient_CreateBackup_Call struct {
+	*mock.Call
+}
+
+// CreateBackup is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.CreateBackupRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) CreateBackup(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_CreateBackup_Call {
+	return &MockManagerServiceClient_CreateBackup_Call{Call: _e.mock.On("CreateBackup",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_CreateBackup_Call) Run(run func(ctx context.Context, in *manager_pb.CreateBackupRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_CreateBackup_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.CreateBackupRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.CreateBackupRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_CreateBackup_Call) Return(createBackupResponse *manager_pb.CreateBackupResponse, err error) *MockManagerServiceClient_CreateBackup_Call {
+	_c.Call.Return(createBackupResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_CreateBackup_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.CreateBackupRequest, opts ...grpc.CallOption) (*manager_pb.CreateBackupResponse, error)) *MockManagerServiceClient_CreateBackup_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateCollection provides a mock function for the type MockManagerServiceClient
 func (_mock *MockManagerServiceClient) CreateCollection(ctx context.Context, in *manager_pb.CreateCollectionRequest, opts ...grpc.CallOption) (*manager_pb.CreateCollectionResponse, error) {
 	// grpc.CallOption
@@ -122,6 +296,93 @@ func (_c *MockManagerServiceClient_CreateCollection_Call) Return(createCollectio
 }
 
 func (_c *MockManagerServiceClient_CreateCollection_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.CreateCollectionRequest, opts ...grpc.CallOption) (*manager_pb.CreateCollectionResponse, error)) *MockManagerServiceClient_CreateCollection_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteBackup provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) DeleteBackup(ctx context.Context, in *manager_pb.DeleteBackupRequest, opts ...grpc.CallOption) (*manager_pb.DeleteBackupResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteBackup")
+	}
+
+	var r0 *manager_pb.DeleteBackupResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.DeleteBackupRequest, ...grpc.CallOption) (*manager_pb.DeleteBackupResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.DeleteBackupRequest, ...grpc.CallOption) *manager_pb.DeleteBackupResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.DeleteBackupResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.DeleteBackupRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_DeleteBackup_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteBackup'
+type MockManagerServiceClient_DeleteBackup_Call struct {
+	*mock.Call
+}
+
+// DeleteBackup is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.DeleteBackupRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) DeleteBackup(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_DeleteBackup_Call {
+	return &MockManagerServiceClient_DeleteBackup_Call{Call: _e.mock.On("DeleteBackup",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_DeleteBackup_Call) Run(run func(ctx context.Context, in *manager_pb.DeleteBackupRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_DeleteBackup_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.DeleteBackupRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.DeleteBackupRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_DeleteBackup_Call) Return(deleteBackupResponse *manager_pb.DeleteBackupResponse, err error) *MockManagerServiceClient_DeleteBackup_Call {
+	_c.Call.Return(deleteBackupResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_DeleteBackup_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.DeleteBackupRequest, opts ...grpc.CallOption) (*manager_pb.DeleteBackupResponse, error)) *MockManagerServiceClient_DeleteBackup_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -213,6 +474,267 @@ func (_c *MockManagerServiceClient_DeleteCollection_Call) RunAndReturn(run func(
 	return _c
 }
 
+// ExecuteRebalance provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) ExecuteRebalance(ctx context.Context, in *manager_pb.ExecuteRebalanceRequest, opts ...grpc.CallOption) (manager_pb.ManagerService_ExecuteRebalanceClient, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExecuteRebalance")
+	}
+
+	var r0 manager_pb.ManagerService_ExecuteRebalanceClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.ExecuteRebalanceRequest, ...grpc.CallOption) (manager_pb.ManagerService_ExecuteRebalanceClient, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.ExecuteRebalanceRequest, ...grpc.CallOption) manager_pb.ManagerService_ExecuteRebalanceClient); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(manager_pb.ManagerService_ExecuteRebalanceClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.ExecuteRebalanceRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_ExecuteRebalance_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExecuteRebalance'
+type MockManagerServiceClient_ExecuteRebalance_Call struct {
+	*mock.Call
+}
+
+// ExecuteRebalance is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.ExecuteRebalanceRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) ExecuteRebalance(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_ExecuteRebalance_Call {
+	return &MockManagerServiceClient_ExecuteRebalance_Call{Call: _e.mock.On("ExecuteRebalance",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_ExecuteRebalance_Call) Run(run func(ctx context.Context, in *manager_pb.ExecuteRebalanceRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_ExecuteRebalance_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.ExecuteRebalanceRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.ExecuteRebalanceRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_ExecuteRebalance_Call) Return(managerService_ExecuteRebalanceClient manager_pb.ManagerService_ExecuteRebalanceClient, err error) *MockManagerServiceClient_ExecuteRebalance_Call {
+	_c.Call.Return(managerService_ExecuteRebalanceClient, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_ExecuteRebalance_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.ExecuteRebalanceRequest, opts ...grpc.CallOption) (manager_pb.ManagerService_ExecuteRebalanceClient, error)) *MockManagerServiceClient_ExecuteRebalance_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetBackupStatus provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) GetBackupStatus(ctx context.Context, in *manager_pb.GetBackupStatusRequest, opts ...grpc.CallOption) (*manager_pb.GetBackupStatusResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBackupStatus")
+	}
+
+	var r0 *manager_pb.GetBackupStatusResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.GetBackupStatusRequest, ...grpc.CallOption) (*manager_pb.GetBackupStatusResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.GetBackupStatusRequest, ...grpc.CallOption) *manager_pb.GetBackupStatusResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.GetBackupStatusResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.GetBackupStatusRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_GetBackupStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBackupStatus'
+type MockManagerServiceClient_GetBackupStatus_Call struct {
+	*mock.Call
+}
+
+// GetBackupStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.GetBackupStatusRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) GetBackupStatus(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_GetBackupStatus_Call {
+	return &MockManagerServiceClient_GetBackupStatus_Call{Call: _e.mock.On("GetBackupStatus",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_GetBackupStatus_Call) Run(run func(ctx context.Context, in *manager_pb.GetBackupStatusRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_GetBackupStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.GetBackupStatusRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.GetBackupStatusRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_GetBackupStatus_Call) Return(getBackupStatusResponse *manager_pb.GetBackupStatusResponse, err error) *MockManagerServiceClient_GetBackupStatus_Call {
+	_c.Call.Return(getBackupStatusResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_GetBackupStatus_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.GetBackupStatusRequest, opts ...grpc.CallOption) (*manager_pb.GetBackupStatusResponse, error)) *MockManagerServiceClient_GetBackupStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetClusterStatus provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) GetClusterStatus(ctx context.Context, in *manager_pb.GetClusterStatusRequest, opts ...grpc.CallOption) (*manager_pb.GetClusterStatusResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetClusterStatus")
+	}
+
+	var r0 *manager_pb.GetClusterStatusResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.GetClusterStatusRequest, ...grpc.CallOption) (*manager_pb.GetClusterStatusResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.GetClusterStatusRequest, ...grpc.CallOption) *manager_pb.GetClusterStatusResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.GetClusterStatusResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.GetClusterStatusRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_GetClusterStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetClusterStatus'
+type MockManagerServiceClient_GetClusterStatus_Call struct {
+	*mock.Call
+}
+
+// GetClusterStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.GetClusterStatusRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) GetClusterStatus(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_GetClusterStatus_Call {
+	return &MockManagerServiceClient_GetClusterStatus_Call{Call: _e.mock.On("GetClusterStatus",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_GetClusterStatus_Call) Run(run func(ctx context.Context, in *manager_pb.GetClusterStatusRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_GetClusterStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.GetClusterStatusRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.GetClusterStatusRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_GetClusterStatus_Call) Return(getClusterStatusResponse *manager_pb.GetClusterStatusResponse, err error) *MockManagerServiceClient_GetClusterStatus_Call {
+	_c.Call.Return(getClusterStatusResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_GetClusterStatus_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.GetClusterStatusRequest, opts ...grpc.CallOption) (*manager_pb.GetClusterStatusResponse, error)) *MockManagerServiceClient_GetClusterStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetCollection provides a mock function for the type MockManagerServiceClient
 func (_mock *MockManagerServiceClient) GetCollection(ctx context.Context, in *manager_pb.GetCollectionRequest, opts ...grpc.CallOption) (*manager_pb.GetCollectionResponse, error) {
 	// grpc.CallOption
@@ -296,6 +818,93 @@ func (_c *MockManagerServiceClient_GetCollection_Call) Return(getCollectionRespo
 }
 
 func (_c *MockManagerServiceClient_GetCollection_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.GetCollectionRequest, opts ...grpc.CallOption) (*manager_pb.GetCollectionResponse, error)) *MockManagerServiceClient_GetCollection_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetExpectedChunks provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) GetExpectedChunks(ctx context.Context, in *manager_pb.GetExpectedChunksRequest, opts ...grpc.CallOption) (manager_pb.ManagerService_GetExpectedChunksClient, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExpectedChunks")
+	}
+
+	var r0 manager_pb.ManagerService_GetExpectedChunksClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.GetExpectedChunksRequest, ...grpc.CallOption) (manager_pb.ManagerService_GetExpectedChunksClient, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.GetExpectedChunksRequest, ...grpc.CallOption) manager_pb.ManagerService_GetExpectedChunksClient); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(manager_pb.ManagerService_GetExpectedChunksClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.GetExpectedChunksRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_GetExpectedChunks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExpectedChunks'
+type MockManagerServiceClient_GetExpectedChunks_Call struct {
+	*mock.Call
+}
+
+// GetExpectedChunks is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.GetExpectedChunksRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) GetExpectedChunks(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_GetExpectedChunks_Call {
+	return &MockManagerServiceClient_GetExpectedChunks_Call{Call: _e.mock.On("GetExpectedChunks",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_GetExpectedChunks_Call) Run(run func(ctx context.Context, in *manager_pb.GetExpectedChunksRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_GetExpectedChunks_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.GetExpectedChunksRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.GetExpectedChunksRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_GetExpectedChunks_Call) Return(managerService_GetExpectedChunksClient manager_pb.ManagerService_GetExpectedChunksClient, err error) *MockManagerServiceClient_GetExpectedChunks_Call {
+	_c.Call.Return(managerService_GetExpectedChunksClient, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_GetExpectedChunks_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.GetExpectedChunksRequest, opts ...grpc.CallOption) (manager_pb.ManagerService_GetExpectedChunksClient, error)) *MockManagerServiceClient_GetExpectedChunks_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -470,6 +1079,93 @@ func (_c *MockManagerServiceClient_Heartbeat_Call) Return(heartbeatResponse *man
 }
 
 func (_c *MockManagerServiceClient_Heartbeat_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.HeartbeatRequest, opts ...grpc.CallOption) (*manager_pb.HeartbeatResponse, error)) *MockManagerServiceClient_Heartbeat_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListBackups provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) ListBackups(ctx context.Context, in *manager_pb.ListBackupsRequest, opts ...grpc.CallOption) (*manager_pb.ListBackupsResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListBackups")
+	}
+
+	var r0 *manager_pb.ListBackupsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.ListBackupsRequest, ...grpc.CallOption) (*manager_pb.ListBackupsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.ListBackupsRequest, ...grpc.CallOption) *manager_pb.ListBackupsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.ListBackupsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.ListBackupsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_ListBackups_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListBackups'
+type MockManagerServiceClient_ListBackups_Call struct {
+	*mock.Call
+}
+
+// ListBackups is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.ListBackupsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) ListBackups(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_ListBackups_Call {
+	return &MockManagerServiceClient_ListBackups_Call{Call: _e.mock.On("ListBackups",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_ListBackups_Call) Run(run func(ctx context.Context, in *manager_pb.ListBackupsRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_ListBackups_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.ListBackupsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.ListBackupsRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_ListBackups_Call) Return(listBackupsResponse *manager_pb.ListBackupsResponse, err error) *MockManagerServiceClient_ListBackups_Call {
+	_c.Call.Return(listBackupsResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_ListBackups_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.ListBackupsRequest, opts ...grpc.CallOption) (*manager_pb.ListBackupsResponse, error)) *MockManagerServiceClient_ListBackups_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -992,6 +1688,180 @@ func (_c *MockManagerServiceClient_RegisterService_Call) Return(registerServiceR
 }
 
 func (_c *MockManagerServiceClient_RegisterService_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.RegisterServiceRequest, opts ...grpc.CallOption) (*manager_pb.RegisterServiceResponse, error)) *MockManagerServiceClient_RegisterService_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReportReconciliation provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) ReportReconciliation(ctx context.Context, in *manager_pb.ReconciliationReport, opts ...grpc.CallOption) (*manager_pb.ReconciliationAck, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReportReconciliation")
+	}
+
+	var r0 *manager_pb.ReconciliationAck
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.ReconciliationReport, ...grpc.CallOption) (*manager_pb.ReconciliationAck, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.ReconciliationReport, ...grpc.CallOption) *manager_pb.ReconciliationAck); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.ReconciliationAck)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.ReconciliationReport, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_ReportReconciliation_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReportReconciliation'
+type MockManagerServiceClient_ReportReconciliation_Call struct {
+	*mock.Call
+}
+
+// ReportReconciliation is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.ReconciliationReport
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) ReportReconciliation(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_ReportReconciliation_Call {
+	return &MockManagerServiceClient_ReportReconciliation_Call{Call: _e.mock.On("ReportReconciliation",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_ReportReconciliation_Call) Run(run func(ctx context.Context, in *manager_pb.ReconciliationReport, opts ...grpc.CallOption)) *MockManagerServiceClient_ReportReconciliation_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.ReconciliationReport
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.ReconciliationReport)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_ReportReconciliation_Call) Return(reconciliationAck *manager_pb.ReconciliationAck, err error) *MockManagerServiceClient_ReportReconciliation_Call {
+	_c.Call.Return(reconciliationAck, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_ReportReconciliation_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.ReconciliationReport, opts ...grpc.CallOption) (*manager_pb.ReconciliationAck, error)) *MockManagerServiceClient_ReportReconciliation_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// TriggerReconciliation provides a mock function for the type MockManagerServiceClient
+func (_mock *MockManagerServiceClient) TriggerReconciliation(ctx context.Context, in *manager_pb.TriggerReconciliationRequest, opts ...grpc.CallOption) (*manager_pb.TriggerReconciliationResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TriggerReconciliation")
+	}
+
+	var r0 *manager_pb.TriggerReconciliationResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.TriggerReconciliationRequest, ...grpc.CallOption) (*manager_pb.TriggerReconciliationResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *manager_pb.TriggerReconciliationRequest, ...grpc.CallOption) *manager_pb.TriggerReconciliationResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*manager_pb.TriggerReconciliationResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *manager_pb.TriggerReconciliationRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockManagerServiceClient_TriggerReconciliation_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TriggerReconciliation'
+type MockManagerServiceClient_TriggerReconciliation_Call struct {
+	*mock.Call
+}
+
+// TriggerReconciliation is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *manager_pb.TriggerReconciliationRequest
+//   - opts ...grpc.CallOption
+func (_e *MockManagerServiceClient_Expecter) TriggerReconciliation(ctx interface{}, in interface{}, opts ...interface{}) *MockManagerServiceClient_TriggerReconciliation_Call {
+	return &MockManagerServiceClient_TriggerReconciliation_Call{Call: _e.mock.On("TriggerReconciliation",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockManagerServiceClient_TriggerReconciliation_Call) Run(run func(ctx context.Context, in *manager_pb.TriggerReconciliationRequest, opts ...grpc.CallOption)) *MockManagerServiceClient_TriggerReconciliation_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *manager_pb.TriggerReconciliationRequest
+		if args[1] != nil {
+			arg1 = args[1].(*manager_pb.TriggerReconciliationRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManagerServiceClient_TriggerReconciliation_Call) Return(triggerReconciliationResponse *manager_pb.TriggerReconciliationResponse, err error) *MockManagerServiceClient_TriggerReconciliation_Call {
+	_c.Call.Return(triggerReconciliationResponse, err)
+	return _c
+}
+
+func (_c *MockManagerServiceClient_TriggerReconciliation_Call) RunAndReturn(run func(ctx context.Context, in *manager_pb.TriggerReconciliationRequest, opts ...grpc.CallOption) (*manager_pb.TriggerReconciliationResponse, error)) *MockManagerServiceClient_TriggerReconciliation_Call {
 	_c.Call.Return(run)
 	return _c
 }

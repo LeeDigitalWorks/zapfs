@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,49 +28,13 @@ func (p *Postgres) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.Obje
 }
 
 func (p *Postgres) PutObject(ctx context.Context, obj *types.ObjectRef) error {
-	chunkRefsJSON, err := json.Marshal(obj.ChunkRefs)
-	if err != nil {
-		return fmt.Errorf("marshal chunk refs: %w", err)
-	}
-	ecGroupIDsJSON, err := json.Marshal(obj.ECGroupIDs)
-	if err != nil {
-		return fmt.Errorf("marshal ec group ids: %w", err)
-	}
-
-	// Mark old versions as not latest
-	_, err = p.db.ExecContext(ctx, `
-		UPDATE objects SET is_latest = FALSE WHERE bucket = $1 AND object_key = $2 AND is_latest = TRUE
-	`, obj.Bucket, obj.Key)
-	if err != nil {
-		return fmt.Errorf("mark old versions not latest: %w", err)
-	}
-
-	_, err = p.db.ExecContext(ctx, `
-		INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, TRUE, $14, $15, $16, $17)
-	`,
-		obj.ID.String(),
-		obj.Bucket,
-		obj.Key,
-		obj.Size,
-		obj.Version,
-		obj.ETag,
-		obj.CreatedAt,
-		obj.DeletedAt,
-		obj.TTL,
-		obj.ProfileID,
-		storageClass(obj.StorageClass),
-		string(chunkRefsJSON),
-		string(ecGroupIDsJSON),
-		obj.SSEAlgorithm,
-		obj.SSECustomerKeyMD5,
-		obj.SSEKMSKeyID,
-		obj.SSEKMSContext,
-	)
-	if err != nil {
-		return fmt.Errorf("put object: %w", err)
-	}
-	return nil
+	// Use a transaction to ensure atomicity and prevent race conditions.
+	// The transactional PutObject uses SELECT FOR UPDATE to serialize
+	// concurrent writes to the same bucket/key, preventing the race where
+	// two concurrent calls both set is_latest=TRUE.
+	return p.WithTx(ctx, func(tx db.TxStore) error {
+		return tx.PutObject(ctx, obj)
+	})
 }
 
 func (p *Postgres) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {

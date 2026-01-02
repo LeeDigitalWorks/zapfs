@@ -54,6 +54,10 @@ type FileServerOpts struct {
 	GCInterval    time.Duration // How often GC runs (0 = disabled)
 	GCGracePeriod time.Duration // Grace period before deleting RefCount=0 chunks
 
+	// Reconciliation configuration
+	ReconciliationInterval    time.Duration // How often to run reconciliation (0 = disabled)
+	ReconciliationGracePeriod time.Duration // Grace period before deleting orphan chunks
+
 	// TLS
 	CertFile string
 	KeyFile  string
@@ -112,6 +116,10 @@ func init() {
 	// GC configuration
 	f.Duration("gc_interval", 1*time.Minute, "How often GC runs (0 = disabled)")
 	f.Duration("gc_grace_period", 5*time.Minute, "Grace period before deleting RefCount=0 chunks")
+
+	// Reconciliation configuration
+	f.Duration("reconciliation_interval", 6*time.Hour, "How often to run chunk reconciliation with registry (0 = disabled)")
+	f.Duration("reconciliation_grace_period", 2*time.Hour, "Grace period before deleting orphan chunks (protects in-flight uploads)")
 
 	// TLS
 	f.String("cert_file", "", "Path to TLS certificate file")
@@ -233,6 +241,7 @@ func runFileServer(cmd *cobra.Command, args []string) {
 
 	// Register with manager if manager address is provided
 	var managerClient *client.ManagerClientPool
+	var reconciliationSvc *file.ReconciliationService
 	if opts.ManagerAddr != "" {
 		managerClient = client.NewManagerClientPool(client.ManagerClientPoolConfig{
 			SeedAddrs:      []string{opts.ManagerAddr},
@@ -251,6 +260,20 @@ func runFileServer(cmd *cobra.Command, args []string) {
 
 		// Start heartbeat goroutine
 		go heartbeatFileServer(cmd.Context(), managerClient, fs, opts)
+
+		// Start reconciliation service if enabled
+		if opts.ReconciliationInterval > 0 {
+			reconciliationSvc = file.NewReconciliationService(file.ReconciliationConfig{
+				ServerID:    opts.AdvertiseAddr,
+				GracePeriod: opts.ReconciliationGracePeriod,
+				Interval:    opts.ReconciliationInterval,
+			}, managerClient, fs.Store())
+			reconciliationSvc.Start(cmd.Context())
+			logger.Info().
+				Dur("interval", opts.ReconciliationInterval).
+				Dur("grace_period", opts.ReconciliationGracePeriod).
+				Msg("Started chunk reconciliation service")
+		}
 	} else {
 		logger.Warn().Msg("No manager address provided - file server will not register (replication may not work)")
 	}
@@ -274,6 +297,9 @@ func runFileServer(cmd *cobra.Command, args []string) {
 	waitForShutdown()
 
 	debug.SetNotReady()
+	if reconciliationSvc != nil {
+		reconciliationSvc.Stop()
+	}
 	grpcServer.GracefulStop()
 	httpServer.Shutdown(cmd.Context())
 	debugServer.Shutdown(cmd.Context())
@@ -310,20 +336,22 @@ func loadFileOpts(cmd *cobra.Command) FileServerOpts {
 	}
 
 	return FileServerOpts{
-		BindAddr:      f.String("bind_addr"),
-		HTTPPort:      f.Int("http_port"),
-		DebugPort:     f.Int("debug_port"),
-		NodeID:        nodeID,
-		AdvertiseAddr: advertiseAddr,
-		IndexPath:     f.String("index_path"),
-		ECScheme:      ecScheme,
-		DirectIO:      f.Bool("direct_io"),
-		Backends:      backends,
-		GCInterval:    f.Duration("gc_interval"),
-		GCGracePeriod: f.Duration("gc_grace_period"),
-		CertFile:      f.String("cert_file"),
-		KeyFile:       f.String("key_file"),
-		ManagerAddr:   f.String("manager_addr"),
+		BindAddr:                  f.String("bind_addr"),
+		HTTPPort:                  f.Int("http_port"),
+		DebugPort:                 f.Int("debug_port"),
+		NodeID:                    nodeID,
+		AdvertiseAddr:             advertiseAddr,
+		IndexPath:                 f.String("index_path"),
+		ECScheme:                  ecScheme,
+		DirectIO:                  f.Bool("direct_io"),
+		Backends:                  backends,
+		GCInterval:                f.Duration("gc_interval"),
+		GCGracePeriod:             f.Duration("gc_grace_period"),
+		ReconciliationInterval:    f.Duration("reconciliation_interval"),
+		ReconciliationGracePeriod: f.Duration("reconciliation_grace_period"),
+		CertFile:                  f.String("cert_file"),
+		KeyFile:                   f.String("key_file"),
+		ManagerAddr:               f.String("manager_addr"),
 	}
 }
 

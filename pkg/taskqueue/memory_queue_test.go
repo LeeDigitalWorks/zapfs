@@ -23,7 +23,7 @@ func TestMemoryQueue_Enqueue(t *testing.T) {
 	defer q.Close()
 
 	task := &taskqueue.Task{
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{"chunk_id": "test"}`),
 		MaxRetries: 3,
 		Priority:   taskqueue.PriorityNormal,
@@ -48,7 +48,7 @@ func TestMemoryQueue_Enqueue_PreserveID(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "custom-id",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -65,7 +65,7 @@ func TestMemoryQueue_Enqueue_QueueClosed(t *testing.T) {
 	q.Close()
 
 	task := &taskqueue.Task{
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -84,7 +84,7 @@ func TestMemoryQueue_Dequeue_FIFO(t *testing.T) {
 	// Enqueue tasks with same priority
 	for i := 0; i < 3; i++ {
 		task := &taskqueue.Task{
-			Type:        taskqueue.TaskTypeGCDecrement,
+			Type:        taskqueue.TaskTypeCleanup,
 			Payload:     json.RawMessage(`{}`),
 			MaxRetries:  3,
 			Priority:    taskqueue.PriorityNormal,
@@ -94,7 +94,7 @@ func TestMemoryQueue_Dequeue_FIFO(t *testing.T) {
 	}
 
 	// Dequeue should return tasks in scheduled order (oldest first)
-	task1, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	task1, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NotNil(t, task1)
 	assert.Equal(t, taskqueue.StatusRunning, task1.Status)
@@ -114,7 +114,7 @@ func TestMemoryQueue_Dequeue_Priority(t *testing.T) {
 	// Enqueue low priority task first
 	lowTask := &taskqueue.Task{
 		ID:         "low",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 		Priority:   taskqueue.PriorityLow,
@@ -124,7 +124,7 @@ func TestMemoryQueue_Dequeue_Priority(t *testing.T) {
 	// Enqueue high priority task second
 	highTask := &taskqueue.Task{
 		ID:         "high",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 		Priority:   taskqueue.PriorityUrgent,
@@ -132,7 +132,7 @@ func TestMemoryQueue_Dequeue_Priority(t *testing.T) {
 	require.NoError(t, q.Enqueue(ctx, highTask))
 
 	// High priority task should be dequeued first
-	task, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	task, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NotNil(t, task)
 	assert.Equal(t, "high", task.ID)
@@ -146,13 +146,13 @@ func TestMemoryQueue_Dequeue_TypeFilter(t *testing.T) {
 	ctx := context.Background()
 
 	// Enqueue different task types
-	gcTask := &taskqueue.Task{
-		ID:         "gc-task",
-		Type:       taskqueue.TaskTypeGCDecrement,
+	lifecycleTask := &taskqueue.Task{
+		ID:         "lifecycle-task",
+		Type:       taskqueue.TaskTypeLifecycle,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
-	require.NoError(t, q.Enqueue(ctx, gcTask))
+	require.NoError(t, q.Enqueue(ctx, lifecycleTask))
 
 	cleanupTask := &taskqueue.Task{
 		ID:         "cleanup-task",
@@ -175,7 +175,7 @@ func TestMemoryQueue_Dequeue_Empty(t *testing.T) {
 	q := taskqueue.NewMemoryQueue()
 	defer q.Close()
 
-	task, err := q.Dequeue(context.Background(), "worker-1", taskqueue.TaskTypeGCDecrement)
+	task, err := q.Dequeue(context.Background(), "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	assert.Nil(t, task)
 }
@@ -186,7 +186,7 @@ func TestMemoryQueue_Dequeue_QueueClosed(t *testing.T) {
 	q := taskqueue.NewMemoryQueue()
 	q.Close()
 
-	task, err := q.Dequeue(context.Background(), "worker-1", taskqueue.TaskTypeGCDecrement)
+	task, err := q.Dequeue(context.Background(), "worker-1", taskqueue.TaskTypeCleanup)
 	assert.ErrorIs(t, err, taskqueue.ErrQueueClosed)
 	assert.Nil(t, task)
 }
@@ -201,7 +201,7 @@ func TestMemoryQueue_Dequeue_SkipsFutureTasks(t *testing.T) {
 	// Enqueue task scheduled for the future
 	futureTask := &taskqueue.Task{
 		ID:          "future",
-		Type:        taskqueue.TaskTypeGCDecrement,
+		Type:        taskqueue.TaskTypeCleanup,
 		Payload:     json.RawMessage(`{}`),
 		MaxRetries:  3,
 		ScheduledAt: time.Now().Add(time.Hour),
@@ -209,7 +209,7 @@ func TestMemoryQueue_Dequeue_SkipsFutureTasks(t *testing.T) {
 	require.NoError(t, q.Enqueue(ctx, futureTask))
 
 	// Should not get the future task
-	task, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	task, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	assert.Nil(t, task)
 }
@@ -224,7 +224,7 @@ func TestMemoryQueue_Dequeue_SkipsRetryAfterTasks(t *testing.T) {
 	// Enqueue task with RetryAfter in the future
 	retryTask := &taskqueue.Task{
 		ID:         "retry",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 		RetryAfter: time.Now().Add(time.Hour),
@@ -232,7 +232,7 @@ func TestMemoryQueue_Dequeue_SkipsRetryAfterTasks(t *testing.T) {
 	require.NoError(t, q.Enqueue(ctx, retryTask))
 
 	// Should not get the task due to RetryAfter
-	task, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	task, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	assert.Nil(t, task)
 }
@@ -246,14 +246,14 @@ func TestMemoryQueue_Complete(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
 	require.NoError(t, q.Enqueue(ctx, task))
 
 	// Dequeue and complete
-	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NotNil(t, dequeued)
 
@@ -286,14 +286,14 @@ func TestMemoryQueue_Fail_Retry(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
 	require.NoError(t, q.Enqueue(ctx, task))
 
 	// Dequeue and fail
-	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NotNil(t, dequeued)
 
@@ -319,7 +319,7 @@ func TestMemoryQueue_Fail_MaxRetries(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 1,
 		Attempts:   0,
@@ -327,7 +327,7 @@ func TestMemoryQueue_Fail_MaxRetries(t *testing.T) {
 	require.NoError(t, q.Enqueue(ctx, task))
 
 	// Dequeue and fail (should go to dead letter)
-	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NotNil(t, dequeued)
 
@@ -360,7 +360,7 @@ func TestMemoryQueue_Cancel(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -393,14 +393,14 @@ func TestMemoryQueue_Heartbeat(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
 	require.NoError(t, q.Enqueue(ctx, task))
 
 	// Dequeue the task
-	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	dequeued, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NotNil(t, dequeued)
 
@@ -426,14 +426,14 @@ func TestMemoryQueue_Heartbeat_WrongWorker(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
 	require.NoError(t, q.Enqueue(ctx, task))
 
 	// Dequeue the task
-	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 
 	// Heartbeat from wrong worker should fail
@@ -450,7 +450,7 @@ func TestMemoryQueue_Heartbeat_NotRunning(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -470,7 +470,7 @@ func TestMemoryQueue_Get(t *testing.T) {
 
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{"key": "value"}`),
 		MaxRetries: 3,
 	}
@@ -479,7 +479,7 @@ func TestMemoryQueue_Get(t *testing.T) {
 	got, err := q.Get(ctx, "task-1")
 	require.NoError(t, err)
 	assert.Equal(t, "task-1", got.ID)
-	assert.Equal(t, taskqueue.TaskTypeGCDecrement, got.Type)
+	assert.Equal(t, taskqueue.TaskTypeCleanup, got.Type)
 }
 
 func TestMemoryQueue_Get_NotFound(t *testing.T) {
@@ -503,7 +503,7 @@ func TestMemoryQueue_List(t *testing.T) {
 	// Enqueue various tasks
 	for i := 0; i < 5; i++ {
 		task := &taskqueue.Task{
-			Type:       taskqueue.TaskTypeGCDecrement,
+			Type:       taskqueue.TaskTypeCleanup,
 			Payload:    json.RawMessage(`{}`),
 			MaxRetries: 3,
 		}
@@ -524,11 +524,11 @@ func TestMemoryQueue_List_TypeFilter(t *testing.T) {
 	ctx := context.Background()
 
 	// Enqueue different types
-	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}))
 	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
-	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}))
+	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
+	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeLifecycle, Payload: json.RawMessage(`{}`)}))
 
-	tasks, err := q.List(ctx, taskqueue.TaskFilter{Type: taskqueue.TaskTypeGCDecrement})
+	tasks, err := q.List(ctx, taskqueue.TaskFilter{Type: taskqueue.TaskTypeCleanup})
 	require.NoError(t, err)
 	assert.Len(t, tasks, 2)
 }
@@ -541,14 +541,14 @@ func TestMemoryQueue_List_StatusFilter(t *testing.T) {
 	ctx := context.Background()
 
 	// Enqueue and complete one
-	task := &taskqueue.Task{ID: "task-1", Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}
+	task := &taskqueue.Task{ID: "task-1", Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}
 	require.NoError(t, q.Enqueue(ctx, task))
-	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NoError(t, q.Complete(ctx, "task-1"))
 
 	// Enqueue another
-	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}))
+	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
 
 	// List only pending
 	tasks, err := q.List(ctx, taskqueue.TaskFilter{Status: taskqueue.StatusPending})
@@ -569,7 +569,7 @@ func TestMemoryQueue_List_LimitOffset(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
-		require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}))
+		require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
 	}
 
 	// Test limit
@@ -596,12 +596,12 @@ func TestMemoryQueue_Stats(t *testing.T) {
 	ctx := context.Background()
 
 	// Enqueue some tasks
-	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{ID: "1", Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}))
-	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{ID: "2", Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}))
-	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{ID: "3", Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
+	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{ID: "1", Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
+	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{ID: "2", Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}))
+	require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{ID: "3", Type: taskqueue.TaskTypeLifecycle, Payload: json.RawMessage(`{}`)}))
 
 	// Dequeue one and mark as running
-	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 
 	// Complete one
@@ -615,8 +615,8 @@ func TestMemoryQueue_Stats(t *testing.T) {
 	assert.Equal(t, int64(1), stats.Completed) // "1" completed
 	assert.NotNil(t, stats.OldestPending)
 	// ByType counts ALL tasks regardless of status
-	assert.Equal(t, int64(2), stats.ByType[taskqueue.TaskTypeGCDecrement]) // task 1 (completed) + task 2 (pending)
-	assert.Equal(t, int64(1), stats.ByType[taskqueue.TaskTypeCleanup])     // task 3 (pending)
+	assert.Equal(t, int64(2), stats.ByType[taskqueue.TaskTypeCleanup])   // task 1 (completed) + task 2 (pending)
+	assert.Equal(t, int64(1), stats.ByType[taskqueue.TaskTypeLifecycle]) // task 3 (pending)
 }
 
 func TestMemoryQueue_Cleanup(t *testing.T) {
@@ -627,9 +627,9 @@ func TestMemoryQueue_Cleanup(t *testing.T) {
 	ctx := context.Background()
 
 	// Enqueue and complete a task
-	task := &taskqueue.Task{ID: "old-task", Type: taskqueue.TaskTypeGCDecrement, Payload: json.RawMessage(`{}`)}
+	task := &taskqueue.Task{ID: "old-task", Type: taskqueue.TaskTypeCleanup, Payload: json.RawMessage(`{}`)}
 	require.NoError(t, q.Enqueue(ctx, task))
-	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeGCDecrement)
+	_, err := q.Dequeue(ctx, "worker-1", taskqueue.TaskTypeCleanup)
 	require.NoError(t, err)
 	require.NoError(t, q.Complete(ctx, "old-task"))
 
@@ -665,7 +665,7 @@ func TestMemoryQueue_ThreadSafety(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < numTasks; j++ {
 				task := &taskqueue.Task{
-					Type:       taskqueue.TaskTypeGCDecrement,
+					Type:       taskqueue.TaskTypeCleanup,
 					Payload:    json.RawMessage(`{}`),
 					MaxRetries: 3,
 				}
@@ -682,7 +682,7 @@ func TestMemoryQueue_ThreadSafety(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 			for j := 0; j < numTasks; j++ {
-				task, _ := q.Dequeue(ctx, string(rune('A'+workerID)), taskqueue.TaskTypeGCDecrement)
+				task, _ := q.Dequeue(ctx, string(rune('A'+workerID)), taskqueue.TaskTypeCleanup)
 				if task != nil {
 					mu.Lock()
 					processed++

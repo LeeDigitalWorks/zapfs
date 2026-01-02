@@ -5,7 +5,9 @@ package api
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 )
 
@@ -69,4 +71,35 @@ func (ms *MetadataServer) ListCollections(ctx context.Context, req *metadata_pb.
 	// TODO: Implement collection listing
 	// Return list from ms.collections
 	return &metadata_pb.ListCollectionsResponse{}, nil
+}
+
+// StreamChunksForServer streams all chunk IDs expected on a file server.
+// Used by Manager to coordinate file server reconciliation.
+func (ms *MetadataServer) StreamChunksForServer(req *metadata_pb.StreamChunksForServerRequest, stream metadata_pb.MetadataService_StreamChunksForServerServer) error {
+	serverID := req.GetServerId()
+	if serverID == "" {
+		return fmt.Errorf("server_id is required")
+	}
+
+	logger.Info().Str("server_id", serverID).Msg("streaming chunks for server reconciliation")
+
+	// Query chunk_replicas table for all chunks on this server
+	chunkIDs, err := ms.db.GetChunksByServer(stream.Context(), serverID)
+	if err != nil {
+		logger.Error().Err(err).Str("server_id", serverID).Msg("failed to get chunks for server")
+		return err
+	}
+
+	logger.Info().Str("server_id", serverID).Int("chunk_count", len(chunkIDs)).Msg("found chunks for server")
+
+	// Stream chunk IDs to client
+	for _, chunkID := range chunkIDs {
+		if err := stream.Send(&metadata_pb.ChunkIDResponse{ChunkId: chunkID}); err != nil {
+			logger.Error().Err(err).Str("server_id", serverID).Msg("failed to send chunk ID")
+			return err
+		}
+	}
+
+	logger.Info().Str("server_id", serverID).Int("chunks_sent", len(chunkIDs)).Msg("finished streaming chunks for server")
+	return nil
 }

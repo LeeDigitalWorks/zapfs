@@ -207,6 +207,7 @@ func (ms *ManagerServer) NotifyCredentialChange(eventType iam_pb.CredentialEvent
 		case ch <- event:
 			// Event sent
 		default:
+			IAMEventsDropped.Inc()
 			logger.Warn().Uint64("subscriber_id", subID).Msg("IAM subscriber channel full, dropping event")
 		}
 	}

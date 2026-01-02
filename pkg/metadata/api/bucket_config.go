@@ -4,11 +4,16 @@
 package api
 
 import (
+	"encoding/xml"
+	"io"
 	"net/http"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // ============================================================================
@@ -70,35 +75,73 @@ func (s *MetadataServer) PutBucketAccelerateConfigurationHandler(d *data.Data, w
 // GetBucketNotificationConfigurationHandler returns notification configuration.
 // GET /{bucket}?notification
 //
-// ZapFS does not support event notifications - returns empty config.
+// Requires FeatureEvents license.
 func (s *MetadataServer) GetBucketNotificationConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement event notifications (future feature)
-	// Implementation steps:
-	// 1. Load notification configuration from bucket metadata
-	// 2. Return TopicConfigurations, QueueConfigurations, LambdaFunctionConfigurations
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketNotificationConfiguration.html
+	// Enterprise license check
+	if !license.CheckEvents() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+		return
+	}
 
-	// Return empty config - notifications not configured
+	config, err := s.db.GetNotificationConfiguration(d.Ctx, d.S3Info.Bucket)
+	if err != nil {
+		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to get notification config")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Return empty config if none configured
+	if config == nil {
+		config = &s3types.NotificationConfiguration{}
+	}
+
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><NotificationConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></NotificationConfiguration>`))
+	xml.NewEncoder(w).Encode(config)
 }
 
 // PutBucketNotificationConfigurationHandler sets notification configuration.
 // PUT /{bucket}?notification
 //
-// ZapFS does not support event notifications - accepts but ignores.
+// Requires FeatureEvents license.
 func (s *MetadataServer) PutBucketNotificationConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	// TODO: Implement event notifications (future feature)
-	// Implementation steps:
-	// 1. Parse NotificationConfiguration XML
-	// 2. Validate topic ARNs, queue ARNs, lambda ARNs
-	// 3. Store configuration in bucket metadata
-	// 4. Set up event publishing
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketNotificationConfiguration.html
+	// Enterprise license check
+	if !license.CheckEvents() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+		return
+	}
 
-	// Accept but ignore - notifications not implemented
+	// Parse request body
+	body, err := io.ReadAll(d.Req.Body)
+	if err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	var config s3types.NotificationConfiguration
+	if err := xml.Unmarshal(body, &config); err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Empty config = delete notification configuration
+	if len(config.TopicConfigurations) == 0 &&
+		len(config.QueueConfigurations) == 0 &&
+		len(config.LambdaFunctionConfigurations) == 0 {
+		if err := s.db.DeleteNotificationConfiguration(d.Ctx, d.S3Info.Bucket); err != nil {
+			logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to delete notification config")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+			return
+		}
+	} else {
+		if err := s.db.SetNotificationConfiguration(d.Ctx, d.S3Info.Bucket, &config); err != nil {
+			logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to set notification config")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+			return
+		}
+	}
+
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
 }

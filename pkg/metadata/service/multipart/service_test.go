@@ -791,8 +791,8 @@ func TestAbortUpload(t *testing.T) {
 					ID:       uploadUUID,
 					UploadID: uploadID,
 				}, nil)
-				// AbortUpload lists parts to get chunk refs for cleanup
-				mockDB.EXPECT().ListParts(mock.Anything, uploadID, 0, 10000).Return([]*types.MultipartPart{}, false, nil)
+				// Simplified AbortUpload: just delete upload record
+				// Orphaned chunks will be cleaned by GC reconciliation
 				mockDB.EXPECT().DeleteMultipartUpload(mock.Anything, "test-bucket", "test-key", uploadID).Return(nil)
 			},
 			wantErr: false,
@@ -818,8 +818,7 @@ func TestAbortUpload(t *testing.T) {
 					ID:       uploadUUID,
 					UploadID: uploadID,
 				}, nil)
-				// AbortUpload lists parts to get chunk refs for cleanup
-				mockDB.EXPECT().ListParts(mock.Anything, uploadID, 0, 10000).Return([]*types.MultipartPart{}, false, nil)
+				// Simplified AbortUpload: just delete upload record
 				mockDB.EXPECT().DeleteMultipartUpload(mock.Anything, "test-bucket", "test-key", uploadID).Return(errors.New("db error"))
 			},
 			wantErr:     true,

@@ -301,6 +301,93 @@ func (_c *MockFileServiceClient_DecrementRefCountBatch_Call) RunAndReturn(run fu
 	return _c
 }
 
+// DeleteLocalChunk provides a mock function for the type MockFileServiceClient
+func (_mock *MockFileServiceClient) DeleteLocalChunk(ctx context.Context, in *file_pb.DeleteLocalChunkRequest, opts ...grpc.CallOption) (*file_pb.DeleteLocalChunkResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteLocalChunk")
+	}
+
+	var r0 *file_pb.DeleteLocalChunkResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.DeleteLocalChunkRequest, ...grpc.CallOption) (*file_pb.DeleteLocalChunkResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.DeleteLocalChunkRequest, ...grpc.CallOption) *file_pb.DeleteLocalChunkResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*file_pb.DeleteLocalChunkResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *file_pb.DeleteLocalChunkRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFileServiceClient_DeleteLocalChunk_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteLocalChunk'
+type MockFileServiceClient_DeleteLocalChunk_Call struct {
+	*mock.Call
+}
+
+// DeleteLocalChunk is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *file_pb.DeleteLocalChunkRequest
+//   - opts ...grpc.CallOption
+func (_e *MockFileServiceClient_Expecter) DeleteLocalChunk(ctx interface{}, in interface{}, opts ...interface{}) *MockFileServiceClient_DeleteLocalChunk_Call {
+	return &MockFileServiceClient_DeleteLocalChunk_Call{Call: _e.mock.On("DeleteLocalChunk",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockFileServiceClient_DeleteLocalChunk_Call) Run(run func(ctx context.Context, in *file_pb.DeleteLocalChunkRequest, opts ...grpc.CallOption)) *MockFileServiceClient_DeleteLocalChunk_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *file_pb.DeleteLocalChunkRequest
+		if args[1] != nil {
+			arg1 = args[1].(*file_pb.DeleteLocalChunkRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFileServiceClient_DeleteLocalChunk_Call) Return(deleteLocalChunkResponse *file_pb.DeleteLocalChunkResponse, err error) *MockFileServiceClient_DeleteLocalChunk_Call {
+	_c.Call.Return(deleteLocalChunkResponse, err)
+	return _c
+}
+
+func (_c *MockFileServiceClient_DeleteLocalChunk_Call) RunAndReturn(run func(ctx context.Context, in *file_pb.DeleteLocalChunkRequest, opts ...grpc.CallOption) (*file_pb.DeleteLocalChunkResponse, error)) *MockFileServiceClient_DeleteLocalChunk_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteObject provides a mock function for the type MockFileServiceClient
 func (_mock *MockFileServiceClient) DeleteObject(ctx context.Context, in *file_pb.DeleteObjectRequest, opts ...grpc.CallOption) (*file_pb.DeleteObjectResponse, error) {
 	// grpc.CallOption
@@ -471,6 +558,180 @@ func (_c *MockFileServiceClient_FileServerStatus_Call) Return(fileServerStatusRe
 }
 
 func (_c *MockFileServiceClient_FileServerStatus_Call) RunAndReturn(run func(ctx context.Context, in *file_pb.FileServerStatusRequest, opts ...grpc.CallOption) (*file_pb.FileServerStatusResponse, error)) *MockFileServiceClient_FileServerStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetChunk provides a mock function for the type MockFileServiceClient
+func (_mock *MockFileServiceClient) GetChunk(ctx context.Context, in *file_pb.GetChunkRequest, opts ...grpc.CallOption) (file_pb.FileService_GetChunkClient, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChunk")
+	}
+
+	var r0 file_pb.FileService_GetChunkClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.GetChunkRequest, ...grpc.CallOption) (file_pb.FileService_GetChunkClient, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.GetChunkRequest, ...grpc.CallOption) file_pb.FileService_GetChunkClient); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(file_pb.FileService_GetChunkClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *file_pb.GetChunkRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFileServiceClient_GetChunk_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChunk'
+type MockFileServiceClient_GetChunk_Call struct {
+	*mock.Call
+}
+
+// GetChunk is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *file_pb.GetChunkRequest
+//   - opts ...grpc.CallOption
+func (_e *MockFileServiceClient_Expecter) GetChunk(ctx interface{}, in interface{}, opts ...interface{}) *MockFileServiceClient_GetChunk_Call {
+	return &MockFileServiceClient_GetChunk_Call{Call: _e.mock.On("GetChunk",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockFileServiceClient_GetChunk_Call) Run(run func(ctx context.Context, in *file_pb.GetChunkRequest, opts ...grpc.CallOption)) *MockFileServiceClient_GetChunk_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *file_pb.GetChunkRequest
+		if args[1] != nil {
+			arg1 = args[1].(*file_pb.GetChunkRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFileServiceClient_GetChunk_Call) Return(fileService_GetChunkClient file_pb.FileService_GetChunkClient, err error) *MockFileServiceClient_GetChunk_Call {
+	_c.Call.Return(fileService_GetChunkClient, err)
+	return _c
+}
+
+func (_c *MockFileServiceClient_GetChunk_Call) RunAndReturn(run func(ctx context.Context, in *file_pb.GetChunkRequest, opts ...grpc.CallOption) (file_pb.FileService_GetChunkClient, error)) *MockFileServiceClient_GetChunk_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetLocalChunk provides a mock function for the type MockFileServiceClient
+func (_mock *MockFileServiceClient) GetLocalChunk(ctx context.Context, in *file_pb.GetLocalChunkRequest, opts ...grpc.CallOption) (*file_pb.LocalChunkInfo, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetLocalChunk")
+	}
+
+	var r0 *file_pb.LocalChunkInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.GetLocalChunkRequest, ...grpc.CallOption) (*file_pb.LocalChunkInfo, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.GetLocalChunkRequest, ...grpc.CallOption) *file_pb.LocalChunkInfo); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*file_pb.LocalChunkInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *file_pb.GetLocalChunkRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFileServiceClient_GetLocalChunk_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetLocalChunk'
+type MockFileServiceClient_GetLocalChunk_Call struct {
+	*mock.Call
+}
+
+// GetLocalChunk is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *file_pb.GetLocalChunkRequest
+//   - opts ...grpc.CallOption
+func (_e *MockFileServiceClient_Expecter) GetLocalChunk(ctx interface{}, in interface{}, opts ...interface{}) *MockFileServiceClient_GetLocalChunk_Call {
+	return &MockFileServiceClient_GetLocalChunk_Call{Call: _e.mock.On("GetLocalChunk",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockFileServiceClient_GetLocalChunk_Call) Run(run func(ctx context.Context, in *file_pb.GetLocalChunkRequest, opts ...grpc.CallOption)) *MockFileServiceClient_GetLocalChunk_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *file_pb.GetLocalChunkRequest
+		if args[1] != nil {
+			arg1 = args[1].(*file_pb.GetLocalChunkRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFileServiceClient_GetLocalChunk_Call) Return(localChunkInfo *file_pb.LocalChunkInfo, err error) *MockFileServiceClient_GetLocalChunk_Call {
+	_c.Call.Return(localChunkInfo, err)
+	return _c
+}
+
+func (_c *MockFileServiceClient_GetLocalChunk_Call) RunAndReturn(run func(ctx context.Context, in *file_pb.GetLocalChunkRequest, opts ...grpc.CallOption) (*file_pb.LocalChunkInfo, error)) *MockFileServiceClient_GetLocalChunk_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -649,6 +910,93 @@ func (_c *MockFileServiceClient_GetObjectRange_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
+// ListLocalChunks provides a mock function for the type MockFileServiceClient
+func (_mock *MockFileServiceClient) ListLocalChunks(ctx context.Context, in *file_pb.ListLocalChunksRequest, opts ...grpc.CallOption) (file_pb.FileService_ListLocalChunksClient, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListLocalChunks")
+	}
+
+	var r0 file_pb.FileService_ListLocalChunksClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.ListLocalChunksRequest, ...grpc.CallOption) (file_pb.FileService_ListLocalChunksClient, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.ListLocalChunksRequest, ...grpc.CallOption) file_pb.FileService_ListLocalChunksClient); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(file_pb.FileService_ListLocalChunksClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *file_pb.ListLocalChunksRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFileServiceClient_ListLocalChunks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListLocalChunks'
+type MockFileServiceClient_ListLocalChunks_Call struct {
+	*mock.Call
+}
+
+// ListLocalChunks is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *file_pb.ListLocalChunksRequest
+//   - opts ...grpc.CallOption
+func (_e *MockFileServiceClient_Expecter) ListLocalChunks(ctx interface{}, in interface{}, opts ...interface{}) *MockFileServiceClient_ListLocalChunks_Call {
+	return &MockFileServiceClient_ListLocalChunks_Call{Call: _e.mock.On("ListLocalChunks",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockFileServiceClient_ListLocalChunks_Call) Run(run func(ctx context.Context, in *file_pb.ListLocalChunksRequest, opts ...grpc.CallOption)) *MockFileServiceClient_ListLocalChunks_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *file_pb.ListLocalChunksRequest
+		if args[1] != nil {
+			arg1 = args[1].(*file_pb.ListLocalChunksRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFileServiceClient_ListLocalChunks_Call) Return(fileService_ListLocalChunksClient file_pb.FileService_ListLocalChunksClient, err error) *MockFileServiceClient_ListLocalChunks_Call {
+	_c.Call.Return(fileService_ListLocalChunksClient, err)
+	return _c
+}
+
+func (_c *MockFileServiceClient_ListLocalChunks_Call) RunAndReturn(run func(ctx context.Context, in *file_pb.ListLocalChunksRequest, opts ...grpc.CallOption) (file_pb.FileService_ListLocalChunksClient, error)) *MockFileServiceClient_ListLocalChunks_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // MarkBackendReadOnly provides a mock function for the type MockFileServiceClient
 func (_mock *MockFileServiceClient) MarkBackendReadOnly(ctx context.Context, in *file_pb.MarkBackendReadOnlyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	// grpc.CallOption
@@ -823,6 +1171,93 @@ func (_c *MockFileServiceClient_MarkBackendWritable_Call) RunAndReturn(run func(
 	return _c
 }
 
+// MigrateChunk provides a mock function for the type MockFileServiceClient
+func (_mock *MockFileServiceClient) MigrateChunk(ctx context.Context, in *file_pb.MigrateChunkRequest, opts ...grpc.CallOption) (*file_pb.MigrateChunkResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MigrateChunk")
+	}
+
+	var r0 *file_pb.MigrateChunkResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.MigrateChunkRequest, ...grpc.CallOption) (*file_pb.MigrateChunkResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *file_pb.MigrateChunkRequest, ...grpc.CallOption) *file_pb.MigrateChunkResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*file_pb.MigrateChunkResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *file_pb.MigrateChunkRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFileServiceClient_MigrateChunk_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MigrateChunk'
+type MockFileServiceClient_MigrateChunk_Call struct {
+	*mock.Call
+}
+
+// MigrateChunk is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *file_pb.MigrateChunkRequest
+//   - opts ...grpc.CallOption
+func (_e *MockFileServiceClient_Expecter) MigrateChunk(ctx interface{}, in interface{}, opts ...interface{}) *MockFileServiceClient_MigrateChunk_Call {
+	return &MockFileServiceClient_MigrateChunk_Call{Call: _e.mock.On("MigrateChunk",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockFileServiceClient_MigrateChunk_Call) Run(run func(ctx context.Context, in *file_pb.MigrateChunkRequest, opts ...grpc.CallOption)) *MockFileServiceClient_MigrateChunk_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *file_pb.MigrateChunkRequest
+		if args[1] != nil {
+			arg1 = args[1].(*file_pb.MigrateChunkRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFileServiceClient_MigrateChunk_Call) Return(migrateChunkResponse *file_pb.MigrateChunkResponse, err error) *MockFileServiceClient_MigrateChunk_Call {
+	_c.Call.Return(migrateChunkResponse, err)
+	return _c
+}
+
+func (_c *MockFileServiceClient_MigrateChunk_Call) RunAndReturn(run func(ctx context.Context, in *file_pb.MigrateChunkRequest, opts ...grpc.CallOption) (*file_pb.MigrateChunkResponse, error)) *MockFileServiceClient_MigrateChunk_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Ping provides a mock function for the type MockFileServiceClient
 func (_mock *MockFileServiceClient) Ping(ctx context.Context, in *file_pb.PingRequest, opts ...grpc.CallOption) (*file_pb.PingResponse, error) {
 	// grpc.CallOption
@@ -987,6 +1422,87 @@ func (_c *MockFileServiceClient_PutObject_Call) Return(fileService_PutObjectClie
 }
 
 func (_c *MockFileServiceClient_PutObject_Call) RunAndReturn(run func(ctx context.Context, opts ...grpc.CallOption) (file_pb.FileService_PutObjectClient, error)) *MockFileServiceClient_PutObject_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReceiveChunk provides a mock function for the type MockFileServiceClient
+func (_mock *MockFileServiceClient) ReceiveChunk(ctx context.Context, opts ...grpc.CallOption) (file_pb.FileService_ReceiveChunkClient, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReceiveChunk")
+	}
+
+	var r0 file_pb.FileService_ReceiveChunkClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...grpc.CallOption) (file_pb.FileService_ReceiveChunkClient, error)); ok {
+		return returnFunc(ctx, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...grpc.CallOption) file_pb.FileService_ReceiveChunkClient); ok {
+		r0 = returnFunc(ctx, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(file_pb.FileService_ReceiveChunkClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFileServiceClient_ReceiveChunk_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReceiveChunk'
+type MockFileServiceClient_ReceiveChunk_Call struct {
+	*mock.Call
+}
+
+// ReceiveChunk is a helper method to define mock.On call
+//   - ctx context.Context
+//   - opts ...grpc.CallOption
+func (_e *MockFileServiceClient_Expecter) ReceiveChunk(ctx interface{}, opts ...interface{}) *MockFileServiceClient_ReceiveChunk_Call {
+	return &MockFileServiceClient_ReceiveChunk_Call{Call: _e.mock.On("ReceiveChunk",
+		append([]interface{}{ctx}, opts...)...)}
+}
+
+func (_c *MockFileServiceClient_ReceiveChunk_Call) Run(run func(ctx context.Context, opts ...grpc.CallOption)) *MockFileServiceClient_ReceiveChunk_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-1)
+		for i, a := range args[1:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg1 = variadicArgs
+		run(
+			arg0,
+			arg1...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFileServiceClient_ReceiveChunk_Call) Return(fileService_ReceiveChunkClient file_pb.FileService_ReceiveChunkClient, err error) *MockFileServiceClient_ReceiveChunk_Call {
+	_c.Call.Return(fileService_ReceiveChunkClient, err)
+	return _c
+}
+
+func (_c *MockFileServiceClient_ReceiveChunk_Call) RunAndReturn(run func(ctx context.Context, opts ...grpc.CallOption) (file_pb.FileService_ReceiveChunkClient, error)) *MockFileServiceClient_ReceiveChunk_Call {
 	_c.Call.Return(run)
 	return _c
 }

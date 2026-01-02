@@ -12,10 +12,14 @@ service MetadataService {
   rpc GetObject(GetObjectRequest) returns (GetObjectResponse);
   rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
   rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
-  
+
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
   rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+
+  // Reconciliation - streams all chunk IDs expected on a file server.
+  // Used by Manager to coordinate file server reconciliation.
+  rpc StreamChunksForServer(StreamChunksForServerRequest) returns (stream ChunkIDResponse);
 }
 
 message GetObjectRequest {
@@ -116,4 +120,14 @@ message PingResponse {
   uint64 start_time = 1;
   uint64 current_time = 2;
   uint64 stop_time = 3;
+}
+
+// Reconciliation messages
+
+message StreamChunksForServerRequest {
+  string server_id = 1;  // File server address (e.g., "localhost:8081")
+}
+
+message ChunkIDResponse {
+  string chunk_id = 1;
 }

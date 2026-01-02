@@ -11,11 +11,19 @@ import (
 // ObjectWriter is a callback that receives chunks of data from GetObject
 type ObjectWriter func(chunk []byte) error
 
+// ChunkInfo describes a chunk written by the file server
+type ChunkInfo struct {
+	ChunkID string // SHA-256 content hash
+	Size    uint64
+	Offset  uint64 // Offset within the object
+}
+
 // PutObjectResult contains the result of a PutObject operation
 type PutObjectResult struct {
 	ObjectID string
 	Size     uint64
 	ETag     string
+	Chunks   []ChunkInfo // Actual chunk IDs (SHA-256 content hashes)
 }
 
 // DecrementRefCountResult contains the result of a DecrementRefCount operation

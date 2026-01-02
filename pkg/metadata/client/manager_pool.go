@@ -283,3 +283,80 @@ func (p *ManagerClientPool) WatchCollections(ctx context.Context, req *manager_p
 	}
 	return client.WatchCollections(ctx, req)
 }
+
+// ========== Reconciliation Operations ==========
+
+// GetExpectedChunks streams expected chunk IDs for a file server (for reconciliation).
+// Returns a streaming client that receives ExpectedChunkResponse messages.
+func (p *ManagerClientPool) GetExpectedChunks(ctx context.Context, req *manager_pb.GetExpectedChunksRequest) (manager_pb.ManagerService_GetExpectedChunksClient, error) {
+	client, _, err := p.cluster.GetAny(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.GetExpectedChunks(ctx, req)
+}
+
+// ReportReconciliation reports reconciliation results to the manager.
+func (p *ManagerClientPool) ReportReconciliation(ctx context.Context, req *manager_pb.ReconciliationReport) (*manager_pb.ReconciliationAck, error) {
+	var resp *manager_pb.ReconciliationAck
+	err := p.executeOnAny(ctx, func(client manager_pb.ManagerServiceClient) error {
+		reqCtx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
+		defer cancel()
+		var err error
+		resp, err = client.ReportReconciliation(reqCtx, req)
+		return err
+	})
+	return resp, err
+}
+
+// TriggerReconciliation manually triggers reconciliation for file servers.
+// If server_id is empty, triggers for all servers.
+func (p *ManagerClientPool) TriggerReconciliation(ctx context.Context, req *manager_pb.TriggerReconciliationRequest) (*manager_pb.TriggerReconciliationResponse, error) {
+	var resp *manager_pb.TriggerReconciliationResponse
+	err := p.executeOnAny(ctx, func(client manager_pb.ManagerServiceClient) error {
+		reqCtx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
+		defer cancel()
+		var err error
+		resp, err = client.TriggerReconciliation(reqCtx, req)
+		return err
+	})
+	return resp, err
+}
+
+// ========== Cluster Rebalancing Operations ==========
+
+// GetClusterStatus returns the current status of all file servers in the cluster.
+func (p *ManagerClientPool) GetClusterStatus(ctx context.Context, req *manager_pb.GetClusterStatusRequest) (*manager_pb.GetClusterStatusResponse, error) {
+	var resp *manager_pb.GetClusterStatusResponse
+	err := p.executeOnAny(ctx, func(client manager_pb.ManagerServiceClient) error {
+		reqCtx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
+		defer cancel()
+		var err error
+		resp, err = client.GetClusterStatus(reqCtx, req)
+		return err
+	})
+	return resp, err
+}
+
+// CalculateRebalancePlan calculates a plan to rebalance chunks across file servers.
+func (p *ManagerClientPool) CalculateRebalancePlan(ctx context.Context, req *manager_pb.CalculateRebalancePlanRequest) (*manager_pb.CalculateRebalancePlanResponse, error) {
+	var resp *manager_pb.CalculateRebalancePlanResponse
+	err := p.executeOnAny(ctx, func(client manager_pb.ManagerServiceClient) error {
+		reqCtx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
+		defer cancel()
+		var err error
+		resp, err = client.CalculateRebalancePlan(reqCtx, req)
+		return err
+	})
+	return resp, err
+}
+
+// ExecuteRebalance executes a rebalance plan with streaming progress updates.
+// Returns a streaming client that receives RebalanceProgress messages.
+func (p *ManagerClientPool) ExecuteRebalance(ctx context.Context, req *manager_pb.ExecuteRebalanceRequest) (manager_pb.ManagerService_ExecuteRebalanceClient, error) {
+	client, _, err := p.cluster.GetAny(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.ExecuteRebalance(ctx, req)
+}

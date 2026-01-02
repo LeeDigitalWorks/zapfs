@@ -76,12 +76,12 @@ func TestWorker_RegisterHandler(t *testing.T) {
 		Queue: q,
 	})
 
-	handler := &testHandler{taskType: taskqueue.TaskTypeGCDecrement}
+	handler := &testHandler{taskType: taskqueue.TaskTypeCleanup}
 	worker.RegisterHandler(handler)
 
 	types := worker.HandlerTypes()
 	assert.Len(t, types, 1)
-	assert.Contains(t, types, taskqueue.TaskTypeGCDecrement)
+	assert.Contains(t, types, taskqueue.TaskTypeCleanup)
 }
 
 func TestWorker_RegisterHandler_Nil(t *testing.T) {
@@ -111,16 +111,16 @@ func TestWorker_HandlerTypes(t *testing.T) {
 		Queue: q,
 	})
 
-	handler1 := &testHandler{taskType: taskqueue.TaskTypeGCDecrement}
-	handler2 := &testHandler{taskType: taskqueue.TaskTypeCleanup}
+	handler1 := &testHandler{taskType: taskqueue.TaskTypeCleanup}
+	handler2 := &testHandler{taskType: taskqueue.TaskTypeLifecycle}
 
 	worker.RegisterHandler(handler1)
 	worker.RegisterHandler(handler2)
 
 	types := worker.HandlerTypes()
 	assert.Len(t, types, 2)
-	assert.Contains(t, types, taskqueue.TaskTypeGCDecrement)
 	assert.Contains(t, types, taskqueue.TaskTypeCleanup)
+	assert.Contains(t, types, taskqueue.TaskTypeLifecycle)
 }
 
 func TestWorker_StartStop(t *testing.T) {
@@ -136,7 +136,7 @@ func TestWorker_StartStop(t *testing.T) {
 		Concurrency:  2,
 	})
 
-	handler := &testHandler{taskType: taskqueue.TaskTypeGCDecrement}
+	handler := &testHandler{taskType: taskqueue.TaskTypeCleanup}
 	worker.RegisterHandler(handler)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -185,7 +185,7 @@ func TestWorker_ProcessTask_Success(t *testing.T) {
 
 	var processed int64
 	handler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+		taskType: taskqueue.TaskTypeCleanup,
 		handleFn: func(ctx context.Context, task *taskqueue.Task) error {
 			atomic.AddInt64(&processed, 1)
 			return nil
@@ -203,7 +203,7 @@ func TestWorker_ProcessTask_Success(t *testing.T) {
 	// Enqueue a task
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{"test": true}`),
 		MaxRetries: 3,
 	}
@@ -235,7 +235,7 @@ func TestWorker_ProcessTask_Failure_Retry(t *testing.T) {
 	taskErr := errors.New("processing failed")
 
 	handler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+		taskType: taskqueue.TaskTypeCleanup,
 		handleFn: func(ctx context.Context, task *taskqueue.Task) error {
 			return taskErr
 		},
@@ -252,7 +252,7 @@ func TestWorker_ProcessTask_Failure_Retry(t *testing.T) {
 	// Enqueue a task
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -285,7 +285,7 @@ func TestWorker_ProcessTask_MaxRetries_DeadLetter(t *testing.T) {
 	taskErr := errors.New("always fails")
 
 	handler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+		taskType: taskqueue.TaskTypeCleanup,
 		handleFn: func(ctx context.Context, task *taskqueue.Task) error {
 			return taskErr
 		},
@@ -302,7 +302,7 @@ func TestWorker_ProcessTask_MaxRetries_DeadLetter(t *testing.T) {
 	// Enqueue a task that's already at max retries
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 1, // Will dead letter after 1 failure
 		Attempts:   0,
@@ -331,9 +331,9 @@ func TestWorker_NoHandlerForTaskType(t *testing.T) {
 	defer q.Close()
 	ctx := context.Background()
 
-	// Register handler for a different type
+	// Register handler for Cleanup type
 	handler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+		taskType: taskqueue.TaskTypeCleanup,
 	}
 
 	worker := taskqueue.NewWorker(taskqueue.WorkerConfig{
@@ -344,10 +344,10 @@ func TestWorker_NoHandlerForTaskType(t *testing.T) {
 	})
 	worker.RegisterHandler(handler)
 
-	// Enqueue a task of a different type
+	// Enqueue a task of a different type (Lifecycle)
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeCleanup, // Different type!
+		Type:       taskqueue.TaskTypeLifecycle, // Different type!
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -362,7 +362,7 @@ func TestWorker_NoHandlerForTaskType(t *testing.T) {
 	cancel()
 	worker.Stop()
 
-	// Task should still be pending (worker only handles GCDecrement)
+	// Task should still be pending (worker only handles Cleanup)
 	pending, err := q.Get(ctx, "task-1")
 	require.NoError(t, err)
 	assert.Equal(t, taskqueue.StatusPending, pending.Status)
@@ -374,7 +374,7 @@ func TestWorker_ContextCancellation(t *testing.T) {
 	q := taskqueue.NewMemoryQueue()
 	defer q.Close()
 
-	handler := &testHandler{taskType: taskqueue.TaskTypeGCDecrement}
+	handler := &testHandler{taskType: taskqueue.TaskTypeCleanup}
 
 	worker := taskqueue.NewWorker(taskqueue.WorkerConfig{
 		ID:           "test-worker",
@@ -417,7 +417,7 @@ func TestWorker_ConcurrentWorkers(t *testing.T) {
 	var processedCount int64
 
 	handler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+		taskType: taskqueue.TaskTypeCleanup,
 		handleFn: func(ctx context.Context, task *taskqueue.Task) error {
 			time.Sleep(10 * time.Millisecond) // Simulate work
 			atomic.AddInt64(&processedCount, 1)
@@ -436,7 +436,7 @@ func TestWorker_ConcurrentWorkers(t *testing.T) {
 	// Enqueue tasks
 	for i := 0; i < numTasks; i++ {
 		task := &taskqueue.Task{
-			Type:       taskqueue.TaskTypeGCDecrement,
+			Type:       taskqueue.TaskTypeCleanup,
 			Payload:    json.RawMessage(`{}`),
 			MaxRetries: 3,
 		}
@@ -467,7 +467,7 @@ func TestWorker_GracefulShutdown(t *testing.T) {
 	canFinish := make(chan struct{})
 
 	handler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+		taskType: taskqueue.TaskTypeCleanup,
 		handleFn: func(ctx context.Context, task *taskqueue.Task) error {
 			close(startedProcessing)
 			<-canFinish // Wait until we're told to finish
@@ -486,7 +486,7 @@ func TestWorker_GracefulShutdown(t *testing.T) {
 	// Enqueue a task
 	task := &taskqueue.Task{
 		ID:         "task-1",
-		Type:       taskqueue.TaskTypeGCDecrement,
+		Type:       taskqueue.TaskTypeCleanup,
 		Payload:    json.RawMessage(`{}`),
 		MaxRetries: 3,
 	}
@@ -537,12 +537,12 @@ func TestWorker_MultipleHandlers(t *testing.T) {
 	defer q.Close()
 	ctx := context.Background()
 
-	var gcProcessed, cleanupProcessed int64
+	var lifecycleProcessed, cleanupProcessed int64
 
-	gcHandler := &testHandler{
-		taskType: taskqueue.TaskTypeGCDecrement,
+	lifecycleHandler := &testHandler{
+		taskType: taskqueue.TaskTypeLifecycle,
 		handleFn: func(ctx context.Context, task *taskqueue.Task) error {
-			atomic.AddInt64(&gcProcessed, 1)
+			atomic.AddInt64(&lifecycleProcessed, 1)
 			return nil
 		},
 	}
@@ -561,13 +561,13 @@ func TestWorker_MultipleHandlers(t *testing.T) {
 		PollInterval: 10 * time.Millisecond,
 		Concurrency:  2,
 	})
-	worker.RegisterHandler(gcHandler)
+	worker.RegisterHandler(lifecycleHandler)
 	worker.RegisterHandler(cleanupHandler)
 
 	// Enqueue both types
 	for i := 0; i < 5; i++ {
 		require.NoError(t, q.Enqueue(ctx, &taskqueue.Task{
-			Type:       taskqueue.TaskTypeGCDecrement,
+			Type:       taskqueue.TaskTypeLifecycle,
 			Payload:    json.RawMessage(`{}`),
 			MaxRetries: 3,
 		}))
@@ -587,6 +587,6 @@ func TestWorker_MultipleHandlers(t *testing.T) {
 	cancel()
 	worker.Stop()
 
-	assert.Equal(t, int64(5), atomic.LoadInt64(&gcProcessed))
+	assert.Equal(t, int64(5), atomic.LoadInt64(&lifecycleProcessed))
 	assert.Equal(t, int64(5), atomic.LoadInt64(&cleanupProcessed))
 }

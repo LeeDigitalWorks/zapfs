@@ -1,14 +1,15 @@
-# ZapFS Benchmark Configuration
-# Minimal single-node setup for performance testing
+# ZapFS Minimal Cluster Configuration
+# Single-manager setup with two file servers for testing and benchmarking
 #
 # Usage:
-#   docker compose -f docker/docker-compose.benchmark.yml up -d
+#   docker compose -f docker/docker-compose.minimal.yml up -d
 #   ./scripts/benchmark.sh --host localhost:8082
-#   docker compose -f docker/docker-compose.benchmark.yml down -v
+#   go test -tags=integration -v ./integration/resiliency/...
+#   docker compose -f docker/docker-compose.minimal.yml down -v
 
 services:
   manager:
-    image: zapfs:benchmark
+    image: zapfs:minimal
     command:
       - manager
       - --ip=0.0.0.0
@@ -37,7 +38,7 @@ services:
       start_period: 10s
 
   metadata:
-    image: zapfs:benchmark
+    image: zapfs:minimal
     command:
       - metadata
       - --ip=0.0.0.0
@@ -66,24 +67,26 @@ services:
       retries: 6
       start_period: 10s
 
-  file:
-    image: zapfs:benchmark
+  file-1:
+    image: zapfs:minimal
     command:
       - file
       - --bind_addr=0.0.0.0:8081
       - --http_port=8080
       - --debug_port=8010
       - --index_path=/data/index
-      - --node_id=file
-      - --advertise_addr=file:8081
+      - --node_id=file-1
+      - --advertise_addr=file-1:8081
       - --manager_addr=manager:8050
       - --gc_interval=5m
       - --gc_grace_period=10m
+      - --reconciliation_interval=30s
+      - --reconciliation_grace_period=10s
     ports:
       - "8081:8081"
       - "8010:8010"  # Metrics
     volumes:
-      - file-data:/data  # NVMe-backed volume for best performance
+      - file-1-data:/data
     networks:
       - zapfs-net
     depends_on:
@@ -91,6 +94,38 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8010/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  file-2:
+    image: zapfs:minimal
+    command:
+      - file
+      - --bind_addr=0.0.0.0:8091
+      - --http_port=8090
+      - --debug_port=8011
+      - --index_path=/data/index
+      - --node_id=file-2
+      - --advertise_addr=file-2:8091
+      - --manager_addr=manager:8050
+      - --gc_interval=5m
+      - --gc_grace_period=10m
+      - --reconciliation_interval=30s
+      - --reconciliation_grace_period=10s
+    ports:
+      - "8091:8091"
+      - "8011:8011"  # Metrics
+    volumes:
+      - file-2-data:/data
+    networks:
+      - zapfs-net
+    depends_on:
+      manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8011/ready"]
       interval: 5s
       timeout: 3s
       retries: 6
@@ -126,5 +161,6 @@ networks:
 
 volumes:
   manager-data:
-  file-data:
+  file-1-data:
+  file-2-data:
   mysql-data:

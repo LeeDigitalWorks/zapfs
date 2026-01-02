@@ -47,8 +47,8 @@ func InitializeAccessLog(ctx context.Context, cfg AccessLogConfig) (*AccessLogMa
 		logger.Warn().Msg("access logging not started: no license manager")
 		return nil, nil
 	}
-	if err := mgr.CheckFeature(license.FeatureAuditLog); err != nil {
-		logger.Warn().Err(err).Msg("access logging not started: FeatureAuditLog not licensed")
+	if err := mgr.CheckFeature(license.FeatureAccessLog); err != nil {
+		logger.Warn().Err(err).Msg("access logging not started: FeatureAccessLog not licensed")
 		return nil, nil
 	}
 

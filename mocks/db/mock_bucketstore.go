@@ -39,6 +39,66 @@ func (_m *MockBucketStore) EXPECT() *MockBucketStore_Expecter {
 	return &MockBucketStore_Expecter{mock: &_m.Mock}
 }
 
+// CountBuckets provides a mock function for the type MockBucketStore
+func (_mock *MockBucketStore) CountBuckets(ctx context.Context) (int64, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountBuckets")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (int64, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) int64); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBucketStore_CountBuckets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountBuckets'
+type MockBucketStore_CountBuckets_Call struct {
+	*mock.Call
+}
+
+// CountBuckets is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockBucketStore_Expecter) CountBuckets(ctx interface{}) *MockBucketStore_CountBuckets_Call {
+	return &MockBucketStore_CountBuckets_Call{Call: _e.mock.On("CountBuckets", ctx)}
+}
+
+func (_c *MockBucketStore_CountBuckets_Call) Run(run func(ctx context.Context)) *MockBucketStore_CountBuckets_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBucketStore_CountBuckets_Call) Return(n int64, err error) *MockBucketStore_CountBuckets_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockBucketStore_CountBuckets_Call) RunAndReturn(run func(ctx context.Context) (int64, error)) *MockBucketStore_CountBuckets_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateBucket provides a mock function for the type MockBucketStore
 func (_mock *MockBucketStore) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
 	ret := _mock.Called(ctx, bucket)

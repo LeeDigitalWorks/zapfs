@@ -38,7 +38,7 @@ func TestLicenseGeneration(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "cust_123",
 		CustomerName: "Acme Corp",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP, FeatureKMS},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP, FeatureKMS},
 		Tier:         "premium",
 		ValidDays:    365,
 	})
@@ -57,7 +57,7 @@ func TestLicenseGeneration(t *testing.T) {
 	assert.Equal(t, "Acme Corp", license.CustomerName)
 	assert.Equal(t, "premium", license.Tier)
 	assert.Len(t, license.Features, 3)
-	assert.True(t, license.HasFeature(FeatureAuditLog))
+	assert.True(t, license.HasFeature(FeatureAccessLog))
 	assert.True(t, license.HasFeature(FeatureLDAP))
 	assert.True(t, license.HasFeature(FeatureKMS))
 	assert.False(t, license.HasFeature(FeatureMultiRegion))
@@ -122,14 +122,14 @@ func TestFeatureCheck(t *testing.T) {
 	require.NoError(t, err)
 
 	// No license loaded
-	err = manager.CheckFeature(FeatureAuditLog)
+	err = manager.CheckFeature(FeatureAccessLog)
 	assert.ErrorIs(t, err, ErrNoLicense)
 
 	// Load license with specific features
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "cust_123",
 		CustomerName: "Test Corp",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP},
 		Tier:         "standard",
 		ValidDays:    30,
 	})
@@ -139,7 +139,7 @@ func TestFeatureCheck(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check enabled features
-	assert.NoError(t, manager.CheckFeature(FeatureAuditLog))
+	assert.NoError(t, manager.CheckFeature(FeatureAccessLog))
 	assert.NoError(t, manager.CheckFeature(FeatureLDAP))
 
 	// Check disabled features
@@ -168,7 +168,7 @@ func TestLicenseInfo(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "cust_123",
 		CustomerName: "Info Corp",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		Tier:         "premium",
 		ValidDays:    30,
 	})
@@ -210,7 +210,7 @@ func TestInvalidLicenseKey(t *testing.T) {
 	wrongLicense, err := differentGenerator.Generate(LicenseRequest{
 		CustomerID:   "cust_123",
 		CustomerName: "Wrong Corp",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		ValidDays:    30,
 	})
 	require.NoError(t, err)
@@ -221,16 +221,17 @@ func TestInvalidLicenseKey(t *testing.T) {
 
 func TestAllFeatures(t *testing.T) {
 	features := AllFeatures()
-	assert.Len(t, features, 9)
-	assert.Contains(t, features, FeatureAuditLog)
+	assert.Len(t, features, 10)
+	assert.Contains(t, features, FeatureAccessLog)
+	assert.Contains(t, features, FeatureEvents)
 	assert.Contains(t, features, FeatureLDAP)
 	assert.Contains(t, features, FeatureOIDC)
 	assert.Contains(t, features, FeatureKMS)
 	assert.Contains(t, features, FeatureMultiRegion)
 	assert.Contains(t, features, FeatureObjectLock)
 	assert.Contains(t, features, FeatureLifecycle)
-	assert.Contains(t, features, FeatureMultiTenancy)
 	assert.Contains(t, features, FeatureAdvancedMetrics)
+	assert.Contains(t, features, FeatureBackup)
 }
 
 func TestTestdataKeys(t *testing.T) {
@@ -247,7 +248,7 @@ func TestTestdataKeys(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "test_customer",
 		CustomerName: "Test Company",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		Tier:         "test",
 		ValidDays:    30,
 	})
@@ -275,7 +276,7 @@ func TestLoadLicenseFromFile(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "file_test",
 		CustomerName: "File Test Corp",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP},
 		Tier:         "standard",
 		ValidDays:    365,
 	})
@@ -309,7 +310,7 @@ func TestReloadLicense(t *testing.T) {
 	license1, err := generator.Generate(LicenseRequest{
 		CustomerID:   "v1",
 		CustomerName: "Version 1",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		Tier:         "basic",
 		ValidDays:    30,
 	})
@@ -333,7 +334,7 @@ func TestReloadLicense(t *testing.T) {
 	license2, err := generator.Generate(LicenseRequest{
 		CustomerID:   "v2",
 		CustomerName: "Version 2",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP, FeatureKMS},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP, FeatureKMS},
 		Tier:         "premium",
 		ValidDays:    365,
 	})
@@ -368,7 +369,7 @@ func TestConcurrentAccess(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "concurrent_test",
 		CustomerName: "Concurrent Corp",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP},
 		Tier:         "enterprise",
 		ValidDays:    365,
 	})
@@ -392,7 +393,7 @@ func TestConcurrentAccess(t *testing.T) {
 				if license != nil {
 					_ = license.CustomerID
 					_ = manager.IsLicensed()
-					_ = manager.CheckFeature(FeatureAuditLog)
+					_ = manager.CheckFeature(FeatureAccessLog)
 					readCount.Add(1)
 				}
 			}
@@ -431,7 +432,7 @@ func TestWatchLicenseFile(t *testing.T) {
 	license1, err := generator.Generate(LicenseRequest{
 		CustomerID:   "watch_v1",
 		CustomerName: "Watch Test V1",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		Tier:         "basic",
 		ValidDays:    30,
 	})
@@ -469,7 +470,7 @@ func TestWatchLicenseFile(t *testing.T) {
 	license2, err := generator.Generate(LicenseRequest{
 		CustomerID:   "watch_v2",
 		CustomerName: "Watch Test V2",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP},
 		Tier:         "premium",
 		ValidDays:    365,
 	})
@@ -523,7 +524,7 @@ func TestNewManagerWithKeys(t *testing.T) {
 	licenseV1, err := generatorV1.Generate(LicenseRequest{
 		CustomerID:   "cust_v1",
 		CustomerName: "V1 Corp",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		Tier:         "basic",
 		ValidDays:    30,
 	})
@@ -533,7 +534,7 @@ func TestNewManagerWithKeys(t *testing.T) {
 	licenseV2, err := generatorV2.Generate(LicenseRequest{
 		CustomerID:   "cust_v2",
 		CustomerName: "V2 Corp",
-		Features:     []Feature{FeatureAuditLog, FeatureLDAP},
+		Features:     []Feature{FeatureAccessLog, FeatureLDAP},
 		Tier:         "premium",
 		ValidDays:    365,
 	})
@@ -579,7 +580,7 @@ func TestKeyRotation(t *testing.T) {
 	oldLicense, err := generatorV1.Generate(LicenseRequest{
 		CustomerID:   "old_customer",
 		CustomerName: "Old Customer Inc",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		Tier:         "standard",
 		ValidDays:    30,
 	})
@@ -592,7 +593,7 @@ func TestKeyRotation(t *testing.T) {
 	newLicense, err := generatorV2.Generate(LicenseRequest{
 		CustomerID:   "new_customer",
 		CustomerName: "New Customer Inc",
-		Features:     []Feature{FeatureAuditLog, FeatureKMS},
+		Features:     []Feature{FeatureAccessLog, FeatureKMS},
 		Tier:         "enterprise",
 		ValidDays:    365,
 	})
@@ -631,7 +632,7 @@ func TestNewManagerWithKeys_RejectsUnknownKeyID(t *testing.T) {
 	unknownLicense, err := generatorUnknown.Generate(LicenseRequest{
 		CustomerID:   "unknown_cust",
 		CustomerName: "Unknown Corp",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		ValidDays:    30,
 	})
 	require.NoError(t, err)
@@ -709,7 +710,7 @@ func TestGeneratorWithKeyID(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "test",
 		CustomerName: "Test",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		ValidDays:    30,
 	})
 	require.NoError(t, err)
@@ -738,7 +739,7 @@ func TestGeneratorWithKeyID_DefaultsToV1(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "test",
 		CustomerName: "Test",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		ValidDays:    30,
 	})
 	require.NoError(t, err)
@@ -766,7 +767,7 @@ func TestDefaultKeyIDUsedWhenNoKidHeader(t *testing.T) {
 	licenseKey, err := generator.Generate(LicenseRequest{
 		CustomerID:   "test",
 		CustomerName: "Test",
-		Features:     []Feature{FeatureAuditLog},
+		Features:     []Feature{FeatureAccessLog},
 		ValidDays:    30,
 	})
 	require.NoError(t, err)

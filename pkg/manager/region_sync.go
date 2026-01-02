@@ -8,6 +8,7 @@ package manager
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -193,31 +194,59 @@ func (rs *RegionSyncer) watchCollections() error {
 }
 
 // handleFullSync replaces the local cache with the full sync batch.
+// Uses atomic index swap to prevent inconsistent state if process crashes mid-rebuild.
 func (rs *RegionSyncer) handleFullSync(event *manager_pb.CollectionEvent) {
-	rs.ms.mu.Lock()
-	defer rs.ms.mu.Unlock()
-
-	// Build new collection map from sync batch
+	// Build new collection map and indexes OUTSIDE the lock.
+	// This ensures if we crash during build, the old state remains valid.
 	newCollections := make(map[string]*manager_pb.Collection, len(event.Collections))
+	newByOwner := make(map[string][]string)
+	newOwnerCount := make(map[string]int)
+	newByTier := make(map[string][]string)
+
 	for _, col := range event.Collections {
 		if !col.IsDeleted {
 			// Clone to avoid sharing protobuf memory with stream
-			newCollections[col.Name] = proto.Clone(col).(*manager_pb.Collection)
+			colCopy := proto.Clone(col).(*manager_pb.Collection)
+			newCollections[col.Name] = colCopy
+
+			// Build owner index
+			newByOwner[col.Owner] = append(newByOwner[col.Owner], col.Name)
+			newOwnerCount[col.Owner]++
+
+			// Build tier index
+			newByTier[col.Tier] = append(newByTier[col.Tier], col.Name)
 		}
 	}
 
-	// Clear and rebuild indexes
-	rs.ms.collectionsByOwner = make(map[string][]string)
-	rs.ms.ownerCollectionCount = make(map[string]int)
-	rs.ms.collectionsByTier = make(map[string][]string)
-
-	// Replace collections and rebuild indexes
-	rs.ms.collections = newCollections
-	for _, col := range rs.ms.collections {
-		rs.ms.addCollectionToIndexes(col)
+	// Sort owner collections for efficient prefix scans
+	for owner := range newByOwner {
+		sort.Strings(newByOwner[owner])
 	}
 
+	// Now atomically swap all state under lock
+	rs.ms.mu.Lock()
+	defer rs.ms.mu.Unlock()
+
+	// Atomic swap - either all state is updated or none
+	rs.ms.collections = newCollections
+	rs.ms.collectionsByOwner = newByOwner
+	rs.ms.ownerCollectionCount = newOwnerCount
+	rs.ms.collectionsByTier = newByTier
 	rs.ms.collectionsVersion = event.Version
+
+	// Rebuild time index (BTree doesn't support bulk replacement, but this is fast)
+	// Note: The time index rebuild happens under lock, but collections/indexes
+	// are already atomically swapped above, so partial crash here only affects
+	// time-ordered queries (less critical than owner/tier lookups).
+	rs.ms.collectionsByTime.Clear(false)
+	for _, col := range rs.ms.collections {
+		rs.ms.collectionsByTime.ReplaceOrInsert(&collectionTimeItem{
+			createdAt:  col.CreatedAt.AsTime(),
+			name:       col.Name,
+			collection: col,
+		})
+	}
+
 	regionCacheSyncBuckets.Set(float64(len(rs.ms.collections)))
 }
 
