@@ -111,6 +111,9 @@ type DB interface {
 	// Bucket Logging operations (access log configuration)
 	LoggingStore
 
+	// Notification operations (event notifications)
+	NotificationStore
+
 	// Transaction support - executes fn within a transaction.
 	// If fn returns an error, the transaction is rolled back.
 	// If fn returns nil, the transaction is committed.
@@ -482,15 +485,29 @@ type LoggingStore interface {
 	ListLoggingConfigs(ctx context.Context) ([]*BucketLoggingConfig, error)
 }
 
+// NotificationStore provides operations for bucket notification configurations.
+type NotificationStore interface {
+	// GetNotificationConfiguration retrieves the notification config for a bucket.
+	// Returns nil, nil if no configuration exists.
+	GetNotificationConfiguration(ctx context.Context, bucket string) (*s3types.NotificationConfiguration, error)
+
+	// SetNotificationConfiguration stores the notification config for a bucket.
+	SetNotificationConfiguration(ctx context.Context, bucket string, config *s3types.NotificationConfiguration) error
+
+	// DeleteNotificationConfiguration removes the notification config for a bucket.
+	DeleteNotificationConfiguration(ctx context.Context, bucket string) error
+}
+
 // Common Lifecycle/ObjectLock errors
 var (
-	ErrLifecycleNotFound         = fmt.Errorf("lifecycle configuration not found")
+	ErrLifecycleNotFound          = fmt.Errorf("lifecycle configuration not found")
 	ErrLifecycleScanStateNotFound = fmt.Errorf("lifecycle scan state not found")
-	ErrObjectLockNotFound        = fmt.Errorf("object lock configuration not found")
-	ErrRetentionNotFound         = fmt.Errorf("retention not found")
-	ErrLegalHoldNotFound         = fmt.Errorf("legal hold not found")
-	ErrPublicAccessBlockNotFound = fmt.Errorf("public access block configuration not found")
-	ErrOwnershipControlsNotFound = fmt.Errorf("ownership controls not found")
+	ErrObjectLockNotFound         = fmt.Errorf("object lock configuration not found")
+	ErrRetentionNotFound          = fmt.Errorf("retention not found")
+	ErrLegalHoldNotFound          = fmt.Errorf("legal hold not found")
+	ErrPublicAccessBlockNotFound  = fmt.Errorf("public access block configuration not found")
+	ErrOwnershipControlsNotFound  = fmt.Errorf("ownership controls not found")
+	ErrNotificationNotFound       = fmt.Errorf("notification configuration not found")
 )
 
 // ============================================================================

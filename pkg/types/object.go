@@ -18,8 +18,11 @@ type ObjectRef struct {
 	DeletedAt int64     `json:"deleted_at,omitempty"`
 	TTL       uint32    `json:"ttl,omitempty"` // Seconds until expiration
 
-	// Storage profile used for this object (e.g., "STANDARD", "GLACIER")
+	// Storage profile used for this object
 	ProfileID string `json:"profile_id,omitempty"`
+
+	// StorageClass is the S3 storage class (STANDARD, GLACIER, DEEP_ARCHIVE, etc.)
+	StorageClass string `json:"storage_class,omitempty"`
 
 	// Storage location - one of these is set depending on storage mode
 	ChunkRefs  []ChunkRef  `json:"chunk_refs,omitempty"`   // For simple/replicated storage

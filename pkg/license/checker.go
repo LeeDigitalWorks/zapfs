@@ -18,6 +18,7 @@ type Feature string
 // Enterprise features that require a license.
 const (
 	FeatureAuditLog        Feature = "audit_log"
+	FeatureEvents          Feature = "events"
 	FeatureLDAP            Feature = "ldap"
 	FeatureOIDC            Feature = "oidc"
 	FeatureKMS             Feature = "kms"
@@ -115,4 +116,9 @@ func CheckMultiRegion() bool {
 // CheckObjectLock checks if object lock feature is licensed.
 func CheckObjectLock() bool {
 	return checker.CheckFeature(FeatureObjectLock) == nil
+}
+
+// CheckEvents checks if event notifications feature is licensed.
+func CheckEvents() bool {
+	return checker.CheckFeature(FeatureEvents) == nil
 }

@@ -725,6 +725,63 @@ func (_c *MockDB_DeleteMultipartUpload_Call) RunAndReturn(run func(ctx context.C
 	return _c
 }
 
+// DeleteNotificationConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteNotificationConfiguration(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteNotificationConfiguration")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteNotificationConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteNotificationConfiguration'
+type MockDB_DeleteNotificationConfiguration_Call struct {
+	*mock.Call
+}
+
+// DeleteNotificationConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) DeleteNotificationConfiguration(ctx interface{}, bucket interface{}) *MockDB_DeleteNotificationConfiguration_Call {
+	return &MockDB_DeleteNotificationConfiguration_Call{Call: _e.mock.On("DeleteNotificationConfiguration", ctx, bucket)}
+}
+
+func (_c *MockDB_DeleteNotificationConfiguration_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_DeleteNotificationConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteNotificationConfiguration_Call) Return(err error) *MockDB_DeleteNotificationConfiguration_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteNotificationConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteNotificationConfiguration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteObject provides a mock function for the type MockDB
 func (_mock *MockDB) DeleteObject(ctx context.Context, bucket string, key string) error {
 	ret := _mock.Called(ctx, bucket, key)
@@ -1853,6 +1910,74 @@ func (_c *MockDB_GetMultipartUpload_Call) Return(multipartUpload *types.Multipar
 }
 
 func (_c *MockDB_GetMultipartUpload_Call) RunAndReturn(run func(ctx context.Context, bucket string, key string, uploadID string) (*types.MultipartUpload, error)) *MockDB_GetMultipartUpload_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetNotificationConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) GetNotificationConfiguration(ctx context.Context, bucket string) (*s3types.NotificationConfiguration, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetNotificationConfiguration")
+	}
+
+	var r0 *s3types.NotificationConfiguration
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*s3types.NotificationConfiguration, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *s3types.NotificationConfiguration); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*s3types.NotificationConfiguration)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetNotificationConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetNotificationConfiguration'
+type MockDB_GetNotificationConfiguration_Call struct {
+	*mock.Call
+}
+
+// GetNotificationConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetNotificationConfiguration(ctx interface{}, bucket interface{}) *MockDB_GetNotificationConfiguration_Call {
+	return &MockDB_GetNotificationConfiguration_Call{Call: _e.mock.On("GetNotificationConfiguration", ctx, bucket)}
+}
+
+func (_c *MockDB_GetNotificationConfiguration_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetNotificationConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetNotificationConfiguration_Call) Return(notificationConfiguration *s3types.NotificationConfiguration, err error) *MockDB_GetNotificationConfiguration_Call {
+	_c.Call.Return(notificationConfiguration, err)
+	return _c
+}
+
+func (_c *MockDB_GetNotificationConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*s3types.NotificationConfiguration, error)) *MockDB_GetNotificationConfiguration_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -4298,6 +4423,69 @@ func (_c *MockDB_SetBucketWebsite_Call) Return(err error) *MockDB_SetBucketWebsi
 }
 
 func (_c *MockDB_SetBucketWebsite_Call) RunAndReturn(run func(ctx context.Context, bucket string, website *s3types.WebsiteConfiguration) error) *MockDB_SetBucketWebsite_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetNotificationConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) SetNotificationConfiguration(ctx context.Context, bucket string, config *s3types.NotificationConfiguration) error {
+	ret := _mock.Called(ctx, bucket, config)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetNotificationConfiguration")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *s3types.NotificationConfiguration) error); ok {
+		r0 = returnFunc(ctx, bucket, config)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetNotificationConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetNotificationConfiguration'
+type MockDB_SetNotificationConfiguration_Call struct {
+	*mock.Call
+}
+
+// SetNotificationConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - config *s3types.NotificationConfiguration
+func (_e *MockDB_Expecter) SetNotificationConfiguration(ctx interface{}, bucket interface{}, config interface{}) *MockDB_SetNotificationConfiguration_Call {
+	return &MockDB_SetNotificationConfiguration_Call{Call: _e.mock.On("SetNotificationConfiguration", ctx, bucket, config)}
+}
+
+func (_c *MockDB_SetNotificationConfiguration_Call) Run(run func(ctx context.Context, bucket string, config *s3types.NotificationConfiguration)) *MockDB_SetNotificationConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *s3types.NotificationConfiguration
+		if args[2] != nil {
+			arg2 = args[2].(*s3types.NotificationConfiguration)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetNotificationConfiguration_Call) Return(err error) *MockDB_SetNotificationConfiguration_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetNotificationConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string, config *s3types.NotificationConfiguration) error) *MockDB_SetNotificationConfiguration_Call {
 	_c.Call.Return(run)
 	return _c
 }

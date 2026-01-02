@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS objects (
     deleted_at BIGINT DEFAULT 0,
     ttl INT UNSIGNED DEFAULT 0,
     profile_id VARCHAR(36),
+    storage_class VARCHAR(32) DEFAULT 'STANDARD' COMMENT 'S3 storage class: STANDARD, GLACIER, DEEP_ARCHIVE, etc.',
     chunk_refs JSON,
     ec_group_ids JSON,
     is_latest TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'True for the current version of the object',

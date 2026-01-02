@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/events"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
@@ -34,6 +35,7 @@ type serviceImpl struct {
 	defaultProfile string
 	profiles       *types.ProfileSet
 	crrHook        CRRHook
+	emitter        *events.Emitter
 }
 
 // CRRHook defines callbacks for cross-region replication (enterprise feature).
@@ -51,7 +53,8 @@ type Config struct {
 	BucketStore    *cache.BucketStore
 	DefaultProfile string
 	Profiles       *types.ProfileSet
-	CRRHook        CRRHook // Optional, enterprise feature
+	CRRHook        CRRHook         // Optional, enterprise feature
+	Emitter        *events.Emitter // Optional, for S3 event notifications
 }
 
 // NewService creates a new object service
@@ -78,6 +81,7 @@ func NewService(cfg Config) (Service, error) {
 		defaultProfile: cfg.DefaultProfile,
 		profiles:       cfg.Profiles,
 		crrHook:        cfg.CRRHook,
+		emitter:        cfg.Emitter,
 	}, nil
 }
 
@@ -272,6 +276,12 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 	if s.crrHook != nil && s.bucketStore != nil {
 		bucketInfo, _ := s.bucketStore.GetBucket(req.Bucket)
 		s.crrHook.AfterPutObject(ctx, &bucketInfo, req.Key, etag, int64(writeResult.Size))
+	}
+
+	// Emit S3 event notification
+	if s.emitter != nil {
+		s.emitter.EmitObjectCreated(ctx, events.EventObjectCreatedPut,
+			req.Bucket, req.Key, int64(originalSize), etag, objectID.String(), req.Owner, "", "")
 	}
 
 	result := &PutObjectResult{
@@ -611,6 +621,12 @@ func (s *serviceImpl) DeleteObject(ctx context.Context, bucket, key string) (*De
 		s.crrHook.AfterDeleteObject(ctx, &bucketInfo, key)
 	}
 
+	// Emit S3 event notification
+	if s.emitter != nil {
+		s.emitter.EmitObjectRemoved(ctx, events.EventObjectRemovedDelete,
+			bucket, key, "", "", "", "")
+	}
+
 	return &DeleteObjectResult{}, nil
 }
 
@@ -698,6 +714,12 @@ func (s *serviceImpl) DeleteObjects(ctx context.Context, req *DeleteObjectsReque
 		if s.crrHook != nil && s.bucketStore != nil {
 			bucketInfo, _ := s.bucketStore.GetBucket(req.Bucket)
 			s.crrHook.AfterDeleteObject(ctx, &bucketInfo, obj.Key)
+		}
+
+		// Emit S3 event notification
+		if s.emitter != nil {
+			s.emitter.EmitObjectRemoved(ctx, events.EventObjectRemovedDelete,
+				req.Bucket, obj.Key, "", "", "", "")
 		}
 	}
 
@@ -798,6 +820,12 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 	// Store in database
 	if err := s.db.PutObject(ctx, newObjRef); err != nil {
 		return nil, newInternalError(err)
+	}
+
+	// Emit S3 event notification for copy
+	if s.emitter != nil {
+		s.emitter.EmitObjectCreated(ctx, events.EventObjectCreatedCopy,
+			req.DestBucket, req.DestKey, int64(srcObj.Size), srcObj.ETag, newObjRef.ID.String(), "", "", "")
 	}
 
 	// Handle tagging directive

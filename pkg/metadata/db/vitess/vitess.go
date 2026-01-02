@@ -49,6 +49,14 @@ func DefaultConfig(dsn string) Config {
 	}
 }
 
+// storageClass returns the storage class, defaulting to STANDARD if empty
+func storageClass(sc string) string {
+	if sc == "" {
+		return "STANDARD"
+	}
+	return sc
+}
+
 // Vitess implements db.DB using Vitess as the backing store
 type Vitess struct {
 	db     *sql.DB
@@ -154,8 +162,8 @@ func (t *vitessTx) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 		// Insert new version
 		_, err = t.tx.ExecContext(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			obj.ID.String(),
 			obj.Bucket,
@@ -167,6 +175,7 @@ func (t *vitessTx) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			obj.DeletedAt,
 			obj.TTL,
 			obj.ProfileID,
+			storageClass(obj.StorageClass),
 			string(chunkRefsJSON),
 			string(ecGroupIDsJSON),
 			isLatest,
@@ -185,8 +194,8 @@ func (t *vitessTx) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 		}
 
 		_, err = t.tx.ExecContext(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
 		`,
 			obj.ID.String(),
 			obj.Bucket,
@@ -198,6 +207,7 @@ func (t *vitessTx) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			obj.DeletedAt,
 			obj.TTL,
 			obj.ProfileID,
+			storageClass(obj.StorageClass),
 			string(chunkRefsJSON),
 			string(ecGroupIDsJSON),
 			obj.SSEAlgorithm,
@@ -214,7 +224,7 @@ func (t *vitessTx) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 func (t *vitessTx) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {
 	row := t.tx.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ? AND object_key = ? AND is_latest = 1
 	`, bucket, key)
@@ -223,7 +233,7 @@ func (t *vitessTx) GetObject(ctx context.Context, bucket, key string) (*types.Ob
 
 func (t *vitessTx) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
 	row := t.tx.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE id = ?
 	`, id.String())
@@ -277,7 +287,7 @@ func (t *vitessTx) ListObjectsV2(ctx context.Context, params *db.ListObjectsPara
 	}
 
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ?
 		  AND object_key LIKE ?
@@ -352,7 +362,7 @@ func (t *vitessTx) ListObjectsV2(ctx context.Context, params *db.ListObjectsPara
 
 func (t *vitessTx) ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE deleted_at > 0 AND deleted_at < ?
 		ORDER BY deleted_at
@@ -848,8 +858,8 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 		// Insert new version
 		_, err = v.db.ExecContext(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			obj.ID.String(),
 			obj.Bucket,
@@ -861,6 +871,7 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			obj.DeletedAt,
 			obj.TTL,
 			obj.ProfileID,
+			storageClass(obj.StorageClass),
 			chunkRefsJSON,
 			ecGroupIDsJSON,
 			isLatest,
@@ -880,8 +891,8 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 		// Insert new object
 		_, err = v.db.ExecContext(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
 		`,
 			obj.ID.String(),
 			obj.Bucket,
@@ -893,6 +904,7 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			obj.DeletedAt,
 			obj.TTL,
 			obj.ProfileID,
+			storageClass(obj.StorageClass),
 			chunkRefsJSON,
 			ecGroupIDsJSON,
 			obj.SSEAlgorithm,
@@ -909,7 +921,7 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ? AND object_key = ? AND is_latest = 1 AND deleted_at = 0
 	`, bucket, key)
@@ -919,7 +931,7 @@ func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.Obje
 
 func (v *Vitess) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE id = ?
 	`, id.String())
@@ -982,7 +994,7 @@ func (v *Vitess) ListObjectsV2(ctx context.Context, params *db.ListObjectsParams
 
 	// Build efficient query with proper indexes
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ?
 		  AND object_key LIKE ?
@@ -1068,7 +1080,7 @@ func (v *Vitess) ListObjectsV2(ctx context.Context, params *db.ListObjectsParams
 
 func (v *Vitess) ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE deleted_at > 0 AND deleted_at < ?
 		ORDER BY deleted_at
@@ -1264,7 +1276,7 @@ type scanner interface {
 func scanObject(s scanner) (*types.ObjectRef, error) {
 	var obj types.ObjectRef
 	var idStr string
-	var profileID sql.NullString
+	var profileID, storageClass sql.NullString
 	var chunkRefsJSON, ecGroupIDsJSON []byte
 	var isLatest int
 	var sseAlgorithm, sseCustomerKeyMD5, sseKMSKeyID sql.NullString
@@ -1281,6 +1293,7 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 		&obj.DeletedAt,
 		&obj.TTL,
 		&profileID,
+		&storageClass,
 		&chunkRefsJSON,
 		&ecGroupIDsJSON,
 		&isLatest,
@@ -1298,6 +1311,10 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 
 	obj.ID, _ = uuid.Parse(idStr)
 	obj.ProfileID = profileID.String
+	obj.StorageClass = storageClass.String
+	if obj.StorageClass == "" {
+		obj.StorageClass = "STANDARD"
+	}
 	obj.IsLatest = isLatest == 1
 
 	if len(chunkRefsJSON) > 0 && string(chunkRefsJSON) != "null" {
@@ -1692,7 +1709,7 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 
 func (v *Vitess) GetObjectVersion(ctx context.Context, bucket, key, versionID string) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ? AND object_key = ? AND id = ?
 	`, bucket, key, versionID)

@@ -42,6 +42,7 @@ type DB struct {
 	publicAccessBlock map[string]*s3types.PublicAccessBlockConfig
 	ownershipControls map[string]*s3types.OwnershipControls
 	logging           map[string]*db.BucketLoggingConfig
+	notifications     map[string]*s3types.NotificationConfiguration
 }
 
 // New creates a new in-memory database for testing.
@@ -64,6 +65,7 @@ func New() *DB {
 		publicAccessBlock: make(map[string]*s3types.PublicAccessBlockConfig),
 		ownershipControls: make(map[string]*s3types.OwnershipControls),
 		logging:           make(map[string]*db.BucketLoggingConfig),
+		notifications:     make(map[string]*s3types.NotificationConfiguration),
 	}
 }
 
@@ -947,6 +949,37 @@ func (d *DB) ListLoggingConfigs(ctx context.Context) ([]*db.BucketLoggingConfig,
 		configs = append(configs, config)
 	}
 	return configs, nil
+}
+
+// ============================================================================
+// Notification Configuration
+// ============================================================================
+
+func (d *DB) GetNotificationConfiguration(ctx context.Context, bucket string) (*s3types.NotificationConfiguration, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	config, ok := d.notifications[bucket]
+	if !ok {
+		return nil, nil
+	}
+	return config, nil
+}
+
+func (d *DB) SetNotificationConfiguration(ctx context.Context, bucket string, config *s3types.NotificationConfiguration) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.notifications[bucket] = config
+	return nil
+}
+
+func (d *DB) DeleteNotificationConfiguration(ctx context.Context, bucket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	delete(d.notifications, bucket)
+	return nil
 }
 
 // ============================================================================

@@ -15,6 +15,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
 	"github.com/LeeDigitalWorks/zapfs/pkg/env"
+	"github.com/LeeDigitalWorks/zapfs/pkg/events"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/api"
@@ -310,6 +311,20 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		logger.Info().Str("region", opts.RegionID).Msg("CRR hook enabled for cross-region replication")
 	}
 
+	// Event emitter for S3 notifications (enterprise feature)
+	// Creates a noop emitter if taskqueue is not available
+	var emitter *events.Emitter
+	if tq != nil {
+		emitter = events.NewEmitter(events.EmitterConfig{
+			Queue:   tq,
+			Enabled: true,
+			Region:  opts.RegionID,
+		})
+		logger.Info().Str("region", opts.RegionID).Msg("event emitter enabled for S3 notifications")
+	} else {
+		emitter = events.NoopEmitter()
+	}
+
 	// Metadata server
 	serverCfg := api.ServerConfig{
 		ManagerClient:     managerClient,
@@ -324,7 +339,8 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		DefaultProfile:    "STANDARD",
 		IAMService:        iamService, // For KMS operations (enterprise feature)
 		TaskQueue:         tq,
-		CRRHook:           crrHook, // Cross-region replication (enterprise feature)
+		CRRHook:           crrHook,  // Cross-region replication (enterprise feature)
+		Emitter:           emitter, // S3 event notifications (enterprise feature)
 		// Cross-region replication credentials (enterprise: FeatureMultiRegion)
 		// Never log the secret key!
 		ReplicationCredentials: api.ReplicationCredentials{

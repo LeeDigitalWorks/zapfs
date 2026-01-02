@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/events"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
@@ -42,6 +43,7 @@ type Config struct {
 	Encryption     *encryption.Handler
 	Profiles       *types.ProfileSet
 	DefaultProfile string
+	Emitter        *events.Emitter // Optional, for S3 event notifications
 }
 
 // serviceImpl implements the Service interface
@@ -51,6 +53,7 @@ type serviceImpl struct {
 	encryption     *encryption.Handler
 	profiles       *types.ProfileSet
 	defaultProfile string
+	emitter        *events.Emitter
 }
 
 // NewService creates a new multipart service
@@ -73,6 +76,7 @@ func NewService(cfg Config) (Service, error) {
 		encryption:     cfg.Encryption,
 		profiles:       cfg.Profiles,
 		defaultProfile: defaultProfile,
+		emitter:        cfg.Emitter,
 	}, nil
 }
 
@@ -655,6 +659,12 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 		result.SSEAlgorithm = upload.SSEAlgorithm
 		result.SSEKMSKeyID = upload.SSEKMSKeyID
 		result.SSEKMSContext = upload.SSEKMSContext
+	}
+
+	// Emit S3 event notification for multipart upload completion
+	if s.emitter != nil {
+		s.emitter.EmitObjectCreated(ctx, events.EventObjectCreatedCompleteUpload,
+			req.Bucket, req.Key, totalSize, finalETag, "", upload.OwnerID, "", "")
 	}
 
 	return result, nil

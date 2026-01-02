@@ -33,6 +33,7 @@ type Feature = pkglicense.Feature
 // This ensures enterprise/license and pkg/license stay in sync.
 const (
 	FeatureAuditLog        = pkglicense.FeatureAuditLog
+	FeatureEvents          = pkglicense.FeatureEvents
 	FeatureLDAP            = pkglicense.FeatureLDAP
 	FeatureOIDC            = pkglicense.FeatureOIDC
 	FeatureKMS             = pkglicense.FeatureKMS
@@ -47,6 +48,7 @@ const (
 func AllFeatures() []Feature {
 	return []Feature{
 		FeatureAuditLog,
+		FeatureEvents,
 		FeatureLDAP,
 		FeatureOIDC,
 		FeatureKMS,

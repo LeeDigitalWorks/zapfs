@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/events"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
@@ -112,6 +113,7 @@ type ServerConfig struct {
 	UsageConfig        usage.Config         // Usage reporting configuration
 	UsageStore         usage.Store          // Usage data store (nil = use NopStore)
 	AccessLogCollector AccessLogCollector   // Access log collector (enterprise: FeatureAuditLog)
+	Emitter            *events.Emitter      // Event emitter for S3 notifications (enterprise: FeatureEvents)
 
 	// Lifecycle scanner configuration (community feature)
 	LifecycleScannerEnabled  bool
@@ -148,6 +150,7 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		IAMService:        cfg.IAMService,
 		CRRHook:           adaptCRRHook(cfg.CRRHook),
 		TaskQueue:         cfg.TaskQueue,
+		Emitter:           cfg.Emitter,
 		// Cross-region replication configuration
 		RegionConfig:           cfg.RegionConfig,
 		ReplicationCredentials: cfg.ReplicationCredentials,

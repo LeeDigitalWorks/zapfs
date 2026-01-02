@@ -94,6 +94,7 @@ func NewService(cfg Config) (*Service, error) {
 		DefaultProfile: cfg.DefaultProfile,
 		Profiles:       cfg.Profiles,
 		CRRHook:        cfg.CRRHook,
+		Emitter:        cfg.Emitter,
 	})
 	if err != nil {
 		return nil, err
@@ -117,6 +118,7 @@ func NewService(cfg Config) (*Service, error) {
 		Encryption:     encHandler,
 		Profiles:       cfg.Profiles,
 		DefaultProfile: cfg.DefaultProfile,
+		Emitter:        cfg.Emitter,
 	})
 	if err != nil {
 		return nil, err

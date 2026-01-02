@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
+	"github.com/LeeDigitalWorks/zapfs/pkg/events"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
@@ -43,6 +44,10 @@ type Config struct {
 	// Enterprise features (may be nil)
 	IAMService *iam.Service   // For KMS operations
 	CRRHook    object.CRRHook // For cross-region replication
+
+	// Event emitter for S3 event notifications (enterprise: FeatureEvents)
+	// If nil, events are not emitted
+	Emitter *events.Emitter
 
 	// Cross-region replication configuration (enterprise)
 	RegionConfig           *manager.RegionConfig // For getting S3 endpoints per region
