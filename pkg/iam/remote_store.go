@@ -6,6 +6,7 @@ package iam
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -144,7 +145,13 @@ func (r *RemoteCredentialStore) connect(ctx context.Context) error {
 	// Try each manager address
 	var lastErr error
 	for _, addr := range r.managerAddrs {
-		conn, err := grpc.NewClient(addr,
+		// Use passthrough resolver to bypass DNS issues with Docker hostnames
+		// gRPC's default DNS resolver doesn't work well in all Docker network configs
+		target := addr
+		if !strings.Contains(addr, "://") {
+			target = "passthrough:///" + addr
+		}
+		conn, err := grpc.NewClient(target,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
 		if err != nil {

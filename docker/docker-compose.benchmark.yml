@@ -63,6 +63,12 @@ services:
         condition: service_healthy
       manager:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8085/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
 
   file:
     build:
@@ -89,6 +95,12 @@ services:
     depends_on:
       manager:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8010/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
 
   mysql:
     image: mysql:8.0

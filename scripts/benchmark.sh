@@ -15,9 +15,9 @@
 #   ./scripts/benchmark.sh --help             # Show help
 #
 # Environment variables:
-#   S3_HOST          - S3 endpoint (default: localhost:9000)
-#   AWS_ACCESS_KEY_ID     - Access key (default: minioadmin)
-#   AWS_SECRET_ACCESS_KEY - Secret key (default: minioadmin)
+#   S3_HOST               - S3 endpoint (default: localhost:8082)
+#   AWS_ACCESS_KEY_ID     - Access key (default: AKIAADMINKEY00001)
+#   AWS_SECRET_ACCESS_KEY - Secret key (default: ****)
 #   DURATION         - Test duration (default: 60s)
 #   CONCURRENT       - Concurrent operations (default: 32)
 
@@ -31,9 +31,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default configuration
-HOST="${S3_HOST:-localhost:9000}"
-ACCESS_KEY="${AWS_ACCESS_KEY_ID:-minioadmin}"
-SECRET_KEY="${AWS_SECRET_ACCESS_KEY:-minioadmin}"
+HOST="${S3_HOST:-localhost:8082}"
+ACCESS_KEY="${AWS_ACCESS_KEY_ID:-AKIAADMINKEY00001}"
+SECRET_KEY="${AWS_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE1}"
 DURATION="${DURATION:-60s}"
 CONCURRENT="${CONCURRENT:-32}"
 BUCKET="${BUCKET:-zapfs-benchmark}"
@@ -58,7 +58,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  -h, --host HOST        S3 endpoint (default: $HOST)"
-    echo "  -a, --access-key KEY   Access key (default: minioadmin)"
+    echo "  -a, --access-key KEY   Access key (default: AKIA...)"
     echo "  -s, --secret-key KEY   Secret key (default: ****)"
     echo "  -d, --duration DUR     Test duration (default: $DURATION)"
     echo "  -c, --concurrent N     Concurrent operations (default: $CONCURRENT)"

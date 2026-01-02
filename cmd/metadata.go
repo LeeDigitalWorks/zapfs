@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"iter"
@@ -21,6 +22,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/api"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/postgres"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/vitess"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
@@ -276,9 +278,18 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 
 	// Task queue for background processing (GC decrement retry, etc.)
 	var tq taskqueue.Queue
-	if vitessDB, ok := metadataDB.(*vitess.Vitess); ok {
+	var sqlDBConn *sql.DB
+
+	switch v := metadataDB.(type) {
+	case *vitess.Vitess:
+		sqlDBConn = v.SqlDB()
+	case *postgres.Postgres:
+		sqlDBConn = v.SqlDB()
+	}
+
+	if sqlDBConn != nil {
 		tq, err = taskqueue.NewDBQueue(taskqueue.DBQueueConfig{
-			DB:        vitessDB.SqlDB(),
+			DB:        sqlDBConn,
 			TableName: "tasks",
 		})
 		if err != nil {
@@ -544,7 +555,16 @@ func initializeDatabase(opts MetadataServerOpts) (db.DB, error) {
 		cfg.MaxIdleConns = opts.DBMaxIdleConns
 		return vitess.NewVitess(cfg)
 	case db.DriverPostgres, db.DriverCockroach:
-		return nil, fmt.Errorf("driver %s not yet implemented", driver)
+		if opts.DBDSN == "" {
+			return nil, fmt.Errorf("--db_dsn required for %s driver", driver)
+		}
+		cfg := postgres.Config{
+			DSN:          opts.DBDSN,
+			Driver:       driver,
+			MaxOpenConns: opts.DBMaxOpenConns,
+			MaxIdleConns: opts.DBMaxIdleConns,
+		}
+		return postgres.NewPostgres(cfg)
 	default:
 		return nil, fmt.Errorf("unknown driver: %s", driver)
 	}

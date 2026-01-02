@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/mysql/*.sql migrations/postgres/*.sql
 var migrationsFS embed.FS
 
 // Migration represents a database migration
@@ -22,11 +22,25 @@ type Migration struct {
 	SQL     string
 }
 
-// LoadMigrations loads all migration files from the embedded filesystem
-func LoadMigrations() ([]Migration, error) {
-	entries, err := fs.ReadDir(migrationsFS, "migrations")
+// LoadMigrations loads all migration files for a specific driver from the embedded filesystem.
+// The driver parameter should be one of: mysql, postgres, cockroachdb.
+// CockroachDB uses the postgres migrations since they're compatible.
+func LoadMigrations(driver Driver) ([]Migration, error) {
+	// Map driver to migrations subdirectory
+	var subdir string
+	switch driver {
+	case DriverVitess, DriverMySQL:
+		subdir = "mysql"
+	case DriverPostgres, DriverCockroach:
+		subdir = "postgres"
+	default:
+		return nil, fmt.Errorf("unsupported driver: %s", driver)
+	}
+
+	dir := "migrations/" + subdir
+	entries, err := fs.ReadDir(migrationsFS, dir)
 	if err != nil {
-		return nil, fmt.Errorf("read migrations dir: %w", err)
+		return nil, fmt.Errorf("read migrations dir %s: %w", dir, err)
 	}
 
 	var migrations []Migration
@@ -44,7 +58,7 @@ func LoadMigrations() ([]Migration, error) {
 		}
 
 		// Read SQL content
-		content, err := fs.ReadFile(migrationsFS, "migrations/"+entry.Name())
+		content, err := fs.ReadFile(migrationsFS, dir+"/"+entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("read migration %s: %w", entry.Name(), err)
 		}
@@ -74,9 +88,9 @@ type Migrator interface {
 	SetVersion(ctx context.Context, version int) error
 }
 
-// RunMigrations applies all pending migrations
-func RunMigrations(ctx context.Context, migrator Migrator) error {
-	migrations, err := LoadMigrations()
+// RunMigrations applies all pending migrations for the specified driver
+func RunMigrations(ctx context.Context, migrator Migrator, driver Driver) error {
+	migrations, err := LoadMigrations(driver)
 	if err != nil {
 		return fmt.Errorf("load migrations: %w", err)
 	}
