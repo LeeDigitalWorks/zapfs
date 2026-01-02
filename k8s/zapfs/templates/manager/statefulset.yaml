@@ -39,20 +39,32 @@ spec:
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command:
-          - /zapfs
-          - manager
-          - --ip=0.0.0.0
-          - --grpc_port={{ .Values.manager.grpcPort | default 8050 }}
-          - --debug_port={{ .Values.manager.debugPort | default 8055 }}
-          - --admin_port={{ .Values.manager.adminPort | default 8060 }}
-          - --raft_dir=/data/raft
-          - --raft_addr=$(POD_NAME).{{ include "zapfs.manager.headlessService" . }}:{{ .Values.manager.raftPort | default 8051 }}
-          - --node_id=$(POD_NAME)
-          - --region_id={{ .Values.manager.regionID | default "default" }}
-          {{- if .Values.manager.tls.enabled }}
-          - --cert_file=/etc/tls/tls.crt
-          - --key_file=/etc/tls/tls.key
-          {{- end }}
+          - /bin/sh
+          - -c
+          - |
+            # Build command args
+            ARGS="--ip=0.0.0.0"
+            ARGS="$ARGS --grpc_port={{ .Values.manager.grpcPort | default 8050 }}"
+            ARGS="$ARGS --debug_port={{ .Values.manager.debugPort | default 8055 }}"
+            ARGS="$ARGS --admin_port={{ .Values.manager.adminPort | default 8060 }}"
+            ARGS="$ARGS --raft_dir=/data/raft"
+            ARGS="$ARGS --raft_addr=${POD_NAME}.{{ include "zapfs.manager.headlessService" . }}:{{ .Values.manager.raftPort | default 8051 }}"
+            ARGS="$ARGS --node_id=${POD_NAME}"
+            ARGS="$ARGS --region_id={{ .Values.manager.regionID | default "default" }}"
+            {{- if .Values.manager.tls.enabled }}
+            ARGS="$ARGS --cert_file=/etc/tls/tls.crt"
+            ARGS="$ARGS --key_file=/etc/tls/tls.key"
+            {{- end }}
+
+            # Bootstrap only the first manager (manager-0)
+            # Other managers will be added via the bootstrap job or will join an existing cluster
+            if [ "$POD_NAME" = "{{ include "zapfs.fullname" . }}-manager-0" ]; then
+              echo "This is manager-0, adding --bootstrap flag"
+              ARGS="$ARGS --bootstrap"
+            fi
+
+            echo "Starting manager with args: $ARGS"
+            exec /zapfs manager $ARGS
         env:
         - name: POD_NAME
           valueFrom:

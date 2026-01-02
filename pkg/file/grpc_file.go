@@ -15,7 +15,6 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
-	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -157,13 +156,6 @@ func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) erro
 		logger.Error().Err(err).Str("object_id", objectID).Msg("failed to write object")
 		return status.Errorf(codes.Internal, "failed to write to storage: %v", err)
 	}
-
-	logger.Info().
-		Str("object_id", objectID).
-		Str("size", humanize.IBytes(obj.Size)).
-		Str("etag", obj.ETag).
-		Int("chunks", len(obj.ChunkRefs)).
-		Msg("PutObject completed")
 
 	return stream.SendAndClose(&file_pb.PutObjectResponse{
 		ObjectId:   objectID,
