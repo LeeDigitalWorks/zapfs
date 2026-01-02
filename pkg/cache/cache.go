@@ -399,6 +399,12 @@ func (c *Cache[K, V]) HasLoaded() bool {
 	return c.hasLoaded.Load()
 }
 
+// MarkLoaded marks the cache as having completed initial load.
+// This is useful when the cache is populated via Set() calls rather than Load().
+func (c *Cache[K, V]) MarkLoaded() {
+	c.hasLoaded.Store(true)
+}
+
 // Iter returns an iterator over all non-expired cache entries.
 // Note: This acquires read locks on all shards sequentially, so avoid
 // calling during high-traffic periods. Useful for debugging.

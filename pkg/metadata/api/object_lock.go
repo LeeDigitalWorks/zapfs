@@ -1,8 +1,6 @@
-//go:build enterprise
-
-// Copyright 2025 ZapFS, Inc. All rights reserved.
-// Use of this source code is governed by the ZapFS Enterprise License
-// that can be found in the LICENSE.enterprise file.
+// Copyright 2025 ZapFS Authors. All rights reserved.
+// Use of this source code is governed by the Apache License 2.0
+// that can be found in the LICENSE file.
 
 package api
 
@@ -13,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
@@ -24,11 +23,11 @@ import (
 
 // GetObjectLockConfigurationHandler returns the Object Lock configuration for a bucket.
 // GET /{bucket}?object-lock
-// Enterprise feature: requires FeatureObjectLock license.
+//
+// Requires FeatureObjectLock license.
 func (s *MetadataServer) GetObjectLockConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkObjectLockLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("object lock feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckObjectLock() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -57,11 +56,11 @@ func (s *MetadataServer) GetObjectLockConfigurationHandler(d *data.Data, w http.
 
 // PutObjectLockConfigurationHandler sets the Object Lock configuration for a bucket.
 // PUT /{bucket}?object-lock
-// Enterprise feature: requires FeatureObjectLock license.
+//
+// Requires FeatureObjectLock license.
 func (s *MetadataServer) PutObjectLockConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkObjectLockLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("object lock feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckObjectLock() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -107,11 +106,11 @@ func (s *MetadataServer) PutObjectLockConfigurationHandler(d *data.Data, w http.
 
 // GetObjectRetentionHandler returns the retention settings for an object.
 // GET /{bucket}/{key}?retention
-// Enterprise feature: requires FeatureObjectLock license.
+//
+// Requires FeatureObjectLock license.
 func (s *MetadataServer) GetObjectRetentionHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkObjectLockLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("object lock feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckObjectLock() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -154,11 +153,11 @@ func (s *MetadataServer) GetObjectRetentionHandler(d *data.Data, w http.Response
 
 // PutObjectRetentionHandler sets the retention settings for an object.
 // PUT /{bucket}/{key}?retention
-// Enterprise feature: requires FeatureObjectLock license.
+//
+// Requires FeatureObjectLock license.
 func (s *MetadataServer) PutObjectRetentionHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkObjectLockLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("object lock feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckObjectLock() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -251,11 +250,11 @@ func (s *MetadataServer) PutObjectRetentionHandler(d *data.Data, w http.Response
 
 // GetObjectLegalHoldHandler returns the legal hold status for an object.
 // GET /{bucket}/{key}?legal-hold
-// Enterprise feature: requires FeatureObjectLock license.
+//
+// Requires FeatureObjectLock license.
 func (s *MetadataServer) GetObjectLegalHoldHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkObjectLockLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("object lock feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckObjectLock() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -299,11 +298,11 @@ func (s *MetadataServer) GetObjectLegalHoldHandler(d *data.Data, w http.Response
 
 // PutObjectLegalHoldHandler sets the legal hold status for an object.
 // PUT /{bucket}/{key}?legal-hold
-// Enterprise feature: requires FeatureObjectLock license.
+//
+// Requires FeatureObjectLock license.
 func (s *MetadataServer) PutObjectLegalHoldHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkObjectLockLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("object lock feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckObjectLock() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 

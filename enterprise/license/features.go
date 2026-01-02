@@ -5,7 +5,11 @@
 // Package license provides enterprise license types.
 package license
 
-import "github.com/golang-jwt/jwt/v5"
+import (
+	"github.com/golang-jwt/jwt/v5"
+
+	pkglicense "github.com/LeeDigitalWorks/zapfs/pkg/license"
+)
 
 // Claims represents the JWT claims in a license key.
 type Claims struct {
@@ -21,36 +25,22 @@ type Claims struct {
 // This should be updated when rotating to a new key.
 const DefaultKeyID = "v1"
 
-// Feature represents an enterprise feature that can be enabled by license.
-type Feature string
+// Feature is an alias to pkg/license.Feature to ensure consistency.
+// All feature constants are defined in pkg/license as the single source of truth.
+type Feature = pkglicense.Feature
 
+// Re-export feature constants from pkg/license for convenience.
+// This ensures enterprise/license and pkg/license stay in sync.
 const (
-	// FeatureAuditLog enables audit logging and compliance features
-	FeatureAuditLog Feature = "audit_log"
-
-	// FeatureLDAP enables LDAP/Active Directory integration
-	FeatureLDAP Feature = "ldap"
-
-	// FeatureOIDC enables OpenID Connect SSO integration
-	FeatureOIDC Feature = "oidc"
-
-	// FeatureKMS enables external KMS integration (AWS KMS, Vault, etc.)
-	FeatureKMS Feature = "kms"
-
-	// FeatureMultiRegion enables cross-region replication
-	FeatureMultiRegion Feature = "multi_region"
-
-	// FeatureObjectLock enables S3 Object Lock (WORM) compliance
-	FeatureObjectLock Feature = "object_lock"
-
-	// FeatureLifecycle enables advanced lifecycle policies
-	FeatureLifecycle Feature = "lifecycle"
-
-	// FeatureMultiTenancy enables multi-tenant isolation and quotas
-	FeatureMultiTenancy Feature = "multi_tenancy"
-
-	// FeatureAdvancedMetrics enables advanced observability features
-	FeatureAdvancedMetrics Feature = "advanced_metrics"
+	FeatureAuditLog        = pkglicense.FeatureAuditLog
+	FeatureLDAP            = pkglicense.FeatureLDAP
+	FeatureOIDC            = pkglicense.FeatureOIDC
+	FeatureKMS             = pkglicense.FeatureKMS
+	FeatureMultiRegion     = pkglicense.FeatureMultiRegion
+	FeatureObjectLock      = pkglicense.FeatureObjectLock
+	FeatureLifecycle       = pkglicense.FeatureLifecycle
+	FeatureMultiTenancy    = pkglicense.FeatureMultiTenancy
+	FeatureAdvancedMetrics = pkglicense.FeatureAdvancedMetrics
 )
 
 // AllFeatures returns all available enterprise features.

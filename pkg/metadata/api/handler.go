@@ -42,6 +42,9 @@ func (s *MetadataServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.metricsRequest.WithLabelValues(data.S3Info.Action.String(), strconv.FormatInt(int64(wrappedWriter.statusCode), 10)).Inc()
 		s.metricsRequestDuration.WithLabelValues(data.S3Info.Action.String(), strconv.FormatInt(int64(wrappedWriter.statusCode), 10)).Observe(time.Since(start).Seconds())
+
+		// Capture access log for buckets with logging enabled (enterprise: FeatureAuditLog)
+		s.captureAccessLog(data, start, wrappedWriter.statusCode, wrappedWriter.bytesWritten)
 	}()
 
 	handler, exists := s.handlers[data.S3Info.Action]

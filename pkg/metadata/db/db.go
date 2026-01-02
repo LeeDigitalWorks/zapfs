@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
@@ -92,6 +93,9 @@ type DB interface {
 	// Lifecycle operations
 	LifecycleStore
 
+	// Lifecycle scanner state
+	LifecycleScanStore
+
 	// Object Lock operations
 	ObjectLockStore
 
@@ -100,6 +104,9 @@ type DB interface {
 
 	// Ownership Controls operations
 	OwnershipControlsStore
+
+	// Bucket Logging operations (access log configuration)
+	LoggingStore
 
 	// Transaction support - executes fn within a transaction.
 	// If fn returns an error, the transaction is rolled back.
@@ -368,6 +375,38 @@ type LifecycleStore interface {
 	DeleteBucketLifecycle(ctx context.Context, bucket string) error
 }
 
+// LifecycleScanState tracks scan progress for a bucket
+type LifecycleScanState struct {
+	Bucket            string
+	LastKey           string
+	LastVersionID     string
+	ScanStartedAt     time.Time
+	ScanCompletedAt   time.Time
+	ObjectsScanned    int
+	ActionsEnqueued   int
+	LastError         string
+	ConsecutiveErrors int
+}
+
+// LifecycleScanStore tracks lifecycle scanner progress
+type LifecycleScanStore interface {
+	// GetScanState retrieves scan state for a bucket
+	GetScanState(ctx context.Context, bucket string) (*LifecycleScanState, error)
+
+	// UpdateScanState updates scan progress (upsert)
+	UpdateScanState(ctx context.Context, state *LifecycleScanState) error
+
+	// ListBucketsWithLifecycle returns buckets that have lifecycle configs
+	ListBucketsWithLifecycle(ctx context.Context) ([]string, error)
+
+	// GetBucketsNeedingScan returns buckets that need scanning
+	// (completed scan older than minAge, or never scanned)
+	GetBucketsNeedingScan(ctx context.Context, minAge time.Duration, limit int) ([]string, error)
+
+	// ResetScanState clears scan state for a bucket (for fresh start)
+	ResetScanState(ctx context.Context, bucket string) error
+}
+
 // ObjectLockStore provides operations for Object Lock (WORM) configurations
 type ObjectLockStore interface {
 	// GetObjectLockConfiguration retrieves the Object Lock config for a bucket
@@ -413,12 +452,40 @@ type OwnershipControlsStore interface {
 	DeleteOwnershipControls(ctx context.Context, bucket string) error
 }
 
+// BucketLoggingConfig holds the logging configuration for a bucket.
+type BucketLoggingConfig struct {
+	ID           string
+	SourceBucket string
+	TargetBucket string
+	TargetPrefix string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// LoggingStore provides operations for bucket access logging configuration.
+type LoggingStore interface {
+	// GetBucketLogging retrieves the logging configuration for a bucket.
+	// Returns nil, nil if no logging is configured.
+	GetBucketLogging(ctx context.Context, bucket string) (*BucketLoggingConfig, error)
+
+	// SetBucketLogging stores the logging configuration for a bucket.
+	// If config.TargetBucket is empty, logging is disabled for the bucket.
+	SetBucketLogging(ctx context.Context, config *BucketLoggingConfig) error
+
+	// DeleteBucketLogging removes the logging configuration for a bucket.
+	DeleteBucketLogging(ctx context.Context, bucket string) error
+
+	// ListLoggingConfigs returns all bucket logging configurations.
+	ListLoggingConfigs(ctx context.Context) ([]*BucketLoggingConfig, error)
+}
+
 // Common Lifecycle/ObjectLock errors
 var (
-	ErrLifecycleNotFound        = fmt.Errorf("lifecycle configuration not found")
-	ErrObjectLockNotFound       = fmt.Errorf("object lock configuration not found")
-	ErrRetentionNotFound        = fmt.Errorf("retention not found")
-	ErrLegalHoldNotFound        = fmt.Errorf("legal hold not found")
+	ErrLifecycleNotFound         = fmt.Errorf("lifecycle configuration not found")
+	ErrLifecycleScanStateNotFound = fmt.Errorf("lifecycle scan state not found")
+	ErrObjectLockNotFound        = fmt.Errorf("object lock configuration not found")
+	ErrRetentionNotFound         = fmt.Errorf("retention not found")
+	ErrLegalHoldNotFound         = fmt.Errorf("legal hold not found")
 	ErrPublicAccessBlockNotFound = fmt.Errorf("public access block configuration not found")
 	ErrOwnershipControlsNotFound = fmt.Errorf("ownership controls not found")
 )

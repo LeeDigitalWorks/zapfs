@@ -121,6 +121,10 @@ func TestGetBucketTagging(t *testing.T) {
 				mockDB.EXPECT().GetBucketTagging(mock.Anything, "test-bucket").Return(&s3types.TagSet{
 					Tags: []s3types.Tag{{Key: "env", Value: "prod"}},
 				}, nil)
+				// Cache update after DB fetch
+				mockBS.EXPECT().SetBucket("test-bucket", mock.MatchedBy(func(b s3types.Bucket) bool {
+					return b.Tagging != nil && len(b.Tagging.Tags) == 1 && b.Tagging.Tags[0].Key == "env"
+				})).Return()
 			},
 			wantErr: false,
 			checkResult: func(t *testing.T, tagSet *s3types.TagSet) {
@@ -217,6 +221,10 @@ func TestSetBucketTagging(t *testing.T) {
 			setupMocks: func(mockDB *dbmocks.MockDB, mockBS *configmocks.MockBucketStore) {
 				mockBS.EXPECT().GetBucket("test-bucket").Return(s3types.Bucket{Name: "test-bucket"}, true)
 				mockDB.EXPECT().SetBucketTagging(mock.Anything, "test-bucket", mock.Anything).Return(nil)
+				// Cache update after DB write
+				mockBS.EXPECT().SetBucket("test-bucket", mock.MatchedBy(func(b s3types.Bucket) bool {
+					return b.Tagging != nil && len(b.Tagging.Tags) == 1 && b.Tagging.Tags[0].Key == "env"
+				})).Return()
 			},
 			wantErr: false,
 		},
@@ -276,6 +284,10 @@ func TestDeleteBucketTagging(t *testing.T) {
 			setupMocks: func(mockDB *dbmocks.MockDB, mockBS *configmocks.MockBucketStore) {
 				mockBS.EXPECT().GetBucket("test-bucket").Return(s3types.Bucket{Name: "test-bucket"}, true)
 				mockDB.EXPECT().DeleteBucketTagging(mock.Anything, "test-bucket").Return(nil)
+				// Cache update after DB delete
+				mockBS.EXPECT().SetBucket("test-bucket", mock.MatchedBy(func(b s3types.Bucket) bool {
+					return b.Tagging == nil
+				})).Return()
 			},
 			wantErr: false,
 		},
@@ -285,6 +297,10 @@ func TestDeleteBucketTagging(t *testing.T) {
 			setupMocks: func(mockDB *dbmocks.MockDB, mockBS *configmocks.MockBucketStore) {
 				mockBS.EXPECT().GetBucket("test-bucket").Return(s3types.Bucket{Name: "test-bucket"}, true)
 				mockDB.EXPECT().DeleteBucketTagging(mock.Anything, "test-bucket").Return(db.ErrTaggingNotFound)
+				// Cache update after DB delete (even when already not found)
+				mockBS.EXPECT().SetBucket("test-bucket", mock.MatchedBy(func(b s3types.Bucket) bool {
+					return b.Tagging == nil
+				})).Return()
 			},
 			wantErr: false,
 		},

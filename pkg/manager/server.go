@@ -17,8 +17,8 @@ import (
 
 	"github.com/dustin/go-humanize"
 
-	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/iam_pb"
@@ -62,11 +62,16 @@ type ManagerServer struct {
 	placementPolicy *manager_pb.PlacementPolicy
 	regionID        string
 
+	// Multi-region support (enterprise)
+	regionConfig *RegionConfig  // Multi-region configuration (nil = single-region mode)
+	regionClient *RegionClient  // Cross-region forwarding client (nil = single-region mode)
+	regionSyncer *RegionSyncer  // Periodic cache sync from primary (nil = single-region mode)
+
 	// Raft (embedded consensus)
 	raftNode *RaftNode
 
-	// License management for capacity/node limits
-	licenseManager *license.Manager
+	// License checker
+	licenseChecker license.Checker
 
 	// Cached cluster capacity (updated via heartbeats)
 	clusterCapacity ClusterCapacity
@@ -82,6 +87,11 @@ type ManagerServer struct {
 	topoSubsMu    sync.RWMutex
 	topoSubs      map[uint64]chan *manager_pb.TopologyEvent
 	topoNextSubID atomic.Uint64
+
+	// Collection watch subscribers (PUSH-based updates for multi-region sync)
+	colSubsMu    sync.RWMutex
+	colSubs      map[uint64]chan *manager_pb.CollectionEvent
+	colNextSubID atomic.Uint64
 
 	// Leader forwarding for transparent write routing
 	leaderForwarder *LeaderForwarder
@@ -111,7 +121,7 @@ const (
 )
 
 // NewManagerServer creates a new manager server with the given configuration
-func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseManager *license.Manager) (*ManagerServer, error) {
+func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseChecker license.Checker) (*ManagerServer, error) {
 	ms := &ManagerServer{
 		regionID:             regionID,
 		fileServices:         make(map[string]*ServiceRegistration),
@@ -128,9 +138,10 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 		topologyVersion:   1,
 		leaderForwarder:   NewLeaderForwarder(),
 		iamService:        iamService,
-		licenseManager:    licenseManager,
+		licenseChecker:    licenseChecker,
 		iamSubs:           make(map[uint64]chan *iam_pb.CredentialEvent),
 		topoSubs:          make(map[uint64]chan *manager_pb.TopologyEvent),
+		colSubs:           make(map[uint64]chan *manager_pb.CollectionEvent),
 		shutdownCh:        make(chan struct{}),
 	}
 
@@ -151,6 +162,53 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 	go ms.healthCheckLoop()
 
 	return ms, nil
+}
+
+// ConfigureMultiRegion sets up multi-region support for the manager server.
+// This enables cross-region bucket forwarding and cache synchronization.
+// This is an enterprise feature - in community edition, this is a no-op.
+func (ms *ManagerServer) ConfigureMultiRegion(regionConfig *RegionConfig) error {
+	if regionConfig == nil || !regionConfig.IsConfigured() {
+		logger.Info().Msg("Multi-region not configured, running in single-region mode")
+		return nil
+	}
+
+	if err := regionConfig.Validate(); err != nil {
+		return fmt.Errorf("invalid region config: %w", err)
+	}
+
+	// Create region client for cross-region calls
+	regionClient, err := NewRegionClient(regionConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create region client: %w", err)
+	}
+
+	ms.regionConfig = regionConfig
+	ms.regionClient = regionClient
+
+	if regionConfig.IsPrimary() {
+		logger.Info().Str("region", regionConfig.Name).Msg("Running as PRIMARY region")
+	} else {
+		logger.Info().
+			Str("region", regionConfig.Name).
+			Strs("primary_regions", regionConfig.PrimaryRegions).
+			Msg("Running as SECONDARY region - bucket operations will be forwarded to primary")
+
+		// Start cache syncer for secondary regions
+		ms.regionSyncer = NewRegionSyncer(ms)
+		ms.regionSyncer.Start()
+	}
+
+	return nil
+}
+
+// IsPrimaryRegion returns true if this manager is in the primary region.
+// In single-region mode (no multi-region config), this always returns true.
+func (ms *ManagerServer) IsPrimaryRegion() bool {
+	if ms.regionConfig == nil {
+		return true // Single-region mode
+	}
+	return ms.regionConfig.IsPrimary()
 }
 
 // GetIAMService returns the IAM service
@@ -199,6 +257,14 @@ func (ms *ManagerServer) GetClusterState() map[string]interface{} {
 func (ms *ManagerServer) Shutdown() {
 	if ms.leaderForwarder != nil {
 		ms.leaderForwarder.Close()
+	}
+
+	if ms.regionSyncer != nil {
+		ms.regionSyncer.Stop()
+	}
+
+	if ms.regionClient != nil {
+		ms.regionClient.Close()
 	}
 
 	if ms.raftNode != nil {

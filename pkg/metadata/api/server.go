@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
@@ -73,6 +74,9 @@ type MetadataServer struct {
 	usageCollector  usage.Collector
 	usageAggregator *usage.Aggregator
 	usageReporter   *usage.Reporter
+
+	// Access log collector (enterprise: FeatureAuditLog)
+	accessLogCollector AccessLogCollector
 }
 
 // ServerConfig holds configuration for creating a MetadataServer
@@ -90,9 +94,17 @@ type ServerConfig struct {
 	FileClientPool    client.File
 	CRRHook           *CRRHook        // Enterprise: cross-region replication hook
 	IAMService        *iam.Service    // IAM service for KMS operations (enterprise feature)
-	TaskQueue         taskqueue.Queue // Optional: for GC decrement retry and background tasks
-	UsageConfig       usage.Config    // Usage reporting configuration
-	UsageStore        usage.Store     // Usage data store (nil = use NopStore)
+	TaskQueue          taskqueue.Queue      // Optional: for GC decrement retry and background tasks
+	UsageConfig        usage.Config         // Usage reporting configuration
+	UsageStore         usage.Store          // Usage data store (nil = use NopStore)
+	AccessLogCollector AccessLogCollector   // Access log collector (enterprise: FeatureAuditLog)
+
+	// Lifecycle scanner configuration (community feature)
+	LifecycleScannerEnabled  bool
+	LifecycleScanInterval    time.Duration
+	LifecycleScanConcurrency int
+	LifecycleScanBatchSize   int
+	LifecycleMaxTasksPerScan int
 }
 
 func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
@@ -122,6 +134,12 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		IAMService:        cfg.IAMService,
 		CRRHook:           adaptCRRHook(cfg.CRRHook),
 		TaskQueue:         cfg.TaskQueue,
+		// Lifecycle scanner configuration
+		LifecycleScannerEnabled:  cfg.LifecycleScannerEnabled,
+		LifecycleScanInterval:    cfg.LifecycleScanInterval,
+		LifecycleScanConcurrency: cfg.LifecycleScanConcurrency,
+		LifecycleScanBatchSize:   cfg.LifecycleScanBatchSize,
+		LifecycleMaxTasksPerScan: cfg.LifecycleMaxTasksPerScan,
 	}
 
 	svc, err := service.NewService(svcCfg)
@@ -181,6 +199,9 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 
 	// Set IAM service if provided (for KMS operations)
 	ms.iamService = cfg.IAMService
+
+	// Set access log collector if provided (enterprise: FeatureAuditLog)
+	ms.accessLogCollector = cfg.AccessLogCollector
 
 	// Start usage collector, aggregator, and report processor
 	ms.usageCollector.Start(ctx)

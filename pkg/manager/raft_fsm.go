@@ -95,15 +95,8 @@ func (ms *ManagerServer) Snapshot() (raft.FSMSnapshot, error) {
 
 	// Deep copy collections
 	for k, v := range ms.collections {
-		colCopy := *v
-		// Deep copy maps
-		if v.Tags != nil {
-			colCopy.Tags = make(map[string]string)
-			for tk, tv := range v.Tags {
-				colCopy.Tags[tk] = tv
-			}
-		}
-		snapshot.Collections[k] = &colCopy
+		colCopy := proto.Clone(v).(*manager_pb.Collection)
+		snapshot.Collections[k] = colCopy
 	}
 
 	logger.Info().Msg("Created FSM snapshot")
@@ -282,10 +275,10 @@ func (ms *ManagerServer) applyCreateCollection(data json.RawMessage) interface{}
 	}
 
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
 
 	// Check if already exists
 	if _, exists := ms.collections[col.Name]; exists {
+		ms.mu.Unlock()
 		return fmt.Errorf("collection %s already exists", col.Name)
 	}
 
@@ -300,6 +293,11 @@ func (ms *ManagerServer) applyCreateCollection(data json.RawMessage) interface{}
 		Uint64("version", ms.collectionsVersion).
 		Msg("Collection created via Raft")
 
+	ms.mu.Unlock()
+
+	// Notify collection subscribers (for multi-region cache sync)
+	ms.notifyCollectionSubscribers(manager_pb.CollectionEvent_CREATED, []*manager_pb.Collection{&col})
+
 	return nil
 }
 
@@ -312,10 +310,13 @@ func (ms *ManagerServer) applyDeleteCollection(data json.RawMessage) interface{}
 	}
 
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
 
-	// Get collection before deletion to update indexes
+	// Get collection before deletion to update indexes and notify
+	var deletedCol *manager_pb.Collection
 	if col, exists := ms.collections[req.Name]; exists {
+		// Make a copy for notification (use proto.Clone to avoid copylocks)
+		deletedCol = proto.Clone(col).(*manager_pb.Collection)
+		deletedCol.IsDeleted = true
 		// CRITICAL: Update optimized lookup maps
 		ms.removeCollectionFromIndexes(col)
 	}
@@ -327,6 +328,13 @@ func (ms *ManagerServer) applyDeleteCollection(data json.RawMessage) interface{}
 		Str("collection", req.Name).
 		Uint64("version", ms.collectionsVersion).
 		Msg("Collection deleted via Raft")
+
+	ms.mu.Unlock()
+
+	// Notify collection subscribers (for multi-region cache sync)
+	if deletedCol != nil {
+		ms.notifyCollectionSubscribers(manager_pb.CollectionEvent_DELETED, []*manager_pb.Collection{deletedCol})
+	}
 
 	return nil
 }

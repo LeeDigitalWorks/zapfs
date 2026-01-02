@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"net/http"
 	"os"
 	"time"
@@ -64,6 +65,20 @@ type MetadataServerOpts struct {
 	RateLimitRedisDB        int
 	RateLimitRedisPoolSize  int
 	RateLimitRedisFailOpen  bool
+
+	// Access logging (enterprise: FeatureAuditLog)
+	AccessLogsEnabled       bool
+	ClickHouseDSN           string
+	AccessLogBatchSize      int
+	AccessLogFlushInterval  time.Duration
+	AccessLogExportInterval time.Duration
+
+	// Lifecycle scanner (community feature)
+	LifecycleScannerEnabled  bool
+	LifecycleScanInterval    time.Duration
+	LifecycleScanConcurrency int
+	LifecycleScanBatchSize   int
+	LifecycleMaxTasksPerScan int
 }
 
 var metadataCmd = &cobra.Command{
@@ -107,6 +122,20 @@ func init() {
 	f.Int("rate_limit_redis_db", 0, "Redis database number")
 	f.Int("rate_limit_redis_pool_size", 10, "Redis connection pool size")
 	f.Bool("rate_limit_redis_fail_open", true, "Allow requests when Redis is unavailable")
+
+	// Access logging (enterprise: FeatureAuditLog)
+	f.Bool("access_logs_enabled", false, "Enable access logging (enterprise)")
+	f.String("clickhouse_dsn", "", "ClickHouse DSN for access logs")
+	f.Int("access_log_batch_size", 10000, "Batch size for access log inserts")
+	f.Duration("access_log_flush_interval", 5*time.Second, "Access log flush interval")
+	f.Duration("access_log_export_interval", time.Hour, "Access log S3 export interval")
+
+	// Lifecycle scanner (community feature)
+	f.Bool("lifecycle_scanner_enabled", false, "Enable lifecycle policy scanning")
+	f.Duration("lifecycle_scan_interval", time.Hour, "How often to scan buckets for lifecycle rules")
+	f.Int("lifecycle_scan_concurrency", 5, "Number of buckets to scan in parallel")
+	f.Int("lifecycle_scan_batch_size", 1000, "Objects per batch when listing")
+	f.Int("lifecycle_max_tasks_per_scan", 10000, "Max tasks to enqueue per scan run")
 
 	viper.BindPFlags(f)
 }
@@ -203,6 +232,36 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		logger.Fatal().Err(err).Msg("failed to run database migrations")
 	}
 
+	// Start background bucket loader to populate bucket cache from DB
+	bucketLoader := cache.NewBucketLoader(
+		func(ctx context.Context) iter.Seq2[*types.BucketInfo, error] {
+			return func(yield func(*types.BucketInfo, error) bool) {
+				var continuationToken string
+				for {
+					result, err := metadataDB.ListBuckets(ctx, &db.ListBucketsParams{
+						MaxBuckets:        1000,
+						ContinuationToken: continuationToken,
+					})
+					if err != nil {
+						yield(nil, err)
+						return
+					}
+					for _, bucket := range result.Buckets {
+						if !yield(bucket, nil) {
+							return
+						}
+					}
+					if !result.IsTruncated {
+						return
+					}
+					continuationToken = result.NextContinuationToken
+				}
+			}
+		},
+		bucketStore,
+	)
+	go bucketLoader.LoadBuckets(cmd.Context(), time.Minute)
+
 	// Task queue for background processing (GC decrement retry, etc.)
 	var tq taskqueue.Queue
 	if vitessDB, ok := metadataDB.(*vitess.Vitess); ok {
@@ -217,8 +276,24 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Access logging (enterprise: FeatureAuditLog)
+	accessLogMgr, err := InitializeAccessLog(cmd.Context(), AccessLogConfig{
+		Enabled:        opts.AccessLogsEnabled,
+		ClickHouseDSN:  opts.ClickHouseDSN,
+		BatchSize:      opts.AccessLogBatchSize,
+		FlushInterval:  opts.AccessLogFlushInterval,
+		ExportInterval: opts.AccessLogExportInterval,
+		DB:             metadataDB,
+	})
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize access logging")
+	}
+	if accessLogMgr != nil {
+		defer accessLogMgr.Stop()
+	}
+
 	// Metadata server
-	metadataServer := api.NewMetadataServer(cmd.Context(), api.ServerConfig{
+	serverCfg := api.ServerConfig{
 		ManagerClient:     managerClient,
 		Chain:             chain,
 		GlobalBucketCache: globalBucketCache,
@@ -231,7 +306,17 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		DefaultProfile:    "STANDARD",
 		IAMService:        iamService, // For KMS operations (enterprise feature)
 		TaskQueue:         tq,
-	})
+		// Lifecycle scanner configuration
+		LifecycleScannerEnabled:  opts.LifecycleScannerEnabled,
+		LifecycleScanInterval:    opts.LifecycleScanInterval,
+		LifecycleScanConcurrency: opts.LifecycleScanConcurrency,
+		LifecycleScanBatchSize:   opts.LifecycleScanBatchSize,
+		LifecycleMaxTasksPerScan: opts.LifecycleMaxTasksPerScan,
+	}
+	if accessLogMgr != nil {
+		serverCfg.AccessLogCollector = accessLogMgr.Collector()
+	}
+	metadataServer := api.NewMetadataServer(cmd.Context(), serverCfg)
 	defer metadataServer.Shutdown()
 
 	// Start servers
@@ -279,6 +364,18 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		RateLimitRedisDB:        f.Int("rate_limit_redis_db"),
 		RateLimitRedisPoolSize:  f.Int("rate_limit_redis_pool_size"),
 		RateLimitRedisFailOpen:  f.Bool("rate_limit_redis_fail_open"),
+		// Access logging
+		AccessLogsEnabled:       f.Bool("access_logs_enabled"),
+		ClickHouseDSN:           f.String("clickhouse_dsn"),
+		AccessLogBatchSize:      f.Int("access_log_batch_size"),
+		AccessLogFlushInterval:  f.Duration("access_log_flush_interval"),
+		AccessLogExportInterval: f.Duration("access_log_export_interval"),
+		// Lifecycle scanner
+		LifecycleScannerEnabled:  f.Bool("lifecycle_scanner_enabled"),
+		LifecycleScanInterval:    f.Duration("lifecycle_scan_interval"),
+		LifecycleScanConcurrency: f.Int("lifecycle_scan_concurrency"),
+		LifecycleScanBatchSize:   f.Int("lifecycle_scan_batch_size"),
+		LifecycleMaxTasksPerScan: f.Int("lifecycle_max_tasks_per_scan"),
 	}
 }
 

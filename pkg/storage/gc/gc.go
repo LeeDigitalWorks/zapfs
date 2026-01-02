@@ -11,6 +11,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -121,11 +122,14 @@ func (gc *GCWorker) Start() {
 		return
 	}
 	go func() {
-		ticker := time.NewTicker(gc.interval)
-		defer ticker.Stop()
+		// Use jittered ticker to prevent multiple file servers from GC'ing simultaneously
+		// 15% jitter spreads out GC runs across the cluster
+		tickCh, stopTicker := utils.JitteredTicker(gc.interval, 0.15)
+		defer stopTicker()
+
 		for {
 			select {
-			case <-ticker.C:
+			case <-tickCh:
 				gc.Run()
 			case <-gc.stopCh:
 				return

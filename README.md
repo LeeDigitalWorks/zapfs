@@ -5,27 +5,51 @@ A distributed object storage system with an S3-compatible API, written in Go.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              S3 Clients (AWS SDK, s3cmd, etc.)              │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Metadata Service (S3 API)                         │
-│  • S3-compatible HTTP API           • AWS SigV4/V2 Authentication           │
-│  • Request filtering & routing      • Bucket/Object metadata (MySQL)        │
-│  • IAM credential sync from Manager                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-                           │                              │
-                           ▼                              ▼
-┌──────────────────────────────────────┐  ┌──────────────────────────────────┐
-│       Manager Cluster (Raft)         │  │         File Servers             │
-│  • Raft consensus (3+ nodes)         │  │  • Chunk storage                 │
-│  • IAM authority (users, keys)       │  │  • Content-hash deduplication    │
-│  • Service registry                  │  │  • Erasure coding                │
-│  • Placement decisions               │  │  • RefCount-based GC             │
-│  • Collection (bucket) management    │  │                                  │
-└──────────────────────────────────────┘  └──────────────────────────────────┘
+                            ┌──────────────────────────────────┐
+                            │  S3 Clients (AWS SDK, s3cmd...)  │
+                            └──────────────────────────────────┘
+                                            │
+                                           HTTP
+                                            ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            Metadata Service                                  │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ S3 API Gateway                                                         │  │
+│  │  • AWS Signature authentication (SigV4/V2/Presigned/POST)              │  │
+│  │  • Bucket & object operations, multipart uploads, versioning           │  │
+│  │  • ACLs, policies, CORS, encryption, tagging                           │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                     │                                   │                    │
+│                    gRPC                                gRPC                  │
+│                     ▼                                   ▼                    │
+│  ┌───────────────────────────┐         ┌───────────────────────────────┐     │
+│  │  Manager Client           │         │  File Client                  │     │
+│  │  • IAM credential sync    │         │  • Chunk read/write           │     │
+│  │  • Bucket registration    │         │  • Streaming uploads          │     │
+│  │  • Placement decisions    │         │  • Replication coordination   │     │
+│  └───────────────────────────┘         └───────────────────────────────┘     │
+└──────────────────────────────────────────────────────────────────────────────┘
+           │                                                  │
+          gRPC                                               gRPC
+           ▼                                                  ▼
+┌───────────────────────────────┐       ┌───────────────────────────────┐
+│   Manager Cluster (Raft)      │←─────-│        File Servers           │
+│                               │ gRPC  │                               │
+│  • Raft consensus (3+ nodes)  │       │  • Chunk storage (local/S3)   │
+│  • IAM authority              │       │  • Content-hash deduplication │
+│  • Service registry           │       │  • Erasure coding (RS)        │
+│  • Collection management      │       │  • RefCount-based GC          │
+│  • Leader forwarding          │       │  • Replication (2+ copies)    │
+└───────────────────────────────┘       └───────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              MySQL / Vitess                                  │
+│  ┌─────────────────────────┐  ┌─────────────────────┐  ┌──────────────────┐  │
+│  │ buckets, objects        │  │ usage_events        │  │ tasks            │  │
+│  │ multipart_uploads       │  │ (partitioned/month) │  │ (task queue)     │  │
+│  │ ACLs, policies, configs │  │ usage_daily         │  │                  │  │
+│  └─────────────────────────┘  └─────────────────────┘  └──────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Components

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,15 @@ func getTestDB(t *testing.T) (db.DB, func()) {
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
 		t.Skip("DB_DSN not set - skipping database integration test (requires MySQL/Vitess)")
+	}
+
+	// Ensure parseTime=true is set for proper time.Time scanning
+	if !strings.Contains(dsn, "parseTime") {
+		if strings.Contains(dsn, "?") {
+			dsn += "&parseTime=true"
+		} else {
+			dsn += "?parseTime=true"
+		}
 	}
 
 	// Connect to MySQL/Vitess

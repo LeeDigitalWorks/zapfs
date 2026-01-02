@@ -89,6 +89,9 @@ func Initialize(cfg Config) error {
 
 		globalManager = manager
 
+		// Inject manager as the global license checker for pkg/license
+		injectChecker(manager)
+
 		// Create metrics
 		globalMetrics = NewMetrics(manager)
 

@@ -269,3 +269,14 @@ func (p *ManagerClientPool) ListCollections(ctx context.Context, req *manager_pb
 	}
 	return client.ListCollections(ctx, req)
 }
+
+// WatchCollections subscribes to collection updates (any node - PUSH-based streaming)
+// Returns a streaming client that receives CollectionEvent messages.
+// Caller is responsible for handling the stream and reconnection.
+func (p *ManagerClientPool) WatchCollections(ctx context.Context, req *manager_pb.WatchCollectionsRequest) (manager_pb.ManagerService_WatchCollectionsClient, error) {
+	client, _, err := p.cluster.GetAny(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.WatchCollections(ctx, req)
+}

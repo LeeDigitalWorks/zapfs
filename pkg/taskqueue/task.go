@@ -39,6 +39,38 @@ const (
 	TaskTypeEvent       TaskType = "event"        // S3 event notification
 )
 
+// LifecyclePayload is the payload for TaskTypeLifecycle tasks.
+// Contains object metadata and action to perform.
+type LifecyclePayload struct {
+	// Object identification
+	Bucket    string `json:"bucket"`
+	Key       string `json:"key"`
+	VersionID string `json:"version_id,omitempty"`
+
+	// Action to take: "delete", "delete_version", "transition", "abort_mpu"
+	Action       string `json:"action"`
+	StorageClass string `json:"storage_class,omitempty"` // For transitions
+
+	// Tracking
+	RuleID      string `json:"rule_id"`
+	EvaluatedAt int64  `json:"evaluated_at"` // Unix timestamp (nanos)
+
+	// Verification (to ensure object hasn't changed since evaluation)
+	ExpectedETag    string `json:"expected_etag,omitempty"`
+	ExpectedModTime int64  `json:"expected_mod_time,omitempty"` // Unix timestamp (nanos)
+
+	// For multipart uploads
+	UploadID string `json:"upload_id,omitempty"`
+}
+
+// Lifecycle action constants
+const (
+	LifecycleActionDelete        = "delete"
+	LifecycleActionDeleteVersion = "delete_version"
+	LifecycleActionTransition    = "transition"
+	LifecycleActionAbortMPU      = "abort_mpu"
+)
+
 // EventPayload is the payload for TaskTypeEvent tasks.
 // Contains S3 event metadata for delivery to notification destinations.
 type EventPayload struct {

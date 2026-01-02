@@ -28,6 +28,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/lifecycle"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
@@ -47,9 +48,10 @@ type Service struct {
 	configSvc config.Service
 
 	// Shared components
-	storage    *storage.Coordinator
-	encryption *encryption.Handler
-	taskWorker *taskqueue.Worker
+	storage          *storage.Coordinator
+	encryption       *encryption.Handler
+	taskWorker       *taskqueue.Worker
+	lifecycleScanner *lifecycle.Scanner
 }
 
 // NewService creates a new metadata service with the given configuration.
@@ -159,6 +161,7 @@ func NewService(cfg Config) (*Service, error) {
 
 		// Register community handlers
 		worker.RegisterHandler(handlers.NewGCDecrementHandler(cfg.FileClientPool))
+		worker.RegisterHandler(handlers.NewLifecycleHandler(cfg.DB, cfg.FileClientPool))
 
 		// Register enterprise handlers (returns nil in community edition)
 		for _, h := range enttaskqueue.EnterpriseHandlers(enttaskqueue.Dependencies{}) {
@@ -168,6 +171,27 @@ func NewService(cfg Config) (*Service, error) {
 		// Start the worker
 		worker.Start(context.Background())
 		svc.taskWorker = worker
+
+		// Create and start lifecycle scanner if enabled
+		if cfg.LifecycleScannerEnabled {
+			scannerConfig := lifecycle.DefaultConfig()
+			if cfg.LifecycleScanInterval > 0 {
+				scannerConfig.ScanInterval = cfg.LifecycleScanInterval
+			}
+			if cfg.LifecycleScanConcurrency > 0 {
+				scannerConfig.Concurrency = cfg.LifecycleScanConcurrency
+			}
+			if cfg.LifecycleScanBatchSize > 0 {
+				scannerConfig.BatchSize = cfg.LifecycleScanBatchSize
+			}
+			if cfg.LifecycleMaxTasksPerScan > 0 {
+				scannerConfig.MaxTasksPerScan = cfg.LifecycleMaxTasksPerScan
+			}
+
+			scanner := lifecycle.NewScanner(cfg.DB, cfg.TaskQueue, scannerConfig)
+			scanner.Start()
+			svc.lifecycleScanner = scanner
+		}
 	}
 
 	return svc, nil
@@ -175,6 +199,11 @@ func NewService(cfg Config) (*Service, error) {
 
 // Close stops all background processors and releases resources
 func (s *Service) Close() {
+	// Stop lifecycle scanner first (it enqueues tasks)
+	if s.lifecycleScanner != nil {
+		s.lifecycleScanner.Stop()
+	}
+	// Then stop task worker (processes tasks)
 	if s.taskWorker != nil {
 		s.taskWorker.Stop()
 	}

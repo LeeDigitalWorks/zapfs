@@ -1,14 +1,13 @@
-//go:build enterprise
-
-// Copyright 2025 ZapFS, Inc. All rights reserved.
-// Use of this source code is governed by the ZapFS Enterprise License
-// that can be found in the LICENSE.enterprise file.
+// Copyright 2025 ZapFS Authors. All rights reserved.
+// Use of this source code is governed by the Apache License 2.0
+// that can be found in the LICENSE file.
 
 package api
 
 import (
 	"net/http"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
@@ -18,14 +17,12 @@ import (
 // GetBucketIntelligentTieringConfigurationHandler returns intelligent tiering configuration.
 // GET /{bucket}?intelligent-tiering&id={id}
 //
-// Enterprise feature: requires FeatureLifecycle license.
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) GetBucketIntelligentTieringConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("intelligent tiering feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-
 	// TODO: Implement intelligent tiering retrieval
 	// Implementation steps:
 	// 1. Get configuration ID from query parameter
@@ -40,20 +37,18 @@ func (s *MetadataServer) GetBucketIntelligentTieringConfigurationHandler(d *data
 // PutBucketIntelligentTieringConfigurationHandler sets intelligent tiering configuration.
 // PUT /{bucket}?intelligent-tiering&id={id}
 //
-// Enterprise feature: requires FeatureLifecycle license.
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) PutBucketIntelligentTieringConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("intelligent tiering feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-
 	// TODO: Implement intelligent tiering configuration
 	// Implementation steps:
 	// 1. Parse IntelligentTieringConfiguration XML
 	// 2. Validate AccessTier settings (ARCHIVE_ACCESS, DEEP_ARCHIVE_ACCESS)
 	// 3. Store configuration in bucket metadata
-	// 4. Set up automatic tiering based on access patterns
+	// 4. Actual tiering based on access patterns requires FeatureLifecycle license
 	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketIntelligentTieringConfiguration.html
 
 	// Not implemented yet
@@ -64,14 +59,12 @@ func (s *MetadataServer) PutBucketIntelligentTieringConfigurationHandler(d *data
 // DeleteBucketIntelligentTieringConfigurationHandler removes intelligent tiering configuration.
 // DELETE /{bucket}?intelligent-tiering&id={id}
 //
-// Enterprise feature: requires FeatureLifecycle license.
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) DeleteBucketIntelligentTieringConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("intelligent tiering feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-
 	// TODO: Implement intelligent tiering deletion
 	// Implementation steps:
 	// 1. Get configuration ID from query parameter
@@ -86,14 +79,12 @@ func (s *MetadataServer) DeleteBucketIntelligentTieringConfigurationHandler(d *d
 // ListBucketIntelligentTieringConfigurationsHandler lists intelligent tiering configurations.
 // GET /{bucket}?intelligent-tiering
 //
-// Enterprise feature: requires FeatureLifecycle license.
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) ListBucketIntelligentTieringConfigurationsHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("intelligent tiering feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-
 	// TODO: Implement intelligent tiering listing
 	// Implementation steps:
 	// 1. Load all intelligent tiering configurations from bucket metadata

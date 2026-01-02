@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -55,16 +56,24 @@ func (gbc *GlobalBucketCache) IsReady() bool {
 }
 
 func (gbc *GlobalBucketCache) LoadBuckets(ctx context.Context, refreshInterval time.Duration) {
-	for {
-		err := gbc.refreshBuckets(ctx)
-		if err != nil {
-			logger.Error().Err(err).Msg("error refreshing global buckets cache")
-		}
+	// Initial load
+	if err := gbc.refreshBuckets(ctx); err != nil {
+		logger.Error().Err(err).Msg("error refreshing global buckets cache")
+	}
 
+	// Use jittered ticker to prevent thundering herd across metadata servers
+	// 10% jitter spreads out refreshes
+	tickCh, stopTicker := utils.JitteredTicker(refreshInterval, 0.1)
+	defer stopTicker()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(refreshInterval):
+		case <-tickCh:
+			if err := gbc.refreshBuckets(ctx); err != nil {
+				logger.Error().Err(err).Msg("error refreshing global buckets cache")
+			}
 		}
 	}
 }

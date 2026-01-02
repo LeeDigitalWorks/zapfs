@@ -10,6 +10,7 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 )
@@ -109,13 +110,15 @@ func (c *TargetCache) Stop() {
 
 // backgroundRefresh periodically refreshes the topology cache
 func (c *TargetCache) backgroundRefresh(ctx context.Context, refreshFn func(context.Context) error) {
-	ticker := time.NewTicker(c.refreshInterval)
-	defer ticker.Stop()
-
 	// Initial refresh
 	if err := refreshFn(ctx); err != nil {
 		logger.Warn().Err(err).Msg("initial topology refresh failed")
 	}
+
+	// Use jittered ticker to prevent all metadata servers from refreshing simultaneously
+	// 15% jitter spreads out topology refreshes
+	tickCh, stopTicker := utils.JitteredTicker(c.refreshInterval, 0.15)
+	defer stopTicker()
 
 	for {
 		select {
@@ -123,7 +126,7 @@ func (c *TargetCache) backgroundRefresh(ctx context.Context, refreshFn func(cont
 			return
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-tickCh:
 			if err := refreshFn(ctx); err != nil {
 				logger.Warn().Err(err).Msg("periodic topology refresh failed")
 			}

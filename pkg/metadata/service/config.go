@@ -42,6 +42,13 @@ type Config struct {
 	TaskWorkerID          string        // Worker identifier (default: hostname)
 	TaskWorkerConcurrency int           // Number of concurrent task processors (default: 5)
 	TaskWorkerInterval    time.Duration // Poll interval (default: 1s)
+
+	// Lifecycle scanner configuration (community feature)
+	LifecycleScannerEnabled  bool          // Enable lifecycle scanning (default: false)
+	LifecycleScanInterval    time.Duration // How often to scan (default: 1h)
+	LifecycleScanConcurrency int           // Parallel bucket processing (default: 5)
+	LifecycleScanBatchSize   int           // Objects per batch (default: 1000)
+	LifecycleMaxTasksPerScan int           // Max tasks per scan run (default: 10000)
 }
 
 // DefaultConfig returns a Config with sensible defaults.

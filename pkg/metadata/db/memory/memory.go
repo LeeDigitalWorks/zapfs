@@ -38,6 +38,7 @@ type DB struct {
 	legalHold         map[string]*s3types.ObjectLockLegalHold
 	publicAccessBlock map[string]*s3types.PublicAccessBlockConfig
 	ownershipControls map[string]*s3types.OwnershipControls
+	logging           map[string]*db.BucketLoggingConfig
 }
 
 // New creates a new in-memory database for testing.
@@ -59,6 +60,7 @@ func New() *DB {
 		legalHold:         make(map[string]*s3types.ObjectLockLegalHold),
 		publicAccessBlock: make(map[string]*s3types.PublicAccessBlockConfig),
 		ownershipControls: make(map[string]*s3types.OwnershipControls),
+		logging:           make(map[string]*db.BucketLoggingConfig),
 	}
 }
 
@@ -885,6 +887,86 @@ func (d *DB) DeleteOwnershipControls(ctx context.Context, bucket string) error {
 		return db.ErrOwnershipControlsNotFound
 	}
 	delete(d.ownershipControls, bucket)
+	return nil
+}
+
+// ============================================================================
+// Logging Configuration
+// ============================================================================
+
+func (d *DB) GetBucketLogging(ctx context.Context, bucket string) (*db.BucketLoggingConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	config, ok := d.logging[bucket]
+	if !ok {
+		return nil, nil
+	}
+	return config, nil
+}
+
+func (d *DB) SetBucketLogging(ctx context.Context, config *db.BucketLoggingConfig) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if config.TargetBucket == "" {
+		delete(d.logging, config.SourceBucket)
+		return nil
+	}
+
+	if config.ID == "" {
+		config.ID = uuid.New().String()
+	}
+	now := time.Now()
+	if config.CreatedAt.IsZero() {
+		config.CreatedAt = now
+	}
+	config.UpdatedAt = now
+
+	d.logging[config.SourceBucket] = config
+	return nil
+}
+
+func (d *DB) DeleteBucketLogging(ctx context.Context, bucket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	delete(d.logging, bucket)
+	return nil
+}
+
+func (d *DB) ListLoggingConfigs(ctx context.Context) ([]*db.BucketLoggingConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	configs := make([]*db.BucketLoggingConfig, 0, len(d.logging))
+	for _, config := range d.logging {
+		configs = append(configs, config)
+	}
+	return configs, nil
+}
+
+// ============================================================================
+// Lifecycle Scan Store (stub for in-memory testing)
+// ============================================================================
+
+func (d *DB) GetScanState(ctx context.Context, bucket string) (*db.LifecycleScanState, error) {
+	return nil, db.ErrLifecycleScanStateNotFound
+}
+
+func (d *DB) UpdateScanState(ctx context.Context, state *db.LifecycleScanState) error {
+	return nil
+}
+
+func (d *DB) ListBucketsWithLifecycle(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func (d *DB) GetBucketsNeedingScan(ctx context.Context, minAge time.Duration, limit int) ([]string, error) {
+	return nil, nil
+}
+
+func (d *DB) ResetScanState(ctx context.Context, bucket string) error {
 	return nil
 }
 

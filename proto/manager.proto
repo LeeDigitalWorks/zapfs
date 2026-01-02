@@ -24,6 +24,10 @@ service ManagerService {
   rpc GetReplicationTargets(GetReplicationTargetsRequest) returns (GetReplicationTargetsResponse);
 
   rpc WatchTopology(WatchTopologyRequest) returns (stream TopologyEvent);
+
+  // WatchCollections streams collection changes for multi-region cache sync.
+  // Sends initial sync of collections since the requested time, then pushes updates.
+  rpc WatchCollections(WatchCollectionsRequest) returns (stream CollectionEvent);
 }
 
 enum ServiceType {
@@ -139,6 +143,32 @@ message TopologyEvent {
   EventType type = 1;
   uint64 version = 2;              // New topology version
   repeated ServiceInfo services = 3; // Affected services
+}
+
+// WatchCollections request for multi-region cache sync
+message WatchCollectionsRequest {
+  // Resume from this timestamp (zero = full sync)
+  google.protobuf.Timestamp since_time = 1;
+  // Include tombstoned (deleted) collections in sync
+  bool include_tombstoned = 2;
+}
+
+// CollectionEvent is pushed to subscribers when collections change
+message CollectionEvent {
+  enum EventType {
+    FULL_SYNC = 0;   // Initial batch of collections on subscribe
+    CREATED = 1;     // New collection created
+    DELETED = 2;     // Collection deleted (tombstoned)
+    UPDATED = 3;     // Collection metadata updated
+  }
+
+  EventType type = 1;
+  // The collection that changed (or batch for FULL_SYNC)
+  repeated Collection collections = 2;
+  // Current collections version for consistency tracking
+  uint64 version = 3;
+  // Timestamp of this event (for resume on reconnect)
+  google.protobuf.Timestamp timestamp = 4;
 }
 
 message RaftListClusterServersRequest {}

@@ -32,6 +32,7 @@ const (
 	ManagerService_Ping_FullMethodName                   = "/manager_pb.ManagerService/Ping"
 	ManagerService_GetReplicationTargets_FullMethodName  = "/manager_pb.ManagerService/GetReplicationTargets"
 	ManagerService_WatchTopology_FullMethodName          = "/manager_pb.ManagerService/WatchTopology"
+	ManagerService_WatchCollections_FullMethodName       = "/manager_pb.ManagerService/WatchCollections"
 )
 
 // ManagerServiceClient is the client API for ManagerService service.
@@ -51,6 +52,9 @@ type ManagerServiceClient interface {
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	GetReplicationTargets(ctx context.Context, in *GetReplicationTargetsRequest, opts ...grpc.CallOption) (*GetReplicationTargetsResponse, error)
 	WatchTopology(ctx context.Context, in *WatchTopologyRequest, opts ...grpc.CallOption) (ManagerService_WatchTopologyClient, error)
+	// WatchCollections streams collection changes for multi-region cache sync.
+	// Sends initial sync of collections since the requested time, then pushes updates.
+	WatchCollections(ctx context.Context, in *WatchCollectionsRequest, opts ...grpc.CallOption) (ManagerService_WatchCollectionsClient, error)
 }
 
 type managerServiceClient struct {
@@ -224,6 +228,38 @@ func (x *managerServiceWatchTopologyClient) Recv() (*TopologyEvent, error) {
 	return m, nil
 }
 
+func (c *managerServiceClient) WatchCollections(ctx context.Context, in *WatchCollectionsRequest, opts ...grpc.CallOption) (ManagerService_WatchCollectionsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ManagerService_ServiceDesc.Streams[2], ManagerService_WatchCollections_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &managerServiceWatchCollectionsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ManagerService_WatchCollectionsClient interface {
+	Recv() (*CollectionEvent, error)
+	grpc.ClientStream
+}
+
+type managerServiceWatchCollectionsClient struct {
+	grpc.ClientStream
+}
+
+func (x *managerServiceWatchCollectionsClient) Recv() (*CollectionEvent, error) {
+	m := new(CollectionEvent)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ManagerServiceServer is the server API for ManagerService service.
 // All implementations must embed UnimplementedManagerServiceServer
 // for forward compatibility
@@ -241,6 +277,9 @@ type ManagerServiceServer interface {
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	GetReplicationTargets(context.Context, *GetReplicationTargetsRequest) (*GetReplicationTargetsResponse, error)
 	WatchTopology(*WatchTopologyRequest, ManagerService_WatchTopologyServer) error
+	// WatchCollections streams collection changes for multi-region cache sync.
+	// Sends initial sync of collections since the requested time, then pushes updates.
+	WatchCollections(*WatchCollectionsRequest, ManagerService_WatchCollectionsServer) error
 	mustEmbedUnimplementedManagerServiceServer()
 }
 
@@ -286,6 +325,9 @@ func (UnimplementedManagerServiceServer) GetReplicationTargets(context.Context, 
 }
 func (UnimplementedManagerServiceServer) WatchTopology(*WatchTopologyRequest, ManagerService_WatchTopologyServer) error {
 	return status.Errorf(codes.Unimplemented, "method WatchTopology not implemented")
+}
+func (UnimplementedManagerServiceServer) WatchCollections(*WatchCollectionsRequest, ManagerService_WatchCollectionsServer) error {
+	return status.Errorf(codes.Unimplemented, "method WatchCollections not implemented")
 }
 func (UnimplementedManagerServiceServer) mustEmbedUnimplementedManagerServiceServer() {}
 
@@ -540,6 +582,27 @@ func (x *managerServiceWatchTopologyServer) Send(m *TopologyEvent) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _ManagerService_WatchCollections_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchCollectionsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ManagerServiceServer).WatchCollections(m, &managerServiceWatchCollectionsServer{stream})
+}
+
+type ManagerService_WatchCollectionsServer interface {
+	Send(*CollectionEvent) error
+	grpc.ServerStream
+}
+
+type managerServiceWatchCollectionsServer struct {
+	grpc.ServerStream
+}
+
+func (x *managerServiceWatchCollectionsServer) Send(m *CollectionEvent) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // ManagerService_ServiceDesc is the grpc.ServiceDesc for ManagerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -601,6 +664,11 @@ var ManagerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchTopology",
 			Handler:       _ManagerService_WatchTopology_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchCollections",
+			Handler:       _ManagerService_WatchCollections_Handler,
 			ServerStreams: true,
 		},
 	},

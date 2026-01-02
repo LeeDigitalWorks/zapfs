@@ -1,15 +1,13 @@
-//go:build enterprise
-
-// Copyright 2025 ZapFS, Inc. All rights reserved.
-// Use of this source code is governed by the ZapFS Enterprise License
-// that can be found in the LICENSE.enterprise file.
+// Copyright 2025 ZapFS Authors. All rights reserved.
+// Use of this source code is governed by the Apache License 2.0
+// that can be found in the LICENSE file.
 
 package api
 
 import (
 	"net/http"
 
-	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
@@ -17,12 +15,11 @@ import (
 // RestoreObjectHandler restores an object from archive storage class.
 // POST /{bucket}/{key}?restore
 //
-// Enterprise feature: requires FeatureLifecycle license.
+// Requires FeatureLifecycle license.
 // Used to restore objects from archive storage classes (Glacier, Deep Archive).
 func (s *MetadataServer) RestoreObjectHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("object restore feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 

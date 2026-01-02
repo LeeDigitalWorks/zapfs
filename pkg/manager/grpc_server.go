@@ -294,6 +294,109 @@ func (ms *ManagerServer) notifyTopologySubscribers(eventType manager_pb.Topology
 	}
 }
 
+// ===== COLLECTION WATCH (Multi-region cache sync) =====
+
+// WatchCollections implements server-streaming PUSH-based collection updates.
+// Used by secondary regions to keep their bucket cache synchronized with primary.
+func (ms *ManagerServer) WatchCollections(req *manager_pb.WatchCollectionsRequest, stream manager_pb.ManagerService_WatchCollectionsServer) error {
+	// Create subscriber channel with buffer
+	subID := ms.colNextSubID.Add(1)
+	eventCh := make(chan *manager_pb.CollectionEvent, 100)
+
+	ms.colSubsMu.Lock()
+	ms.colSubs[subID] = eventCh
+	ms.colSubsMu.Unlock()
+
+	defer func() {
+		ms.colSubsMu.Lock()
+		delete(ms.colSubs, subID)
+		close(eventCh)
+		ms.colSubsMu.Unlock()
+		logger.Debug().Uint64("sub_id", subID).Msg("Collection subscriber disconnected")
+	}()
+
+	sinceTime := time.Time{}
+	if req.GetSinceTime() != nil {
+		sinceTime = req.GetSinceTime().AsTime()
+	}
+
+	logger.Info().
+		Uint64("sub_id", subID).
+		Time("since_time", sinceTime).
+		Msg("New collection subscriber")
+
+	// Send initial sync - collections since the requested time
+	if err := ms.sendCollectionSync(stream, sinceTime, req.IncludeTombstoned); err != nil {
+		return err
+	}
+
+	// Stream updates until client disconnects
+	for {
+		select {
+		case event, ok := <-eventCh:
+			if !ok {
+				return nil // Channel closed, subscriber removed
+			}
+			if err := stream.Send(event); err != nil {
+				logger.Warn().Err(err).Uint64("sub_id", subID).Msg("Failed to send collection event")
+				return err
+			}
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
+// sendCollectionSync sends a FULL_SYNC event with collections since the given time.
+func (ms *ManagerServer) sendCollectionSync(stream manager_pb.ManagerService_WatchCollectionsServer, sinceTime time.Time, includeTombstoned bool) error {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	var collections []*manager_pb.Collection
+
+	// Use StreamCollectionsSince if we have a since_time, otherwise send all
+	ms.StreamCollectionsSince(sinceTime, func(col *manager_pb.Collection) bool {
+		if !includeTombstoned && col.DeletePending {
+			return true // skip tombstoned
+		}
+		collections = append(collections, col)
+		return true
+	})
+
+	return stream.Send(&manager_pb.CollectionEvent{
+		Type:        manager_pb.CollectionEvent_FULL_SYNC,
+		Collections: collections,
+		Version:     ms.collectionsVersion,
+		Timestamp:   timestamppb.Now(),
+	})
+}
+
+// notifyCollectionSubscribers broadcasts a collection event to all subscribers.
+// Called after Raft Apply on both leader and followers.
+func (ms *ManagerServer) notifyCollectionSubscribers(eventType manager_pb.CollectionEvent_EventType, collections []*manager_pb.Collection) {
+	ms.colSubsMu.RLock()
+	defer ms.colSubsMu.RUnlock()
+
+	if len(ms.colSubs) == 0 {
+		return
+	}
+
+	event := &manager_pb.CollectionEvent{
+		Type:        eventType,
+		Collections: collections,
+		Version:     ms.collectionsVersion,
+		Timestamp:   timestamppb.Now(),
+	}
+
+	for subID, ch := range ms.colSubs {
+		select {
+		case ch <- event:
+		default:
+			logger.Warn().Uint64("sub_id", subID).Msg("Collection subscriber channel full, dropping event")
+		}
+	}
+}
+
 func (ms *ManagerServer) GetReplicationTargets(ctx context.Context, req *manager_pb.GetReplicationTargetsRequest) (*manager_pb.GetReplicationTargetsResponse, error) {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()
@@ -440,9 +543,10 @@ func (ms *ManagerServer) getPeerServices(serviceType manager_pb.ServiceType) []*
 // ===== COLLECTION MANAGEMENT =====
 
 // CreateCollection creates a new storage collection (similar to S3 bucket)
-// This is a write operation that forwards to leader if not leader
+// This is a write operation that forwards to leader if not leader.
+// In multi-region mode, secondary regions forward to the primary region.
 func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.CreateCollectionRequest) (*manager_pb.CreateCollectionResponse, error) {
-	// Forward to leader if not leader
+	// Forward to leader if not leader (within this region)
 	leaderAddr, err := forwardOrError(ms.raftNode)
 	if err != nil {
 		return nil, err
@@ -452,15 +556,8 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 		return ms.leaderForwarder.ForwardCreateCollection(ctx, leaderAddr, req)
 	}
 
-	// Validate request
-	if req.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "collection name is required")
-	}
-	if req.Owner == "" {
-		return nil, status.Error(codes.InvalidArgument, "owner is required")
-	}
-
-	// Check if already exists
+	// We are the local leader. Check if we need to forward to primary region.
+	// First do a fast local cache check - if bucket exists locally, reject immediately.
 	ms.mu.RLock()
 	if col, exists := ms.collections[req.Name]; exists {
 		ms.mu.RUnlock()
@@ -471,6 +568,33 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 		}, status.Errorf(codes.AlreadyExists, "collection %s already exists", req.Name)
 	}
 	ms.mu.RUnlock()
+
+	// If not primary region, forward to primary region
+	if ms.regionClient != nil && !ms.IsPrimaryRegion() {
+		logger.Debug().Str("bucket", req.Name).Msg("Forwarding CreateCollection to primary region")
+		resp, err := ms.regionClient.ForwardCreateCollection(ctx, req)
+		if resp != nil || err != nil {
+			// If primary returned a response (success or failure), update local cache on success
+			if resp != nil && resp.Success && resp.Collection != nil {
+				ms.mu.Lock()
+				ms.collections[req.Name] = resp.Collection
+				ms.addCollectionToIndexes(resp.Collection)
+				ms.collectionsVersion++
+				ms.mu.Unlock()
+			}
+			return resp, err
+		}
+		// resp == nil && err == nil means we became acting primary (handle locally)
+		logger.Info().Str("bucket", req.Name).Msg("All higher-priority regions unavailable, handling as acting primary")
+	}
+
+	// Validate request
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "collection name is required")
+	}
+	if req.Owner == "" {
+		return nil, status.Error(codes.InvalidArgument, "owner is required")
+	}
 
 	// Create collection
 	collection := &manager_pb.Collection{
@@ -597,9 +721,10 @@ func (ms *ManagerServer) GetCollection(ctx context.Context, req *manager_pb.GetC
 }
 
 // DeleteCollection deletes a collection
-// This is a write operation that forwards to leader if not leader
+// This is a write operation that forwards to leader if not leader.
+// In multi-region mode, secondary regions forward to the primary region.
 func (ms *ManagerServer) DeleteCollection(ctx context.Context, req *manager_pb.DeleteCollectionRequest) (*manager_pb.DeleteCollectionResponse, error) {
-	// Forward to leader if not leader
+	// Forward to leader if not leader (within this region)
 	leaderAddr, err := forwardOrError(ms.raftNode)
 	if err != nil {
 		return nil, err
@@ -607,6 +732,27 @@ func (ms *ManagerServer) DeleteCollection(ctx context.Context, req *manager_pb.D
 	if leaderAddr != "" {
 		logger.Debug().Str("leader", leaderAddr).Str("bucket", req.Name).Msg("Forwarding DeleteCollection to leader")
 		return ms.leaderForwarder.ForwardDeleteCollection(ctx, leaderAddr, req)
+	}
+
+	// If not primary region, forward to primary region
+	if ms.regionClient != nil && !ms.IsPrimaryRegion() {
+		logger.Debug().Str("bucket", req.Name).Msg("Forwarding DeleteCollection to primary region")
+		resp, err := ms.regionClient.ForwardDeleteCollection(ctx, req)
+		if resp != nil || err != nil {
+			// If primary returned a response (success or failure), update local cache on success
+			if resp != nil && resp.Success {
+				ms.mu.Lock()
+				if col, exists := ms.collections[req.Name]; exists {
+					ms.removeCollectionFromIndexes(col)
+					delete(ms.collections, req.Name)
+					ms.collectionsVersion++
+				}
+				ms.mu.Unlock()
+			}
+			return resp, err
+		}
+		// resp == nil && err == nil means we became acting primary (handle locally)
+		logger.Info().Str("bucket", req.Name).Msg("All higher-priority regions unavailable, handling as acting primary")
 	}
 
 	// Check if exists

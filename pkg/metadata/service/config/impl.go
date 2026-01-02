@@ -48,11 +48,17 @@ func NewService(cfg Config) (Service, error) {
 // ============================================================================
 
 func (s *serviceImpl) GetBucketTagging(ctx context.Context, bucket string) (*s3types.TagSet, error) {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return nil, &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Check cache first
+	if bucketInfo.Tagging != nil {
+		return bucketInfo.Tagging, nil
+	}
+
+	// Cache miss - fetch from DB
 	tagSet, err := s.db.GetBucketTagging(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, db.ErrTaggingNotFound) {
@@ -61,12 +67,16 @@ func (s *serviceImpl) GetBucketTagging(ctx context.Context, bucket string) (*s3t
 		return nil, &Error{Code: ErrCodeInternalError, Message: "failed to get tagging", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.Tagging = tagSet
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return tagSet, nil
 }
 
 func (s *serviceImpl) SetBucketTagging(ctx context.Context, bucket string, tags *s3types.TagSet) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
@@ -75,22 +85,32 @@ func (s *serviceImpl) SetBucketTagging(ctx context.Context, bucket string, tags 
 		return err
 	}
 
+	// Write to DB
 	if err := s.db.SetBucketTagging(ctx, bucket, tags); err != nil {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set tagging", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.Tagging = tags
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
 
 func (s *serviceImpl) DeleteBucketTagging(ctx context.Context, bucket string) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Delete from DB
 	if err := s.db.DeleteBucketTagging(ctx, bucket); err != nil && !errors.Is(err, db.ErrTaggingNotFound) {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to delete tagging", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.Tagging = nil
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
@@ -316,11 +336,17 @@ func (s *serviceImpl) DeleteBucketPolicy(ctx context.Context, bucket string) err
 // ============================================================================
 
 func (s *serviceImpl) GetBucketCORS(ctx context.Context, bucket string) (*s3types.CORSConfiguration, error) {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return nil, &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Check cache first
+	if bucketInfo.CORS != nil {
+		return bucketInfo.CORS, nil
+	}
+
+	// Cache miss - fetch from DB
 	cors, err := s.db.GetBucketCORS(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, db.ErrCORSNotFound) {
@@ -329,12 +355,16 @@ func (s *serviceImpl) GetBucketCORS(ctx context.Context, bucket string) (*s3type
 		return nil, &Error{Code: ErrCodeInternalError, Message: "failed to get CORS", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.CORS = cors
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return cors, nil
 }
 
 func (s *serviceImpl) SetBucketCORS(ctx context.Context, bucket string, cors *s3types.CORSConfiguration) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
@@ -343,22 +373,32 @@ func (s *serviceImpl) SetBucketCORS(ctx context.Context, bucket string, cors *s3
 		return err
 	}
 
+	// Write to DB
 	if err := s.db.SetBucketCORS(ctx, bucket, cors); err != nil {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set CORS", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.CORS = cors
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
 
 func (s *serviceImpl) DeleteBucketCORS(ctx context.Context, bucket string) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Delete from DB
 	if err := s.db.DeleteBucketCORS(ctx, bucket); err != nil && !errors.Is(err, db.ErrCORSNotFound) {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to delete CORS", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.CORS = nil
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
@@ -368,11 +408,17 @@ func (s *serviceImpl) DeleteBucketCORS(ctx context.Context, bucket string) error
 // ============================================================================
 
 func (s *serviceImpl) GetBucketWebsite(ctx context.Context, bucket string) (*s3types.WebsiteConfiguration, error) {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return nil, &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Check cache first
+	if bucketInfo.Website != nil {
+		return bucketInfo.Website, nil
+	}
+
+	// Cache miss - fetch from DB
 	website, err := s.db.GetBucketWebsite(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, db.ErrWebsiteNotFound) {
@@ -381,12 +427,16 @@ func (s *serviceImpl) GetBucketWebsite(ctx context.Context, bucket string) (*s3t
 		return nil, &Error{Code: ErrCodeInternalError, Message: "failed to get website", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.Website = website
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return website, nil
 }
 
 func (s *serviceImpl) SetBucketWebsite(ctx context.Context, bucket string, website *s3types.WebsiteConfiguration) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
@@ -395,22 +445,32 @@ func (s *serviceImpl) SetBucketWebsite(ctx context.Context, bucket string, websi
 		return err
 	}
 
+	// Write to DB
 	if err := s.db.SetBucketWebsite(ctx, bucket, website); err != nil {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set website", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.Website = website
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
 
 func (s *serviceImpl) DeleteBucketWebsite(ctx context.Context, bucket string) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Delete from DB
 	if err := s.db.DeleteBucketWebsite(ctx, bucket); err != nil && !errors.Is(err, db.ErrWebsiteNotFound) {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to delete website", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.Website = nil
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
@@ -465,11 +525,17 @@ func (s *serviceImpl) SetBucketVersioning(ctx context.Context, bucket string, ve
 // ============================================================================
 
 func (s *serviceImpl) GetBucketLifecycle(ctx context.Context, bucket string) (*s3types.Lifecycle, error) {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return nil, &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Check cache first
+	if bucketInfo.LifecyclePolicy != nil {
+		return bucketInfo.LifecyclePolicy, nil
+	}
+
+	// Cache miss - fetch from DB
 	lifecycle, err := s.db.GetBucketLifecycle(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, db.ErrLifecycleNotFound) {
@@ -478,12 +544,16 @@ func (s *serviceImpl) GetBucketLifecycle(ctx context.Context, bucket string) (*s
 		return nil, &Error{Code: ErrCodeInternalError, Message: "failed to get lifecycle", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.LifecyclePolicy = lifecycle
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return lifecycle, nil
 }
 
 func (s *serviceImpl) SetBucketLifecycle(ctx context.Context, bucket string, lifecycle *s3types.Lifecycle) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
@@ -492,22 +562,32 @@ func (s *serviceImpl) SetBucketLifecycle(ctx context.Context, bucket string, lif
 		return err
 	}
 
+	// Write to DB
 	if err := s.db.SetBucketLifecycle(ctx, bucket, lifecycle); err != nil {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set lifecycle", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.LifecyclePolicy = lifecycle
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
 
 func (s *serviceImpl) DeleteBucketLifecycle(ctx context.Context, bucket string) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Delete from DB
 	if err := s.db.DeleteBucketLifecycle(ctx, bucket); err != nil && !errors.Is(err, db.ErrLifecycleNotFound) {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to delete lifecycle", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.LifecyclePolicy = nil
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
@@ -517,11 +597,17 @@ func (s *serviceImpl) DeleteBucketLifecycle(ctx context.Context, bucket string) 
 // ============================================================================
 
 func (s *serviceImpl) GetBucketEncryption(ctx context.Context, bucket string) (*s3types.ServerSideEncryptionConfig, error) {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return nil, &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Check cache first
+	if bucketInfo.Encryption != nil {
+		return bucketInfo.Encryption, nil
+	}
+
+	// Cache miss - fetch from DB
 	config, err := s.db.GetBucketEncryption(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, db.ErrEncryptionNotFound) {
@@ -530,12 +616,16 @@ func (s *serviceImpl) GetBucketEncryption(ctx context.Context, bucket string) (*
 		return nil, &Error{Code: ErrCodeInternalError, Message: "failed to get encryption", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.Encryption = config
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return config, nil
 }
 
 func (s *serviceImpl) SetBucketEncryption(ctx context.Context, bucket string, encryption *s3types.ServerSideEncryptionConfig) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
@@ -548,18 +638,27 @@ func (s *serviceImpl) SetBucketEncryption(ctx context.Context, bucket string, en
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set encryption", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.Encryption = encryption
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return nil
 }
 
 func (s *serviceImpl) DeleteBucketEncryption(ctx context.Context, bucket string) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Delete from DB
 	if err := s.db.DeleteBucketEncryption(ctx, bucket); err != nil && !errors.Is(err, db.ErrEncryptionNotFound) {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to delete encryption", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.Encryption = nil
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }
@@ -569,11 +668,17 @@ func (s *serviceImpl) DeleteBucketEncryption(ctx context.Context, bucket string)
 // ============================================================================
 
 func (s *serviceImpl) GetObjectLockConfiguration(ctx context.Context, bucket string) (*s3types.ObjectLockConfiguration, error) {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return nil, &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
+	// Check cache first
+	if bucketInfo.ObjectLockConfig != nil {
+		return bucketInfo.ObjectLockConfig, nil
+	}
+
+	// Cache miss - fetch from DB
 	config, err := s.db.GetObjectLockConfiguration(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, db.ErrObjectLockNotFound) {
@@ -582,12 +687,16 @@ func (s *serviceImpl) GetObjectLockConfiguration(ctx context.Context, bucket str
 		return nil, &Error{Code: ErrCodeInternalError, Message: "failed to get object lock config", Err: err}
 	}
 
+	// Update cache
+	bucketInfo.ObjectLockConfig = config
+	s.bucketStore.SetBucket(bucket, bucketInfo)
+
 	return config, nil
 }
 
 func (s *serviceImpl) SetObjectLockConfiguration(ctx context.Context, bucket string, config *s3types.ObjectLockConfiguration) error {
-	// Verify bucket exists
-	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
 		return &Error{Code: ErrCodeNoSuchBucket, Message: "bucket not found"}
 	}
 
@@ -599,6 +708,10 @@ func (s *serviceImpl) SetObjectLockConfiguration(ctx context.Context, bucket str
 	if err := s.db.SetObjectLockConfiguration(ctx, bucket, config); err != nil {
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set object lock config", Err: err}
 	}
+
+	// Update cache
+	bucketInfo.ObjectLockConfig = config
+	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	return nil
 }

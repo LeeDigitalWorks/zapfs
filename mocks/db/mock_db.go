@@ -6,6 +6,7 @@ package mocks
 
 import (
 	"context"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
@@ -423,6 +424,63 @@ func (_c *MockDB_DeleteBucketLifecycle_Call) Return(err error) *MockDB_DeleteBuc
 }
 
 func (_c *MockDB_DeleteBucketLifecycle_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteBucketLifecycle_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteBucketLogging provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteBucketLogging(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteBucketLogging")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteBucketLogging_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteBucketLogging'
+type MockDB_DeleteBucketLogging_Call struct {
+	*mock.Call
+}
+
+// DeleteBucketLogging is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) DeleteBucketLogging(ctx interface{}, bucket interface{}) *MockDB_DeleteBucketLogging_Call {
+	return &MockDB_DeleteBucketLogging_Call{Call: _e.mock.On("DeleteBucketLogging", ctx, bucket)}
+}
+
+func (_c *MockDB_DeleteBucketLogging_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_DeleteBucketLogging_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteBucketLogging_Call) Return(err error) *MockDB_DeleteBucketLogging_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteBucketLogging_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteBucketLogging_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1373,6 +1431,74 @@ func (_c *MockDB_GetBucketLifecycle_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// GetBucketLogging provides a mock function for the type MockDB
+func (_mock *MockDB) GetBucketLogging(ctx context.Context, bucket string) (*db.BucketLoggingConfig, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBucketLogging")
+	}
+
+	var r0 *db.BucketLoggingConfig
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*db.BucketLoggingConfig, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *db.BucketLoggingConfig); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*db.BucketLoggingConfig)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetBucketLogging_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBucketLogging'
+type MockDB_GetBucketLogging_Call struct {
+	*mock.Call
+}
+
+// GetBucketLogging is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetBucketLogging(ctx interface{}, bucket interface{}) *MockDB_GetBucketLogging_Call {
+	return &MockDB_GetBucketLogging_Call{Call: _e.mock.On("GetBucketLogging", ctx, bucket)}
+}
+
+func (_c *MockDB_GetBucketLogging_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetBucketLogging_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetBucketLogging_Call) Return(bucketLoggingConfig *db.BucketLoggingConfig, err error) *MockDB_GetBucketLogging_Call {
+	_c.Call.Return(bucketLoggingConfig, err)
+	return _c
+}
+
+func (_c *MockDB_GetBucketLogging_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*db.BucketLoggingConfig, error)) *MockDB_GetBucketLogging_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetBucketPolicy provides a mock function for the type MockDB
 func (_mock *MockDB) GetBucketPolicy(ctx context.Context, bucket string) (*s3types.BucketPolicy, error) {
 	ret := _mock.Called(ctx, bucket)
@@ -1573,6 +1699,80 @@ func (_c *MockDB_GetBucketWebsite_Call) Return(websiteConfiguration *s3types.Web
 }
 
 func (_c *MockDB_GetBucketWebsite_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*s3types.WebsiteConfiguration, error)) *MockDB_GetBucketWebsite_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetBucketsNeedingScan provides a mock function for the type MockDB
+func (_mock *MockDB) GetBucketsNeedingScan(ctx context.Context, minAge time.Duration, limit int) ([]string, error) {
+	ret := _mock.Called(ctx, minAge, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBucketsNeedingScan")
+	}
+
+	var r0 []string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Duration, int) ([]string, error)); ok {
+		return returnFunc(ctx, minAge, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Duration, int) []string); ok {
+		r0 = returnFunc(ctx, minAge, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Duration, int) error); ok {
+		r1 = returnFunc(ctx, minAge, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetBucketsNeedingScan_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBucketsNeedingScan'
+type MockDB_GetBucketsNeedingScan_Call struct {
+	*mock.Call
+}
+
+// GetBucketsNeedingScan is a helper method to define mock.On call
+//   - ctx context.Context
+//   - minAge time.Duration
+//   - limit int
+func (_e *MockDB_Expecter) GetBucketsNeedingScan(ctx interface{}, minAge interface{}, limit interface{}) *MockDB_GetBucketsNeedingScan_Call {
+	return &MockDB_GetBucketsNeedingScan_Call{Call: _e.mock.On("GetBucketsNeedingScan", ctx, minAge, limit)}
+}
+
+func (_c *MockDB_GetBucketsNeedingScan_Call) Run(run func(ctx context.Context, minAge time.Duration, limit int)) *MockDB_GetBucketsNeedingScan_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Duration
+		if args[1] != nil {
+			arg1 = args[1].(time.Duration)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetBucketsNeedingScan_Call) Return(strings []string, err error) *MockDB_GetBucketsNeedingScan_Call {
+	_c.Call.Return(strings, err)
+	return _c
+}
+
+func (_c *MockDB_GetBucketsNeedingScan_Call) RunAndReturn(run func(ctx context.Context, minAge time.Duration, limit int) ([]string, error)) *MockDB_GetBucketsNeedingScan_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2453,6 +2653,74 @@ func (_c *MockDB_GetPublicAccessBlock_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// GetScanState provides a mock function for the type MockDB
+func (_mock *MockDB) GetScanState(ctx context.Context, bucket string) (*db.LifecycleScanState, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetScanState")
+	}
+
+	var r0 *db.LifecycleScanState
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*db.LifecycleScanState, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *db.LifecycleScanState); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*db.LifecycleScanState)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetScanState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetScanState'
+type MockDB_GetScanState_Call struct {
+	*mock.Call
+}
+
+// GetScanState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetScanState(ctx interface{}, bucket interface{}) *MockDB_GetScanState_Call {
+	return &MockDB_GetScanState_Call{Call: _e.mock.On("GetScanState", ctx, bucket)}
+}
+
+func (_c *MockDB_GetScanState_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetScanState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetScanState_Call) Return(lifecycleScanState *db.LifecycleScanState, err error) *MockDB_GetScanState_Call {
+	_c.Call.Return(lifecycleScanState, err)
+	return _c
+}
+
+func (_c *MockDB_GetScanState_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*db.LifecycleScanState, error)) *MockDB_GetScanState_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListBuckets provides a mock function for the type MockDB
 func (_mock *MockDB) ListBuckets(ctx context.Context, params *db.ListBucketsParams) (*db.ListBucketsResult, error) {
 	ret := _mock.Called(ctx, params)
@@ -2517,6 +2785,68 @@ func (_c *MockDB_ListBuckets_Call) Return(listBucketsResult *db.ListBucketsResul
 }
 
 func (_c *MockDB_ListBuckets_Call) RunAndReturn(run func(ctx context.Context, params *db.ListBucketsParams) (*db.ListBucketsResult, error)) *MockDB_ListBuckets_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListBucketsWithLifecycle provides a mock function for the type MockDB
+func (_mock *MockDB) ListBucketsWithLifecycle(ctx context.Context) ([]string, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListBucketsWithLifecycle")
+	}
+
+	var r0 []string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]string, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []string); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_ListBucketsWithLifecycle_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListBucketsWithLifecycle'
+type MockDB_ListBucketsWithLifecycle_Call struct {
+	*mock.Call
+}
+
+// ListBucketsWithLifecycle is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockDB_Expecter) ListBucketsWithLifecycle(ctx interface{}) *MockDB_ListBucketsWithLifecycle_Call {
+	return &MockDB_ListBucketsWithLifecycle_Call{Call: _e.mock.On("ListBucketsWithLifecycle", ctx)}
+}
+
+func (_c *MockDB_ListBucketsWithLifecycle_Call) Run(run func(ctx context.Context)) *MockDB_ListBucketsWithLifecycle_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_ListBucketsWithLifecycle_Call) Return(strings []string, err error) *MockDB_ListBucketsWithLifecycle_Call {
+	_c.Call.Return(strings, err)
+	return _c
+}
+
+func (_c *MockDB_ListBucketsWithLifecycle_Call) RunAndReturn(run func(ctx context.Context) ([]string, error)) *MockDB_ListBucketsWithLifecycle_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2591,6 +2921,68 @@ func (_c *MockDB_ListDeletedObjects_Call) Return(objectRefs []*types.ObjectRef, 
 }
 
 func (_c *MockDB_ListDeletedObjects_Call) RunAndReturn(run func(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error)) *MockDB_ListDeletedObjects_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListLoggingConfigs provides a mock function for the type MockDB
+func (_mock *MockDB) ListLoggingConfigs(ctx context.Context) ([]*db.BucketLoggingConfig, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListLoggingConfigs")
+	}
+
+	var r0 []*db.BucketLoggingConfig
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]*db.BucketLoggingConfig, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []*db.BucketLoggingConfig); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*db.BucketLoggingConfig)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_ListLoggingConfigs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListLoggingConfigs'
+type MockDB_ListLoggingConfigs_Call struct {
+	*mock.Call
+}
+
+// ListLoggingConfigs is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockDB_Expecter) ListLoggingConfigs(ctx interface{}) *MockDB_ListLoggingConfigs_Call {
+	return &MockDB_ListLoggingConfigs_Call{Call: _e.mock.On("ListLoggingConfigs", ctx)}
+}
+
+func (_c *MockDB_ListLoggingConfigs_Call) Run(run func(ctx context.Context)) *MockDB_ListLoggingConfigs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_ListLoggingConfigs_Call) Return(bucketLoggingConfigs []*db.BucketLoggingConfig, err error) *MockDB_ListLoggingConfigs_Call {
+	_c.Call.Return(bucketLoggingConfigs, err)
+	return _c
+}
+
+func (_c *MockDB_ListLoggingConfigs_Call) RunAndReturn(run func(ctx context.Context) ([]*db.BucketLoggingConfig, error)) *MockDB_ListLoggingConfigs_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -3355,6 +3747,63 @@ func (_c *MockDB_PutPart_Call) RunAndReturn(run func(ctx context.Context, part *
 	return _c
 }
 
+// ResetScanState provides a mock function for the type MockDB
+func (_mock *MockDB) ResetScanState(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResetScanState")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_ResetScanState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResetScanState'
+type MockDB_ResetScanState_Call struct {
+	*mock.Call
+}
+
+// ResetScanState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) ResetScanState(ctx interface{}, bucket interface{}) *MockDB_ResetScanState_Call {
+	return &MockDB_ResetScanState_Call{Call: _e.mock.On("ResetScanState", ctx, bucket)}
+}
+
+func (_c *MockDB_ResetScanState_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_ResetScanState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_ResetScanState_Call) Return(err error) *MockDB_ResetScanState_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_ResetScanState_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_ResetScanState_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SetBucketACL provides a mock function for the type MockDB
 func (_mock *MockDB) SetBucketACL(ctx context.Context, bucket string, acl *s3types.AccessControlList) error {
 	ret := _mock.Called(ctx, bucket, acl)
@@ -3603,6 +4052,63 @@ func (_c *MockDB_SetBucketLifecycle_Call) Return(err error) *MockDB_SetBucketLif
 }
 
 func (_c *MockDB_SetBucketLifecycle_Call) RunAndReturn(run func(ctx context.Context, bucket string, lifecycle *s3types.Lifecycle) error) *MockDB_SetBucketLifecycle_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetBucketLogging provides a mock function for the type MockDB
+func (_mock *MockDB) SetBucketLogging(ctx context.Context, config *db.BucketLoggingConfig) error {
+	ret := _mock.Called(ctx, config)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetBucketLogging")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *db.BucketLoggingConfig) error); ok {
+		r0 = returnFunc(ctx, config)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetBucketLogging_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetBucketLogging'
+type MockDB_SetBucketLogging_Call struct {
+	*mock.Call
+}
+
+// SetBucketLogging is a helper method to define mock.On call
+//   - ctx context.Context
+//   - config *db.BucketLoggingConfig
+func (_e *MockDB_Expecter) SetBucketLogging(ctx interface{}, config interface{}) *MockDB_SetBucketLogging_Call {
+	return &MockDB_SetBucketLogging_Call{Call: _e.mock.On("SetBucketLogging", ctx, config)}
+}
+
+func (_c *MockDB_SetBucketLogging_Call) Run(run func(ctx context.Context, config *db.BucketLoggingConfig)) *MockDB_SetBucketLogging_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *db.BucketLoggingConfig
+		if args[1] != nil {
+			arg1 = args[1].(*db.BucketLoggingConfig)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetBucketLogging_Call) Return(err error) *MockDB_SetBucketLogging_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetBucketLogging_Call) RunAndReturn(run func(ctx context.Context, config *db.BucketLoggingConfig) error) *MockDB_SetBucketLogging_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -4320,6 +4826,63 @@ func (_c *MockDB_UpdateBucketVersioning_Call) Return(err error) *MockDB_UpdateBu
 }
 
 func (_c *MockDB_UpdateBucketVersioning_Call) RunAndReturn(run func(ctx context.Context, bucket string, versioning string) error) *MockDB_UpdateBucketVersioning_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateScanState provides a mock function for the type MockDB
+func (_mock *MockDB) UpdateScanState(ctx context.Context, state *db.LifecycleScanState) error {
+	ret := _mock.Called(ctx, state)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateScanState")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *db.LifecycleScanState) error); ok {
+		r0 = returnFunc(ctx, state)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_UpdateScanState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateScanState'
+type MockDB_UpdateScanState_Call struct {
+	*mock.Call
+}
+
+// UpdateScanState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - state *db.LifecycleScanState
+func (_e *MockDB_Expecter) UpdateScanState(ctx interface{}, state interface{}) *MockDB_UpdateScanState_Call {
+	return &MockDB_UpdateScanState_Call{Call: _e.mock.On("UpdateScanState", ctx, state)}
+}
+
+func (_c *MockDB_UpdateScanState_Call) Run(run func(ctx context.Context, state *db.LifecycleScanState)) *MockDB_UpdateScanState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *db.LifecycleScanState
+		if args[1] != nil {
+			arg1 = args[1].(*db.LifecycleScanState)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_UpdateScanState_Call) Return(err error) *MockDB_UpdateScanState_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_UpdateScanState_Call) RunAndReturn(run func(ctx context.Context, state *db.LifecycleScanState) error) *MockDB_UpdateScanState_Call {
 	_c.Call.Return(run)
 	return _c
 }

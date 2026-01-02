@@ -47,3 +47,20 @@ rate_limit_redis_password = ""
 rate_limit_redis_db = 0
 rate_limit_redis_pool_size = 10
 rate_limit_redis_fail_open = true
+
+# Access Logging (Enterprise: FeatureAuditLog)
+# Requires ClickHouse for time-series storage
+access_logs_enabled = false
+clickhouse_dsn = ""
+access_log_batch_size = 10000
+access_log_flush_interval = "5s"
+access_log_export_interval = "1h"
+
+# Lifecycle Scanner (Community Feature)
+# Scans buckets for lifecycle rules and executes expiration/abort actions
+# Storage transitions require Enterprise edition
+lifecycle_scanner_enabled = false
+lifecycle_scan_interval = "1h"        # How often to scan buckets
+lifecycle_scan_concurrency = 5        # Parallel bucket processing
+lifecycle_scan_batch_size = 1000      # Objects per batch when listing
+lifecycle_max_tasks_per_scan = 10000  # Max tasks to enqueue per scan run

@@ -1,8 +1,6 @@
-//go:build enterprise
-
-// Copyright 2025 ZapFS, Inc. All rights reserved.
-// Use of this source code is governed by the ZapFS Enterprise License
-// that can be found in the LICENSE.enterprise file.
+// Copyright 2025 ZapFS Authors. All rights reserved.
+// Use of this source code is governed by the Apache License 2.0
+// that can be found in the LICENSE file.
 
 package api
 
@@ -12,6 +10,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
@@ -22,11 +21,11 @@ import (
 
 // GetBucketLifecycleConfigurationHandler returns the lifecycle configuration for a bucket.
 // GET /{bucket}?lifecycle
-// Enterprise feature: requires FeatureLifecycle license.
+//
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) GetBucketLifecycleConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("lifecycle feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -55,11 +54,11 @@ func (s *MetadataServer) GetBucketLifecycleConfigurationHandler(d *data.Data, w 
 
 // PutBucketLifecycleConfigurationHandler sets the lifecycle configuration for a bucket.
 // PUT /{bucket}?lifecycle
-// Enterprise feature: requires FeatureLifecycle license.
+//
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) PutBucketLifecycleConfigurationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("lifecycle feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -105,11 +104,11 @@ func (s *MetadataServer) PutBucketLifecycleConfigurationHandler(d *data.Data, w 
 
 // DeleteBucketLifecycleHandler removes the lifecycle configuration for a bucket.
 // DELETE /{bucket}?lifecycle
-// Enterprise feature: requires FeatureLifecycle license.
+//
+// Requires FeatureLifecycle license.
 func (s *MetadataServer) DeleteBucketLifecycleHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkLifecycleLicense() {
-		logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("lifecycle feature requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckLifecycle() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 

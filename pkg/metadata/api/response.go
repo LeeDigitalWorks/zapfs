@@ -12,7 +12,26 @@ import (
 
 type wrappedResponseRecorder struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode    int
+	bytesWritten  int64
+	wroteHeader   bool
+}
+
+func (w *wrappedResponseRecorder) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.statusCode = code
+		w.wroteHeader = true
+		w.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (w *wrappedResponseRecorder) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	n, err := w.ResponseWriter.Write(b)
+	w.bytesWritten += int64(n)
+	return n, err
 }
 
 func writeXMLErrorResponse(w http.ResponseWriter, d *data.Data, s3code s3err.ErrorCode) {

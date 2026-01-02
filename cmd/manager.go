@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
@@ -143,10 +143,10 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 		Bool("kms_enabled", iamService.KMS() != nil).
 		Msg("IAM service initialized")
 
-	// Get license manager for limit enforcement (nil for community edition)
-	licenseManager := license.GetManager()
+	// Get license checker for limit enforcement (noopChecker for community edition)
+	licenseChecker := license.GetChecker()
 
-	managerServer, err := manager.NewManagerServer(opts.RegionID, raftConfig, opts.LeaderTimeout, iamService, licenseManager)
+	managerServer, err := manager.NewManagerServer(opts.RegionID, raftConfig, opts.LeaderTimeout, iamService, licenseChecker)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to create manager server")
 	}

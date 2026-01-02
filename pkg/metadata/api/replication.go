@@ -1,8 +1,6 @@
-//go:build enterprise
-
-// Copyright 2025 ZapFS, Inc. All rights reserved.
-// Use of this source code is governed by the ZapFS Enterprise License
-// that can be found in the LICENSE.enterprise file.
+// Copyright 2025 ZapFS Authors. All rights reserved.
+// Use of this source code is governed by the Apache License 2.0
+// that can be found in the LICENSE file.
 
 package api
 
@@ -11,6 +9,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
@@ -19,10 +18,11 @@ import (
 
 // GetBucketReplicationHandler returns the replication configuration for a bucket.
 // GET /{bucket}?replication
+//
+// Requires FeatureMultiRegion license.
 func (s *MetadataServer) GetBucketReplicationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkReplicationLicense() {
-		logger.Warn().Msg("replication requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckMultiRegion() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -49,10 +49,11 @@ func (s *MetadataServer) GetBucketReplicationHandler(d *data.Data, w http.Respon
 
 // PutBucketReplicationHandler sets the replication configuration for a bucket.
 // PUT /{bucket}?replication
+//
+// Requires FeatureMultiRegion license.
 func (s *MetadataServer) PutBucketReplicationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkReplicationLicense() {
-		logger.Warn().Msg("replication requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckMultiRegion() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -100,7 +101,7 @@ func (s *MetadataServer) PutBucketReplicationHandler(d *data.Data, w http.Respon
 	s.bucketStore.SetBucket(bucket, bucketInfo)
 
 	// TODO: Persist to database
-	// Replication will be triggered by CRRHook on PutObject/DeleteObject
+	// Replication will be triggered by CRRHook on PutObject/DeleteObject (requires license)
 
 	logger.Info().
 		Str("bucket", bucket).
@@ -112,10 +113,11 @@ func (s *MetadataServer) PutBucketReplicationHandler(d *data.Data, w http.Respon
 
 // DeleteBucketReplicationHandler removes the replication configuration from a bucket.
 // DELETE /{bucket}?replication
+//
+// Requires FeatureMultiRegion license.
 func (s *MetadataServer) DeleteBucketReplicationHandler(d *data.Data, w http.ResponseWriter) {
-	if !checkReplicationLicense() {
-		logger.Warn().Msg("replication requires enterprise license")
-		writeXMLErrorResponse(w, d, s3err.ErrAccessDenied)
+	if !license.CheckMultiRegion() {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
 
