@@ -155,6 +155,24 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 		logger.Fatal().Err(err).Msg("failed to create manager server")
 	}
 
+	// Configure multi-region if specified (enterprise feature)
+	if viper.IsSet("region") {
+		var regionConfig manager.RegionConfig
+		if err := viper.UnmarshalKey("region", &regionConfig); err != nil {
+			logger.Fatal().Err(err).Msg("failed to parse region config")
+		}
+		if regionConfig.IsConfigured() {
+			if err := managerServer.ConfigureMultiRegion(&regionConfig); err != nil {
+				logger.Fatal().Err(err).Msg("failed to configure multi-region")
+			}
+			logger.Info().
+				Str("region", regionConfig.Name).
+				Strs("primary_regions", regionConfig.PrimaryRegions).
+				Int("peers", len(regionConfig.Peers)).
+				Msg("Multi-region configured")
+		}
+	}
+
 	// Join existing cluster if specified AND this is a fresh node (no existing Raft state)
 	// On restart, nodes already have their Raft configuration and just need to participate in election
 	if opts.JoinAddr != "" && !opts.Bootstrap {

@@ -31,3 +31,27 @@ region_id = "default"
 # Default replication factor when not specified per-request.
 # With 1 file server, only 1 replica is possible regardless of this setting.
 default_num_replicas = 3
+
+# =============================================================================
+# Multi-Region Configuration (Enterprise Feature)
+# =============================================================================
+# Enables cross-region bucket cache synchronization and forwarding of bucket
+# mutations to the primary region. Requires FeatureMultiRegion license.
+#
+# Uncomment and configure for multi-region deployments:
+#
+# [region]
+# name = "us-east-1"                           # This region's identifier
+# primary_regions = ["us-east-1", "us-west-2"] # Failover priority list
+#
+# [[region.peers]]
+# name = "us-west-2"
+# manager_addresses = ["manager-1.us-west-2.example.com:8050", "manager-2.us-west-2.example.com:8050"]
+#
+# [[region.peers]]
+# name = "eu-west-1"
+# manager_addresses = ["manager-1.eu-west-1.example.com:8050"]
+#
+# [region.cache]
+# sync_interval = 30          # Seconds between cache syncs from primary
+# cross_region_timeout = 5000 # Timeout for cross-region calls (milliseconds)
