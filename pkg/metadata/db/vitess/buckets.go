@@ -18,8 +18,10 @@ import (
 // ============================================================================
 
 func (v *Vitess) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
+	// Use INSERT IGNORE to handle case where bucket already exists in DB
+	// (e.g., after manager restart when local DB already has the bucket)
 	_, err := v.db.ExecContext(ctx, `
-		INSERT INTO buckets (id, name, owner_id, region, created_at, default_profile_id, versioning)
+		INSERT IGNORE INTO buckets (id, name, owner_id, region, created_at, default_profile_id, versioning)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`,
 		bucket.ID.String(),

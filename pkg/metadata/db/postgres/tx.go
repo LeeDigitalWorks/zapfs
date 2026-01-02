@@ -257,9 +257,11 @@ func (t *postgresTx) ListDeletedObjects(ctx context.Context, olderThan int64, li
 // ============================================================================
 
 func (t *postgresTx) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
+	// Use ON CONFLICT DO NOTHING to handle case where bucket already exists in DB
 	_, err := t.tx.ExecContext(ctx, `
 		INSERT INTO buckets (id, name, owner_id, region, created_at, versioning)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (name) DO NOTHING
 	`, bucket.ID.String(), bucket.Name, bucket.OwnerID, bucket.Region, bucket.CreatedAt, bucket.Versioning)
 	if err != nil {
 		return fmt.Errorf("create bucket: %w", err)

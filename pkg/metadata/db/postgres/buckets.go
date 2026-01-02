@@ -18,9 +18,12 @@ import (
 // ============================================================================
 
 func (p *Postgres) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
+	// Use ON CONFLICT DO NOTHING to handle case where bucket already exists in DB
+	// (e.g., after manager restart when local DB already has the bucket)
 	_, err := p.db.ExecContext(ctx, `
 		INSERT INTO buckets (id, name, owner_id, region, created_at, versioning)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (name) DO NOTHING
 	`, bucket.ID.String(), bucket.Name, bucket.OwnerID, bucket.Region, bucket.CreatedAt, bucket.Versioning)
 	if err != nil {
 		return fmt.Errorf("create bucket: %w", err)

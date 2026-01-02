@@ -278,8 +278,9 @@ func (t *vitessTx) ListDeletedObjects(ctx context.Context, olderThan int64, limi
 // ============================================================================
 
 func (t *vitessTx) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
+	// Use INSERT IGNORE to handle case where bucket already exists in DB
 	_, err := t.tx.ExecContext(ctx, `
-		INSERT INTO buckets (id, name, owner_id, region, created_at, default_profile_id, versioning)
+		INSERT IGNORE INTO buckets (id, name, owner_id, region, created_at, default_profile_id, versioning)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`,
 		bucket.ID.String(),
