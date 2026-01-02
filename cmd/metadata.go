@@ -61,6 +61,8 @@ type MetadataServerOpts struct {
 	DBDSN          string
 	DBMaxOpenConns int
 	DBMaxIdleConns int
+	DBTLSMode      string
+	DBTLSCAFile    string
 
 	// Rate limiting
 	RateLimitEnabled        bool
@@ -122,6 +124,8 @@ func init() {
 	f.String("db_dsn", "", "Database connection string")
 	f.Int("db_max_open_conns", 25, "Maximum open database connections")
 	f.Int("db_max_idle_conns", 5, "Maximum idle database connections")
+	f.String("db_tls_mode", "", "Database TLS mode (disabled, preferred, required, verify-ca)")
+	f.String("db_tls_ca_file", "", "Path to CA certificate file for database TLS (verify-ca mode)")
 
 	// Rate limiting
 	f.Bool("rate_limit_enabled", true, "Enable request rate limiting")
@@ -446,6 +450,8 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		DBDSN:          f.String("db_dsn"),
 		DBMaxOpenConns: f.Int("db_max_open_conns"),
 		DBMaxIdleConns: f.Int("db_max_idle_conns"),
+		DBTLSMode:      f.String("db_tls_mode"),
+		DBTLSCAFile:    f.String("db_tls_ca_file"),
 		// Rate limiting
 		RateLimitEnabled:        f.Bool("rate_limit_enabled"),
 		RateLimitBurstMultipler: f.Int64("rate_limit_burst_multiplier"),
@@ -592,6 +598,8 @@ func initializeDatabase(opts MetadataServerOpts) (db.DB, error) {
 		cfg := vitess.DefaultConfig(opts.DBDSN)
 		cfg.MaxOpenConns = opts.DBMaxOpenConns
 		cfg.MaxIdleConns = opts.DBMaxIdleConns
+		cfg.TLSMode = vitess.TLSMode(opts.DBTLSMode)
+		cfg.TLSCAFile = opts.DBTLSCAFile
 		return vitess.NewVitess(cfg)
 	case db.DriverPostgres, db.DriverCockroach:
 		if opts.DBDSN == "" {
