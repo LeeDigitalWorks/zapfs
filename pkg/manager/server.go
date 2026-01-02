@@ -121,7 +121,10 @@ const (
 )
 
 // NewManagerServer creates a new manager server with the given configuration
-func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseChecker license.Checker) (*ManagerServer, error) {
+func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseChecker license.Checker, defaultNumReplicas uint32) (*ManagerServer, error) {
+	if defaultNumReplicas == 0 {
+		defaultNumReplicas = 3 // sensible default
+	}
 	ms := &ManagerServer{
 		regionID:             regionID,
 		fileServices:         make(map[string]*ServiceRegistration),
@@ -133,7 +136,7 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 		collectionsByTier:    make(map[string][]string),
 		collectionsByTime:    btree.New(2),
 		placementPolicy: &manager_pb.PlacementPolicy{
-			NumReplicas: 3,
+			NumReplicas: defaultNumReplicas,
 		},
 		topologyVersion:   1,
 		leaderForwarder:   NewLeaderForwarder(),

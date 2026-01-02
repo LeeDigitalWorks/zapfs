@@ -144,6 +144,11 @@ type CopyObjectRequest struct {
 	CopySourceIfNoneMatch       string
 	CopySourceIfModifiedSince   *time.Time
 	CopySourceIfUnmodifiedSince *time.Time
+
+	// SSE-KMS encryption for destination (optional)
+	// If not specified and source is encrypted, copy the encryption
+	// If not specified and bucket has default encryption, use that
+	SSEKMS *SSEKMSParams
 }
 
 // CopyObjectResult contains the result of copying an object
@@ -151,6 +156,12 @@ type CopyObjectResult struct {
 	ETag         string
 	LastModified time.Time
 	VersionID    string
+
+	// SSE response info (if encryption was applied)
+	SSEAlgorithm      string
+	SSEKMSKeyID       string
+	SSEKMSContext     string
+	SSECustomerKeyMD5 string
 }
 
 // ListObjectsRequest contains parameters for listing objects (v1)

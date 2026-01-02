@@ -3,29 +3,23 @@ MOCKERY_VERSION = v3.2.5
 
 all: install
 
-.PHONY: clean install test test-race lint mocks mocks-install integration build build-enterprise proto
+.PHONY: clean install test test-race lint mocks mocks-install integration build proto
 
 # =============================================================================
 # Build Targets
 # =============================================================================
 
-# Build community edition (default)
+# Build enterprise edition (single binary for all users)
+# License key at runtime determines which features are available
 build:
-	go build -ldflags="-s -w" -o zapfs .
-
-# Build enterprise edition with all enterprise features
-build-enterprise:
-	go build -tags enterprise -ldflags="-s -w" -o zapfs-enterprise .
+	go build -tags enterprise -ldflags="-s -w" -o zapfs .
 
 install:
-	go install -ldflags="-s -w"
-
-install-enterprise:
 	go install -tags enterprise -ldflags="-s -w"
 
 clean:
 	go clean $(SOURCE_DIR)
-	rm -f zapfs zapfs-enterprise
+	rm -f zapfs
 	rm -rf mocks/
 
 # =============================================================================
@@ -33,22 +27,14 @@ clean:
 # =============================================================================
 
 test:
-	go test ./...
+	go test -tags enterprise ./...
 
 test-race:
-	go test -race ./...
+	go test -tags enterprise -race ./...
 
 test-cover:
-	go test -race -coverprofile=coverage.out ./...
+	go test -tags enterprise -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
-
-# Test enterprise features only
-test-enterprise:
-	go test -tags enterprise ./enterprise/...
-
-# Test everything including enterprise
-test-all:
-	go test -tags enterprise ./...
 
 # =============================================================================
 # Integration Tests
@@ -60,16 +46,16 @@ DB_DSN ?= zapfs:zapfs@tcp(localhost:3306)/zapfs
 integration: integration-file integration-s3 integration-metadata integration-manager
 
 integration-file:
-	go test -race -cover -v -tags=integration -count=1 ./integration/file/...
+	go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/file/...
 
 integration-s3:
-	go test -race -cover -v -tags=integration -count=1 ./integration/s3/...
+	go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/s3/...
 
 integration-metadata:
-	DB_DSN="$(DB_DSN)" go test -race -cover -v -tags=integration -count=1 ./integration/metadata/...
+	DB_DSN="$(DB_DSN)" go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/metadata/...
 
 integration-manager:
-	go test -race -cover -v -tags=integration -count=1 ./integration/manager/...
+	go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/manager/...
 
 # =============================================================================
 # Mock Generation (mockery v3)

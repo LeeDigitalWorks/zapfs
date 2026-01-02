@@ -74,3 +74,12 @@ func (f *FlagLoader) StringSlice(flagName string) []string {
 	}
 	return viper.GetStringSlice(flagName)
 }
+
+// Uint32 returns CLI flag value if explicitly set, otherwise viper value.
+func (f *FlagLoader) Uint32(flagName string) uint32 {
+	if f.cmd.Flags().Changed(flagName) {
+		val, _ := f.cmd.Flags().GetUint32(flagName)
+		return val
+	}
+	return viper.GetUint32(flagName)
+}

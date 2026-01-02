@@ -1,15 +1,11 @@
 package api
 
 import (
-	"crypto/md5"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,9 +17,6 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
-	"github.com/LeeDigitalWorks/zapfs/pkg/types"
-
-	"github.com/google/uuid"
 )
 
 // CreateMultipartUploadHandler initiates a multipart upload.
@@ -32,50 +25,78 @@ func (s *MetadataServer) CreateMultipartUploadHandler(d *data.Data, w http.Respo
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
-	// Generate upload ID (base64-encoded UUID)
-	uploadUUID := uuid.New()
-	uploadID := base64.RawURLEncoding.EncodeToString(uploadUUID[:])
-
-	// Create upload record
-	upload := &types.MultipartUpload{
-		ID:           uploadUUID,
-		UploadID:     uploadID,
+	// Build service request
+	req := &multipart.CreateUploadRequest{
 		Bucket:       bucket,
 		Key:          key,
 		OwnerID:      d.S3Info.OwnerID,
-		Initiated:    time.Now().UnixNano(),
 		ContentType:  d.Req.Header.Get("Content-Type"),
 		StorageClass: d.Req.Header.Get("x-amz-storage-class"),
 	}
 
-	if upload.StorageClass == "" {
-		upload.StorageClass = "STANDARD"
+	// Parse SSE-KMS headers (if present)
+	ssekmsHeaders, errCode := parseSSEKMSHeaders(d.Req)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+	if ssekmsHeaders != nil {
+		req.SSEKMS = &multipart.SSEKMSParams{
+			KeyID:   ssekmsHeaders.KeyID,
+			Context: ssekmsHeaders.Context,
+		}
 	}
 
-	// Store in database
-	if err := s.db.CreateMultipartUpload(d.Ctx, upload); err != nil {
-		logger.Error().Err(err).Msg("failed to create multipart upload")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	// If no SSE headers provided, check bucket default encryption
+	if req.SSEKMS == nil {
+		if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists && bucketInfo.Encryption != nil {
+			// Apply bucket default encryption
+			if kmsParams := getBucketDefaultEncryptionForMultipart(bucketInfo.Encryption); kmsParams != nil {
+				req.SSEKMS = kmsParams
+			}
+		}
+	}
+
+	// Call service layer
+	result, err := s.svc.Multipart().CreateUpload(d.Ctx, req)
+	if err != nil {
+		var mpErr *multipart.Error
+		if errors.As(err, &mpErr) {
+			writeXMLErrorResponse(w, d, mpErr.ToS3Error())
+		} else {
+			logger.Error().Err(err).Msg("failed to create multipart upload")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		}
 		return
 	}
 
-	// Build response
-	result := s3types.InitiateMultipartUploadResult{
+	// Build XML response
+	xmlResult := s3types.InitiateMultipartUploadResult{
 		Xmlns:    "http://s3.amazonaws.com/doc/2006-03-01/",
 		Bucket:   bucket,
 		Key:      key,
-		UploadID: uploadID,
+		UploadID: result.UploadID,
 	}
 
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+
+	// SSE-KMS response headers
+	if result.SSEKMSKeyID != "" {
+		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
+		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
+		if result.SSEKMSContext != "" {
+			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(result)
+	xml.NewEncoder(w).Encode(xmlResult)
 
 	logger.Info().
 		Str("bucket", bucket).
 		Str("key", key).
-		Str("upload_id", uploadID).
+		Str("upload_id", result.UploadID).
 		Msg("multipart upload initiated")
 }
 
@@ -160,129 +181,67 @@ func (s *MetadataServer) CompleteMultipartUploadHandler(d *data.Data, w http.Res
 		return
 	}
 
-	var req s3types.CompleteMultipartUploadRequest
-	if err := xml.Unmarshal(body, &req); err != nil {
+	var xmlReq s3types.CompleteMultipartUploadRequest
+	if err := xml.Unmarshal(body, &xmlReq); err != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
 		return
 	}
 
-	// Verify upload exists
-	upload, err := s.db.GetMultipartUpload(ctx, bucket, key, uploadID)
-	if err != nil {
-		if errors.Is(err, db.ErrUploadNotFound) {
-			writeXMLErrorResponse(w, d, s3err.ErrNoSuchUpload)
-			return
+	// Build service request
+	parts := make([]multipart.PartEntry, len(xmlReq.Parts))
+	for i, p := range xmlReq.Parts {
+		parts[i] = multipart.PartEntry{
+			PartNumber: p.PartNumber,
+			ETag:       p.ETag,
 		}
-		logger.Error().Err(err).Msg("failed to get multipart upload")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
-		return
 	}
 
-	// Get all parts
-	allParts, _, err := s.db.ListParts(ctx, uploadID, 0, 10000)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to list parts")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
-		return
-	}
-
-	// Build part map for validation
-	partMap := make(map[int]*types.MultipartPart)
-	for _, p := range allParts {
-		partMap[p.PartNumber] = p
-	}
-
-	// Validate and collect parts in order
-	var totalSize int64
-	var allChunkRefs []types.ChunkRef
-	var etagParts []string
-
-	// Sort request parts by part number
-	sort.Slice(req.Parts, func(i, j int) bool {
-		return req.Parts[i].PartNumber < req.Parts[j].PartNumber
-	})
-
-	for _, reqPart := range req.Parts {
-		part, exists := partMap[reqPart.PartNumber]
-		if !exists {
-			writeXMLErrorResponse(w, d, s3err.ErrInvalidPart)
-			return
-		}
-
-		// Validate ETag (strip quotes)
-		expectedETag := strings.Trim(reqPart.ETag, "\"")
-		if part.ETag != expectedETag {
-			writeXMLErrorResponse(w, d, s3err.ErrInvalidPart)
-			return
-		}
-
-		// Adjust chunk offsets
-		for _, ref := range part.ChunkRefs {
-			ref.Offset = uint64(totalSize)
-			allChunkRefs = append(allChunkRefs, ref)
-		}
-
-		totalSize += part.Size
-		etagParts = append(etagParts, part.ETag)
-	}
-
-	// Calculate final ETag (MD5 of concatenated part ETags + "-" + part count)
-	etagConcat := strings.Join(etagParts, "")
-	hash := md5.Sum([]byte(etagConcat))
-	finalETag := hex.EncodeToString(hash[:]) + "-" + strconv.Itoa(len(req.Parts))
-
-	// Create final object (within transaction)
-	err = s.db.WithTx(ctx, func(tx db.TxStore) error {
-		// Create the final object
-		obj := &types.ObjectRef{
-			ID:        uuid.New(),
-			Bucket:    bucket,
-			Key:       key,
-			Size:      uint64(totalSize),
-			ETag:      finalETag,
-			CreatedAt: time.Now().UnixNano(),
-			ChunkRefs: allChunkRefs,
-		}
-
-		if err := tx.PutObject(ctx, obj); err != nil {
-			return err
-		}
-
-		// Delete the upload and parts
-		if err := tx.DeleteMultipartUpload(ctx, bucket, key, uploadID); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to complete multipart upload")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
-		return
-	}
-
-	// Build response
-	result := s3types.CompleteMultipartUploadResult{
-		Xmlns:    "http://s3.amazonaws.com/doc/2006-03-01/",
-		Location: "http://" + bucket + ".s3.amazonaws.com/" + key,
+	// Call service layer
+	result, err := s.svc.Multipart().CompleteUpload(ctx, &multipart.CompleteUploadRequest{
 		Bucket:   bucket,
 		Key:      key,
-		ETag:     "\"" + finalETag + "\"",
+		UploadID: uploadID,
+		Parts:    parts,
+	})
+	if err != nil {
+		var mpErr *multipart.Error
+		if errors.As(err, &mpErr) {
+			writeXMLErrorResponse(w, d, mpErr.ToS3Error())
+		} else {
+			logger.Error().Err(err).Msg("failed to complete multipart upload")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		}
+		return
+	}
+
+	// Build XML response
+	xmlResult := s3types.CompleteMultipartUploadResult{
+		Xmlns:    "http://s3.amazonaws.com/doc/2006-03-01/",
+		Location: result.Location,
+		Bucket:   result.Bucket,
+		Key:      result.Key,
+		ETag:     "\"" + result.ETag + "\"",
 	}
 
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+
+	// SSE-KMS response headers
+	if result.SSEKMSKeyID != "" {
+		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
+		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
+		if result.SSEKMSContext != "" {
+			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(result)
+	xml.NewEncoder(w).Encode(xmlResult)
 
 	logger.Info().
 		Str("bucket", bucket).
 		Str("key", key).
 		Str("upload_id", uploadID).
-		Int64("size", totalSize).
-		Int("parts", len(req.Parts)).
-		Str("content_type", upload.ContentType).
 		Msg("multipart upload completed")
 }
 

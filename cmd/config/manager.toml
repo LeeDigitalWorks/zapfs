@@ -6,6 +6,7 @@
 ip = "0.0.0.0"
 grpc_port = 8050
 debug_port = 8055
+admin_port = 8060  # Admin HTTP port for IAM management
 
 # TLS (optional)
 cert_file = ""
@@ -17,15 +18,16 @@ log_level = "info"
 # Raft Configuration
 node_id = ""
 raft_dir = "/tmp/raft"
-raft_addr = ""
-bootstrap = false
-bootstrap_expect = 1
-join = ""
+raft_addr = ""          # Raft peer address (default: ip:grpc_port+1)
+bootstrap = false       # Set true for first node to bootstrap cluster
+bootstrap_expect = 1    # Expected number of servers in cluster
+join = ""               # gRPC address of leader to join (e.g., "manager-1:8050")
+leader_timeout = "5s"   # Time to wait for leader election
 
 # Regional
 region_id = "default"
 
 # Placement Defaults
-num_replicas = 3
-data_shards = 3
-parity_shards = 2
+# Default replication factor when not specified per-request.
+# With 1 file server, only 1 replica is possible regardless of this setting.
+default_num_replicas = 3

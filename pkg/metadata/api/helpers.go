@@ -16,6 +16,8 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/multipart"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
@@ -642,4 +644,78 @@ func parseSSEKMSHeaders(req *http.Request) (*SSEKMSHeaders, *s3err.ErrorCode) {
 		KeyID:     keyID,
 		Context:   context,
 	}, nil
+}
+
+// getBucketDefaultEncryption extracts SSE-KMS parameters from bucket default encryption config.
+// Returns nil if no default encryption is configured or if it's AES256 (handled by S3 service).
+// Only returns params for SSE-KMS encryption.
+func getBucketDefaultEncryption(encConfig *s3types.ServerSideEncryptionConfig) *object.SSEKMSParams {
+	if encConfig == nil || len(encConfig.Rules) == 0 {
+		return nil
+	}
+
+	// Use the first rule (S3 only supports one rule)
+	rule := encConfig.Rules[0]
+	if rule.ApplyServerSideEncryptionByDefault == nil {
+		return nil
+	}
+
+	defaultEnc := rule.ApplyServerSideEncryptionByDefault
+
+	// Only handle SSE-KMS (aws:kms), not AES256
+	// AES256 is S3-managed encryption which we don't implement yet
+	if defaultEnc.SSEAlgorithm != s3consts.SSEAlgorithmKMS {
+		return nil
+	}
+
+	// Check license for KMS
+	if !license.CheckKMS() {
+		logger.Warn().Msg("bucket has SSE-KMS default encryption but KMS license not available")
+		return nil
+	}
+
+	if defaultEnc.KMSMasterKeyID == "" {
+		logger.Warn().Msg("bucket has SSE-KMS default encryption but no key ID configured")
+		return nil
+	}
+
+	return &object.SSEKMSParams{
+		KeyID: defaultEnc.KMSMasterKeyID,
+	}
+}
+
+// getBucketDefaultEncryptionForMultipart extracts SSE-KMS parameters from bucket default encryption config
+// for multipart uploads. Returns nil if no default encryption is configured or if it's AES256.
+func getBucketDefaultEncryptionForMultipart(encConfig *s3types.ServerSideEncryptionConfig) *multipart.SSEKMSParams {
+	if encConfig == nil || len(encConfig.Rules) == 0 {
+		return nil
+	}
+
+	// Use the first rule (S3 only supports one rule)
+	rule := encConfig.Rules[0]
+	if rule.ApplyServerSideEncryptionByDefault == nil {
+		return nil
+	}
+
+	defaultEnc := rule.ApplyServerSideEncryptionByDefault
+
+	// Only handle SSE-KMS (aws:kms), not AES256
+	if defaultEnc.SSEAlgorithm != s3consts.SSEAlgorithmKMS {
+		return nil
+	}
+
+	// Check license for KMS
+	if !license.CheckKMS() {
+		logger.Warn().Msg("bucket has SSE-KMS default encryption but KMS license not available")
+		return nil
+	}
+
+	if defaultEnc.KMSMasterKeyID == "" {
+		logger.Warn().Msg("bucket has SSE-KMS default encryption but no key ID configured")
+		return nil
+	}
+
+	return &multipart.SSEKMSParams{
+		KeyID: defaultEnc.KMSMasterKeyID,
+	}
 }

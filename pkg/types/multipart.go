@@ -15,6 +15,12 @@ type MultipartUpload struct {
 	ContentType  string            `json:"content_type,omitempty"`
 	StorageClass string            `json:"storage_class,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
+
+	// SSE-KMS encryption (set on CreateMultipartUpload)
+	SSEAlgorithm     string `json:"sse_algorithm,omitempty"`      // "aws:kms" for SSE-KMS
+	SSEKMSKeyID      string `json:"sse_kms_key_id,omitempty"`     // KMS key ID
+	SSEKMSContext    string `json:"sse_kms_context,omitempty"`    // Optional encryption context
+	SSEDEKCiphertext string `json:"sse_dek_ciphertext,omitempty"` // Encrypted DEK (base64)
 }
 
 // MultipartPart represents a single part of a multipart upload

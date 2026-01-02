@@ -111,6 +111,7 @@ func NewService(cfg Config) (*Service, error) {
 	multipartSvc, err := multipart.NewService(multipart.Config{
 		DB:             cfg.DB,
 		Storage:        storageCoord,
+		Encryption:     encHandler,
 		Profiles:       cfg.Profiles,
 		DefaultProfile: cfg.DefaultProfile,
 	})

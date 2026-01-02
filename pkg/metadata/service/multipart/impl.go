@@ -13,6 +13,7 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
@@ -35,6 +36,7 @@ type Storage interface {
 type Config struct {
 	DB             db.DB
 	Storage        Storage
+	Encryption     *encryption.Handler
 	Profiles       *types.ProfileSet
 	DefaultProfile string
 }
@@ -43,6 +45,7 @@ type Config struct {
 type serviceImpl struct {
 	db             db.DB
 	storage        Storage
+	encryption     *encryption.Handler
 	profiles       *types.ProfileSet
 	defaultProfile string
 }
@@ -64,6 +67,7 @@ func NewService(cfg Config) (Service, error) {
 	return &serviceImpl{
 		db:             cfg.DB,
 		storage:        cfg.Storage,
+		encryption:     cfg.Encryption,
 		profiles:       cfg.Profiles,
 		defaultProfile: defaultProfile,
 	}, nil
@@ -92,6 +96,36 @@ func (s *serviceImpl) CreateUpload(ctx context.Context, req *CreateUploadRequest
 		StorageClass: storageClass,
 	}
 
+	result := &CreateUploadResult{
+		UploadID: uploadID,
+	}
+
+	// Handle SSE-KMS encryption
+	if req.SSEKMS != nil && s.encryption != nil && s.encryption.HasKMS() {
+		// Generate a data encryption key (DEK) using KMS
+		// The DEK will be used to encrypt each part
+		encResult, err := s.encryption.GenerateDEK(ctx, req.SSEKMS.KeyID)
+		if err != nil {
+			logger.Error().Err(err).Str("key_id", req.SSEKMS.KeyID).Msg("failed to generate DEK for multipart upload")
+			return nil, &Error{
+				Code:    ErrCodeInternalError,
+				Message: "failed to generate encryption key",
+				Err:     err,
+			}
+		}
+
+		// Store SSE metadata with upload
+		upload.SSEAlgorithm = "aws:kms"
+		upload.SSEKMSKeyID = req.SSEKMS.KeyID
+		upload.SSEKMSContext = req.SSEKMS.Context
+		upload.SSEDEKCiphertext = encResult.DEKCiphertext
+
+		// Set response fields
+		result.SSEAlgorithm = "aws:kms"
+		result.SSEKMSKeyID = req.SSEKMS.KeyID
+		result.SSEKMSContext = req.SSEKMS.Context
+	}
+
 	if err := s.db.CreateMultipartUpload(ctx, upload); err != nil {
 		logger.Error().Err(err).Msg("failed to create multipart upload")
 		return nil, &Error{
@@ -101,9 +135,7 @@ func (s *serviceImpl) CreateUpload(ctx context.Context, req *CreateUploadRequest
 		}
 	}
 
-	return &CreateUploadResult{
-		UploadID: uploadID,
-	}, nil
+	return result, nil
 }
 
 func (s *serviceImpl) UploadPart(ctx context.Context, req *UploadPartRequest) (*UploadPartResult, error) {
@@ -498,7 +530,6 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 			Err:     err,
 		}
 	}
-	_ = upload // Validated above
 
 	// Get all parts from DB
 	allParts, _, err := s.db.ListParts(ctx, req.UploadID, 0, 10000)
@@ -577,6 +608,19 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 			ChunkRefs: allChunkRefs,
 		}
 
+		// Copy SSE metadata from upload to final object
+		if upload.SSEAlgorithm != "" {
+			obj.SSEAlgorithm = upload.SSEAlgorithm
+			obj.SSEKMSKeyID = upload.SSEKMSKeyID
+			// Store the encrypted DEK along with context
+			if upload.SSEDEKCiphertext != "" {
+				obj.SSEKMSContext = encryption.BuildStoredKMSContext(
+					upload.SSEKMSContext,
+					upload.SSEDEKCiphertext,
+				)
+			}
+		}
+
 		if err := tx.PutObject(ctx, obj); err != nil {
 			return err
 		}
@@ -596,12 +640,21 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 		}
 	}
 
-	return &CompleteUploadResult{
+	result := &CompleteUploadResult{
 		Location: "http://" + req.Bucket + ".s3.amazonaws.com/" + req.Key,
 		Bucket:   req.Bucket,
 		Key:      req.Key,
 		ETag:     finalETag,
-	}, nil
+	}
+
+	// Include SSE metadata in result
+	if upload.SSEAlgorithm != "" {
+		result.SSEAlgorithm = upload.SSEAlgorithm
+		result.SSEKMSKeyID = upload.SSEKMSKeyID
+		result.SSEKMSContext = upload.SSEKMSContext
+	}
+
+	return result, nil
 }
 
 func (s *serviceImpl) AbortUpload(ctx context.Context, bucket, key, uploadID string) error {

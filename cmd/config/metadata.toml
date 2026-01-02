@@ -30,8 +30,9 @@ profiles_config = ""
 data_dir = "/tmp/zapfs/data"
 
 # Database
-db_driver = "memory"
-db_dsn = ""
+# Supported drivers: vitess, mysql (postgres/cockroachdb planned)
+db_driver = "vitess"
+db_dsn = ""  # e.g., "zapfs:zapfs@tcp(localhost:3306)/zapfs?parseTime=true"
 db_max_open_conns = 25
 db_max_idle_conns = 5
 

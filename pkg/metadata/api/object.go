@@ -86,6 +86,16 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		}
 	}
 
+	// If no SSE headers provided, check bucket default encryption
+	if req.SSEC == nil && req.SSEKMS == nil {
+		if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists && bucketInfo.Encryption != nil {
+			// Apply bucket default encryption
+			if kmsParams := getBucketDefaultEncryption(bucketInfo.Encryption); kmsParams != nil {
+				req.SSEKMS = kmsParams
+			}
+		}
+	}
+
 	// Call service layer
 	result, err := s.svc.Objects().PutObject(ctx, req)
 	if err != nil {
@@ -671,6 +681,27 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 		}
 	}
 
+	// Parse SSE-KMS headers for destination encryption (if present)
+	var ssekms *object.SSEKMSParams
+	ssekmsHeaders, errCode := parseSSEKMSHeaders(d.Req)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+	if ssekmsHeaders != nil {
+		ssekms = &object.SSEKMSParams{
+			KeyID:   ssekmsHeaders.KeyID,
+			Context: ssekmsHeaders.Context,
+		}
+	}
+
+	// If no SSE headers provided, check destination bucket default encryption
+	if ssekms == nil {
+		if bucketInfo, exists := s.bucketStore.GetBucket(destBucket); exists && bucketInfo.Encryption != nil {
+			ssekms = getBucketDefaultEncryption(bucketInfo.Encryption)
+		}
+	}
+
 	// Call service layer
 	result, err := s.svc.Objects().CopyObject(ctx, &object.CopyObjectRequest{
 		SourceBucket:                srcBucket,
@@ -683,6 +714,7 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 		CopySourceIfNoneMatch:       copySourceIfNoneMatch,
 		CopySourceIfModifiedSince:   copySourceIfModifiedSince,
 		CopySourceIfUnmodifiedSince: copySourceIfUnmodifiedSince,
+		SSEKMS:                      ssekms,
 	})
 	if err != nil {
 		s.handleObjectError(w, d, err)
@@ -699,6 +731,21 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 	xmlResult := CopyObjectResult{
 		LastModified: result.LastModified.UTC().Format(time.RFC3339),
 		ETag:         "\"" + result.ETag + "\"",
+	}
+
+	// SSE-C response headers
+	if result.SSECustomerKeyMD5 != "" {
+		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, result.SSEAlgorithm)
+		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerKeyMD5, result.SSECustomerKeyMD5)
+	}
+
+	// SSE-KMS response headers
+	if result.SSEKMSKeyID != "" {
+		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
+		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
+		if result.SSEKMSContext != "" {
+			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/xml")

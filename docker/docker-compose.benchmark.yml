@@ -1,0 +1,124 @@
+# ZapFS Benchmark Configuration
+# Minimal single-node setup for performance testing
+#
+# Usage:
+#   docker compose -f docker/docker-compose.benchmark.yml up -d
+#   ./scripts/benchmark.sh --host localhost:8082
+#   docker compose -f docker/docker-compose.benchmark.yml down -v
+
+services:
+  manager:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - manager
+      - --ip=0.0.0.0
+      - --grpc_port=8050
+      - --debug_port=8055
+      - --admin_port=8060
+      - --raft_dir=/data/raft
+      - --raft_addr=manager:8051
+      - --bootstrap
+      - --node_id=manager
+    environment:
+      ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
+    ports:
+      - "8050:8050"
+      - "8055:8055"
+    volumes:
+      - manager-data:/data
+      - ../cmd/config:/etc/zapfs:ro
+    networks:
+      - zapfs-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8055/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  metadata:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - metadata
+      - --ip=0.0.0.0
+      - --http_port=8082
+      - --grpc_port=8083
+      - --debug_port=8085
+      - --db_driver=mysql
+      - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
+      - --manager_addr=manager:8050
+    ports:
+      - "8082:8082"  # S3 API endpoint
+      - "8085:8085"  # Metrics
+    volumes:
+      - ../cmd/config:/config:ro
+    networks:
+      - zapfs-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      manager:
+        condition: service_healthy
+
+  file:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command:
+      - file
+      - --bind_addr=0.0.0.0:8081
+      - --http_port=8080
+      - --debug_port=8010
+      - --index_path=/data/index
+      - --node_id=file
+      - --advertise_addr=file:8081
+      - --manager_addr=manager:8050
+      - --gc_interval=5m
+      - --gc_grace_period=10m
+    ports:
+      - "8081:8081"
+      - "8010:8010"  # Metrics
+    volumes:
+      - file-data:/data  # NVMe-backed volume for best performance
+    networks:
+      - zapfs-net
+    depends_on:
+      manager:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: zapfs
+      MYSQL_USER: zapfs
+      MYSQL_PASSWORD: zapfs
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - zapfs-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --innodb-buffer-pool-size=512M
+      - --innodb-log-file-size=256M
+      - --max-connections=200
+
+networks:
+  zapfs-net:
+    driver: bridge
+
+volumes:
+  manager-data:
+  file-data:
+  mysql-data:

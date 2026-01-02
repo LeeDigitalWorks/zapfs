@@ -739,6 +739,41 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 		ProfileID: srcObj.ProfileID,
 	}
 
+	result := &CopyObjectResult{
+		ETag:         srcObj.ETag,
+		LastModified: now,
+	}
+
+	// Handle encryption:
+	// 1. If explicit SSE-KMS requested, we would need to re-encrypt (not yet implemented)
+	// 2. If source is encrypted and no explicit dest encryption, copy the encryption metadata
+	// 3. If source is unencrypted and bucket has default encryption, would need to encrypt (not yet implemented)
+	//
+	// For now, copy the encryption metadata from source if no explicit encryption specified.
+	// Full re-encryption requires reading, decrypting, encrypting, and writing which is more complex.
+	if req.SSEKMS != nil {
+		// Explicit SSE-KMS requested for destination
+		// TODO: Implement re-encryption - requires reading source, decrypting if needed,
+		// encrypting with new key, and writing to storage
+		logger.Warn().Msg("explicit SSE-KMS for CopyObject destination not yet implemented, copying source encryption")
+	}
+
+	// Copy encryption metadata from source
+	if srcObj.SSEAlgorithm != "" {
+		newObjRef.SSEAlgorithm = srcObj.SSEAlgorithm
+		newObjRef.SSECustomerKeyMD5 = srcObj.SSECustomerKeyMD5
+		newObjRef.SSEKMSKeyID = srcObj.SSEKMSKeyID
+		newObjRef.SSEKMSContext = srcObj.SSEKMSContext
+
+		// Set result fields
+		result.SSEAlgorithm = srcObj.SSEAlgorithm
+		result.SSECustomerKeyMD5 = srcObj.SSECustomerKeyMD5
+		result.SSEKMSKeyID = srcObj.SSEKMSKeyID
+		if srcObj.SSEKMSKeyID != "" {
+			result.SSEKMSContext, _ = encryption.ParseStoredKMSContext(srcObj.SSEKMSContext)
+		}
+	}
+
 	// Store in database
 	if err := s.db.PutObject(ctx, newObjRef); err != nil {
 		return nil, newInternalError(err)
@@ -759,10 +794,7 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 		}
 	}
 
-	return &CopyObjectResult{
-		ETag:         srcObj.ETag,
-		LastModified: now,
-	}, nil
+	return result, nil
 }
 
 // ListObjects lists objects using v1 API

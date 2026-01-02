@@ -59,6 +59,9 @@ type ManagerServerOpts struct {
 	LeaderTimeout   time.Duration // Time to wait for leader election
 
 	RegionID string
+
+	// Placement defaults
+	DefaultNumReplicas uint32 // Default replication factor when not specified per-request
 }
 
 var managerCmd = &cobra.Command{
@@ -92,6 +95,7 @@ func init() {
 	f.Int("bootstrap_expect", 1, "Expected number of servers in cluster")
 	f.String("join", "", "gRPC address of cluster leader to join (NOT raft_addr)")
 	f.String("region_id", "default", "Region ID for this manager")
+	f.Uint32("default_num_replicas", 3, "Default replication factor when not specified per-request")
 
 	viper.BindPFlags(f)
 }
@@ -146,7 +150,7 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 	// Get license checker for limit enforcement (noopChecker for community edition)
 	licenseChecker := license.GetChecker()
 
-	managerServer, err := manager.NewManagerServer(opts.RegionID, raftConfig, opts.LeaderTimeout, iamService, licenseChecker)
+	managerServer, err := manager.NewManagerServer(opts.RegionID, raftConfig, opts.LeaderTimeout, iamService, licenseChecker, opts.DefaultNumReplicas)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to create manager server")
 	}
@@ -216,21 +220,22 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 func loadManagerOpts(cmd *cobra.Command) ManagerServerOpts {
 	f := NewFlagLoader(cmd)
 	opts := ManagerServerOpts{
-		IP:              f.String("ip"),
-		GRPCPort:        f.Int("grpc_port"),
-		DebugPort:       f.Int("debug_port"),
-		AdminPort:       f.Int("admin_port"),
-		CertFile:        f.String("cert_file"),
-		KeyFile:         f.String("key_file"),
-		LogLevel:        f.String("log_level"),
-		NodeID:          f.String("node_id"),
-		RaftDir:         f.String("raft_dir"),
-		RaftBindAddr:    f.String("raft_addr"),
-		Bootstrap:       f.Bool("bootstrap"),
-		BootstrapExpect: f.Int("bootstrap_expect"),
-		JoinAddr:        f.String("join"),
-		RegionID:        f.String("region_id"),
-		LeaderTimeout:   f.Duration("leader_timeout"),
+		IP:                 f.String("ip"),
+		GRPCPort:           f.Int("grpc_port"),
+		DebugPort:          f.Int("debug_port"),
+		AdminPort:          f.Int("admin_port"),
+		CertFile:           f.String("cert_file"),
+		KeyFile:            f.String("key_file"),
+		LogLevel:           f.String("log_level"),
+		NodeID:             f.String("node_id"),
+		RaftDir:            f.String("raft_dir"),
+		RaftBindAddr:       f.String("raft_addr"),
+		Bootstrap:          f.Bool("bootstrap"),
+		BootstrapExpect:    f.Int("bootstrap_expect"),
+		JoinAddr:           f.String("join"),
+		RegionID:           f.String("region_id"),
+		LeaderTimeout:      f.Duration("leader_timeout"),
+		DefaultNumReplicas: f.Uint32("default_num_replicas"),
 	}
 
 	// Set defaults

@@ -43,11 +43,25 @@ type CreateUploadRequest struct {
 	OwnerID      string
 	ContentType  string
 	StorageClass string
+
+	// SSE-KMS encryption (optional)
+	SSEKMS *SSEKMSParams
+}
+
+// SSEKMSParams contains SSE-KMS encryption parameters
+type SSEKMSParams struct {
+	KeyID   string // KMS key ID
+	Context string // Optional encryption context
 }
 
 // CreateUploadResult contains the result of initiating a multipart upload
 type CreateUploadResult struct {
 	UploadID string
+
+	// SSE-KMS response info (if encryption was applied)
+	SSEAlgorithm  string
+	SSEKMSKeyID   string
+	SSEKMSContext string
 }
 
 // UploadPartRequest contains parameters for uploading a part
@@ -103,6 +117,11 @@ type CompleteUploadResult struct {
 	Bucket   string
 	Key      string
 	ETag     string
+
+	// SSE-KMS response info (if encryption was applied)
+	SSEAlgorithm  string
+	SSEKMSKeyID   string
+	SSEKMSContext string
 }
 
 // ListPartsRequest contains parameters for listing parts

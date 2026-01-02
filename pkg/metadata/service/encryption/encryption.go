@@ -160,6 +160,52 @@ func (h *Handler) HasKMS() bool {
 	return h.kmsService != nil
 }
 
+// DEKResult contains the result of generating a data encryption key
+type DEKResult struct {
+	DEKPlaintext  []byte // Plaintext DEK (32 bytes for AES-256)
+	DEKCiphertext string // Base64-encoded encrypted DEK
+}
+
+// GenerateDEK generates a data encryption key using KMS.
+// This is used for multipart uploads where the DEK is generated at upload initiation
+// and reused for each part.
+func (h *Handler) GenerateDEK(ctx context.Context, keyID string) (*DEKResult, error) {
+	if h.kmsService == nil {
+		return nil, fmt.Errorf("KMS service not available")
+	}
+
+	// Generate data encryption key
+	dekPlaintext, dekCiphertext, err := h.kmsService.GenerateDataKey(ctx, keyID, "AES_256")
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate data key: %w", err)
+	}
+
+	return &DEKResult{
+		DEKPlaintext:  dekPlaintext,
+		DEKCiphertext: base64.StdEncoding.EncodeToString(dekCiphertext),
+	}, nil
+}
+
+// DecryptDEK decrypts an encrypted DEK using KMS.
+// This is used for multipart uploads to decrypt the DEK for each part.
+func (h *Handler) DecryptDEK(ctx context.Context, keyID, dekCiphertextBase64 string) ([]byte, error) {
+	if h.kmsService == nil {
+		return nil, fmt.Errorf("KMS service not available")
+	}
+
+	dekCiphertext, err := base64.StdEncoding.DecodeString(dekCiphertextBase64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode encrypted DEK: %w", err)
+	}
+
+	dekPlaintext, err := h.kmsService.Decrypt(ctx, keyID, dekCiphertext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt DEK: %w", err)
+	}
+
+	return dekPlaintext, nil
+}
+
 // ValidateSSECKey validates an SSE-C key and returns its MD5 hash
 func ValidateSSECKey(key []byte, providedMD5 string) (string, error) {
 	if len(key) != 32 {
