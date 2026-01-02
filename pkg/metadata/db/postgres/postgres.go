@@ -15,12 +15,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (also works with CockroachDB)
 )
 
-const (
-	defaultMaxOpenConns    = 25
-	defaultMaxIdleConns    = 5
-	defaultConnMaxLifetime = 5 * time.Minute
-	defaultConnMaxIdleTime = 1 * time.Minute
-)
+// Use shared defaults from db package for consistency across drivers
 
 // Config holds PostgreSQL connection configuration
 type Config struct {
@@ -42,10 +37,10 @@ func DefaultConfig(dsn string, driver db.Driver) Config {
 	return Config{
 		DSN:             dsn,
 		Driver:          driver,
-		MaxOpenConns:    defaultMaxOpenConns,
-		MaxIdleConns:    defaultMaxIdleConns,
-		ConnMaxLifetime: defaultConnMaxLifetime,
-		ConnMaxIdleTime: defaultConnMaxIdleTime,
+		MaxOpenConns:    db.DefaultMaxOpenConns,
+		MaxIdleConns:    db.DefaultMaxIdleConns,
+		ConnMaxLifetime: time.Duration(db.DefaultConnMaxLifetime) * time.Second,
+		ConnMaxIdleTime: time.Duration(db.DefaultConnMaxIdleTime) * time.Second,
 	}
 }
 
@@ -74,22 +69,22 @@ func NewPostgres(cfg Config) (db.DB, error) {
 	if cfg.MaxOpenConns > 0 {
 		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	} else {
-		sqlDB.SetMaxOpenConns(defaultMaxOpenConns)
+		sqlDB.SetMaxOpenConns(db.DefaultMaxOpenConns)
 	}
 	if cfg.MaxIdleConns > 0 {
 		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	} else {
-		sqlDB.SetMaxIdleConns(defaultMaxIdleConns)
+		sqlDB.SetMaxIdleConns(db.DefaultMaxIdleConns)
 	}
 	if cfg.ConnMaxLifetime > 0 {
 		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	} else {
-		sqlDB.SetConnMaxLifetime(defaultConnMaxLifetime)
+		sqlDB.SetConnMaxLifetime(time.Duration(db.DefaultConnMaxLifetime) * time.Second)
 	}
 	if cfg.ConnMaxIdleTime > 0 {
 		sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 	} else {
-		sqlDB.SetConnMaxIdleTime(defaultConnMaxIdleTime)
+		sqlDB.SetConnMaxIdleTime(time.Duration(db.DefaultConnMaxIdleTime) * time.Second)
 	}
 
 	// Test connection

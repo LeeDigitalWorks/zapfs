@@ -19,12 +19,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-const (
-	defaultMaxOpenConns    = 25
-	defaultMaxIdleConns    = 5
-	defaultConnMaxLifetime = 5 * time.Minute
-	defaultConnMaxIdleTime = 1 * time.Minute
-)
+// Use shared defaults from db package for consistency across drivers
 
 // TLSMode specifies how TLS should be configured for MySQL connections
 type TLSMode string
@@ -60,10 +55,10 @@ type Config struct {
 func DefaultConfig(dsn string) Config {
 	return Config{
 		DSN:             dsn,
-		MaxOpenConns:    defaultMaxOpenConns,
-		MaxIdleConns:    defaultMaxIdleConns,
-		ConnMaxLifetime: defaultConnMaxLifetime,
-		ConnMaxIdleTime: defaultConnMaxIdleTime,
+		MaxOpenConns:    db.DefaultMaxOpenConns,
+		MaxIdleConns:    db.DefaultMaxIdleConns,
+		ConnMaxLifetime: time.Duration(db.DefaultConnMaxLifetime) * time.Second,
+		ConnMaxIdleTime: time.Duration(db.DefaultConnMaxIdleTime) * time.Second,
 	}
 }
 
@@ -85,6 +80,9 @@ func NewVitess(cfg Config) (db.DB, error) {
 			return nil, fmt.Errorf("configure TLS: %w", err)
 		}
 	}
+
+	// Apply performance optimizations to DSN
+	dsn = optimizeDSN(dsn)
 
 	sqlDB, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -153,6 +151,36 @@ func (v *Vitess) WithTx(ctx context.Context, fn func(tx db.TxStore) error) error
 
 // Ensure Vitess implements db.DB
 var _ db.DB = (*Vitess)(nil)
+
+// optimizeDSN adds performance-related parameters to the DSN
+// Based on best practices from Vitess, PlanetScale, and high-performance MySQL usage
+func optimizeDSN(dsn string) string {
+	// Add separator for DSN parameters
+	if strings.Contains(dsn, "?") {
+		if !strings.HasSuffix(dsn, "&") && !strings.HasSuffix(dsn, "?") {
+			dsn += "&"
+		}
+	} else {
+		dsn += "?"
+	}
+
+	// interpolateParams: Client-side parameter interpolation
+	// Reduces round trips by not using server-side prepared statements
+	// Safe when using parameterized queries (which we do)
+	if !strings.Contains(dsn, "interpolateParams") {
+		dsn += "interpolateParams=true&"
+	}
+
+	// collation: Use binary collation for faster string comparisons
+	if !strings.Contains(dsn, "collation") {
+		dsn += "collation=utf8mb4_bin&"
+	}
+
+	// Remove trailing &
+	dsn = strings.TrimSuffix(dsn, "&")
+
+	return dsn
+}
 
 // configureTLS sets up TLS for MySQL connections and returns the modified DSN
 func configureTLS(cfg Config) (string, error) {
