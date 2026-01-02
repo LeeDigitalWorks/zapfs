@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -650,10 +653,16 @@ func TestV4Verifier_BuildCanonicalHeaders(t *testing.T) {
 				req.Header.Set(k, v)
 			}
 
-			result := verifier.buildCanonicalHeaders(req, tt.signedHeaders)
+			result, sortedHeaders := verifier.buildCanonicalHeaders(req, tt.signedHeaders)
 
 			for _, expected := range tt.expectContain {
 				assert.Contains(t, result, expected)
+			}
+
+			// Verify sorted headers are returned in alphabetical order
+			for i := 1; i < len(sortedHeaders); i++ {
+				assert.True(t, sortedHeaders[i-1] <= sortedHeaders[i],
+					"sorted headers should be in alphabetical order")
 			}
 		})
 	}
@@ -709,4 +718,427 @@ func TestConstantTimeCompare(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// signStreamingV4Request signs a streaming request using AWS Signature V4
+// This mimics how the AWS SDK signs chunked uploads with STREAMING-AWS4-HMAC-SHA256-PAYLOAD
+func signStreamingV4Request(req *http.Request, accessKey, secretKey, region, service string, signedHeaders []string, decodedLength int64) {
+	// Use current time for signing
+	now := time.Now().UTC()
+	dateStamp := now.Format("20060102")
+	amzDate := now.Format(Iso8601BasicFormat)
+
+	// Set required headers for streaming
+	req.Header.Set("X-Amz-Date", amzDate)
+	req.Header.Set("X-Amz-Content-Sha256", StreamingPayload)
+	req.Header.Set("Content-Encoding", "aws-chunked")
+	req.Header.Set("X-Amz-Decoded-Content-Length", strconv.FormatInt(decodedLength, 10))
+
+	if req.Host == "" {
+		req.Host = req.URL.Host
+	}
+
+	// Sort signed headers for consistency
+	sortedHeaders := make([]string, len(signedHeaders))
+	copy(sortedHeaders, signedHeaders)
+	sort.Strings(sortedHeaders)
+
+	// Build canonical request
+	canonicalURI := req.URL.Path
+	if canonicalURI == "" {
+		canonicalURI = "/"
+	}
+
+	// Build canonical query string
+	canonicalQuery := buildTestCanonicalQueryString(req.URL.Query())
+
+	// Build canonical headers
+	canonicalHeaders := ""
+	for _, h := range sortedHeaders {
+		var val string
+		switch h {
+		case "host":
+			val = req.Host
+		case "content-length":
+			val = strconv.FormatInt(req.ContentLength, 10)
+		default:
+			val = req.Header.Get(h)
+		}
+		canonicalHeaders += h + ":" + val + "\n"
+	}
+
+	signedHeadersStr := strings.Join(sortedHeaders, ";")
+
+	canonicalRequest := req.Method + "\n" +
+		canonicalURI + "\n" +
+		canonicalQuery + "\n" +
+		canonicalHeaders + "\n" +
+		signedHeadersStr + "\n" +
+		StreamingPayload
+
+	// Hash canonical request
+	h := sha256.New()
+	h.Write([]byte(canonicalRequest))
+	hashedCanonicalRequest := hex.EncodeToString(h.Sum(nil))
+
+	// Build credential scope
+	credentialScope := dateStamp + "/" + region + "/" + service + "/aws4_request"
+
+	// Build string to sign
+	stringToSign := AuthHeaderV4 + "\n" +
+		amzDate + "\n" +
+		credentialScope + "\n" +
+		hashedCanonicalRequest
+
+	// Derive signing key
+	kDate := hmacSHA256([]byte("AWS4"+secretKey), []byte(dateStamp))
+	kRegion := hmacSHA256(kDate, []byte(region))
+	kService := hmacSHA256(kRegion, []byte(service))
+	kSigning := hmacSHA256(kService, []byte("aws4_request"))
+
+	// Calculate signature
+	signature := hex.EncodeToString(hmacSHA256(kSigning, []byte(stringToSign)))
+
+	// Build Authorization header
+	authHeader := AuthHeaderV4 + " " +
+		"Credential=" + accessKey + "/" + credentialScope + ", " +
+		"SignedHeaders=" + signedHeadersStr + ", " +
+		"Signature=" + signature
+
+	req.Header.Set("Authorization", authHeader)
+}
+
+func TestV4Verifier_VerifyStreamingRequest(t *testing.T) {
+	t.Parallel()
+
+	manager := createTestManager(t)
+	verifier := NewV4Verifier(manager)
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		contentLength  int64 // Total size including chunk overhead
+		decodedLength  int64 // Actual object size
+		headers        map[string]string
+		signedHeaders  []string
+		accessKey      string
+		secretKey      string
+		expectedErr    s3err.ErrorCode
+		expectIdentity bool
+	}{
+		{
+			name:          "valid streaming PUT request",
+			method:        "PUT",
+			path:          "/test-bucket/test-key",
+			contentLength: 1048756, // Includes chunk signature overhead
+			decodedLength: 1048576, // 1 MiB actual data
+			headers:       map[string]string{},
+			signedHeaders: []string{
+				"content-encoding",
+				"content-length",
+				"host",
+				"x-amz-content-sha256",
+				"x-amz-date",
+				"x-amz-decoded-content-length",
+			},
+			accessKey:      testAccessKey,
+			secretKey:      testSecretKey,
+			expectedErr:    s3err.ErrNone,
+			expectIdentity: true,
+		},
+		{
+			name:          "streaming request with storage class",
+			method:        "PUT",
+			path:          "/test-bucket/test-key",
+			contentLength: 2097332,
+			decodedLength: 2097152, // 2 MiB
+			headers: map[string]string{
+				"X-Amz-Storage-Class": "STANDARD",
+			},
+			signedHeaders: []string{
+				"content-encoding",
+				"content-length",
+				"host",
+				"x-amz-content-sha256",
+				"x-amz-date",
+				"x-amz-decoded-content-length",
+				"x-amz-storage-class",
+			},
+			accessKey:      testAccessKey,
+			secretKey:      testSecretKey,
+			expectedErr:    s3err.ErrNone,
+			expectIdentity: true,
+		},
+		{
+			name:          "streaming request unsorted headers (client bug simulation)",
+			method:        "PUT",
+			path:          "/test-bucket/test-key",
+			contentLength: 1048756,
+			decodedLength: 1048576,
+			headers:       map[string]string{},
+			// Headers in wrong order - our code should still sort them
+			signedHeaders: []string{
+				"x-amz-date",
+				"host",
+				"content-encoding",
+				"x-amz-content-sha256",
+				"content-length",
+				"x-amz-decoded-content-length",
+			},
+			accessKey:      testAccessKey,
+			secretKey:      testSecretKey,
+			expectedErr:    s3err.ErrNone,
+			expectIdentity: true,
+		},
+		{
+			name:          "invalid access key",
+			method:        "PUT",
+			path:          "/test-bucket/test-key",
+			contentLength: 1048756,
+			decodedLength: 1048576,
+			headers:       map[string]string{},
+			signedHeaders: []string{
+				"content-encoding",
+				"content-length",
+				"host",
+				"x-amz-content-sha256",
+				"x-amz-date",
+				"x-amz-decoded-content-length",
+			},
+			accessKey:      "INVALIDACCESSKEY123",
+			secretKey:      testSecretKey,
+			expectedErr:    s3err.ErrInvalidAccessKeyID,
+			expectIdentity: false,
+		},
+		{
+			name:          "wrong secret key",
+			method:        "PUT",
+			path:          "/test-bucket/test-key",
+			contentLength: 1048756,
+			decodedLength: 1048576,
+			headers:       map[string]string{},
+			signedHeaders: []string{
+				"content-encoding",
+				"content-length",
+				"host",
+				"x-amz-content-sha256",
+				"x-amz-date",
+				"x-amz-decoded-content-length",
+			},
+			accessKey:      testAccessKey,
+			secretKey:      "wrongsecretkey123456789012345678901234",
+			expectedErr:    s3err.ErrSignatureDoesNotMatch,
+			expectIdentity: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create request
+			reqURL := "http://s3.amazonaws.com" + tt.path
+			req := httptest.NewRequest(tt.method, reqURL, nil)
+			req.Host = "s3.amazonaws.com"
+			req.ContentLength = tt.contentLength
+
+			// Set custom headers
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+
+			// Sign the request
+			signStreamingV4Request(req, tt.accessKey, tt.secretKey, testRegion, testService, tt.signedHeaders, tt.decodedLength)
+
+			// Verify request
+			result, errCode := verifier.VerifyStreamingRequest(req)
+
+			assert.Equal(t, tt.expectedErr, errCode, "error code mismatch")
+
+			if tt.expectIdentity {
+				require.NotNil(t, result, "expected result")
+				require.NotNil(t, result.Identity, "expected identity")
+				assert.Equal(t, "testuser", result.Identity.Name)
+				assert.NotEmpty(t, result.SigningKey, "signing key should be set")
+				assert.NotEmpty(t, result.SeedSignature, "seed signature should be set")
+				assert.NotEmpty(t, result.Timestamp, "timestamp should be set")
+				assert.Equal(t, testRegion, result.Region)
+				assert.Equal(t, testService, result.Service)
+			} else {
+				assert.Nil(t, result, "expected no result")
+			}
+		})
+	}
+}
+
+func TestV4Verifier_ContentLengthHandling(t *testing.T) {
+	t.Parallel()
+
+	verifier := NewV4Verifier(nil)
+
+	tests := []struct {
+		name                 string
+		contentLengthHeader  string
+		requestContentLength int64
+		signedHeaders        []string
+		expectInCanonical    bool
+		expectValue          string
+	}{
+		{
+			name:                 "content-length from header",
+			contentLengthHeader:  "12345",
+			requestContentLength: 12345,
+			signedHeaders:        []string{"content-length", "host"},
+			expectInCanonical:    true,
+			expectValue:          "12345",
+		},
+		{
+			name:                 "content-length from r.ContentLength when header missing",
+			contentLengthHeader:  "", // Header not set
+			requestContentLength: 67890,
+			signedHeaders:        []string{"content-length", "host"},
+			expectInCanonical:    true,
+			expectValue:          "67890",
+		},
+		{
+			name:                 "content-length not signed",
+			contentLengthHeader:  "12345",
+			requestContentLength: 12345,
+			signedHeaders:        []string{"host"},
+			expectInCanonical:    false,
+			expectValue:          "",
+		},
+		{
+			name:                 "zero content-length",
+			contentLengthHeader:  "0",
+			requestContentLength: 0,
+			signedHeaders:        []string{"content-length", "host"},
+			expectInCanonical:    true,
+			expectValue:          "0",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest("PUT", "http://s3.amazonaws.com/bucket/key", nil)
+			req.Host = "s3.amazonaws.com"
+			req.ContentLength = tt.requestContentLength
+
+			if tt.contentLengthHeader != "" {
+				req.Header.Set("Content-Length", tt.contentLengthHeader)
+			}
+
+			result, sortedHeaders := verifier.buildCanonicalHeaders(req, tt.signedHeaders)
+
+			if tt.expectInCanonical {
+				assert.Contains(t, result, "content-length:"+tt.expectValue,
+					"canonical headers should contain content-length")
+				assert.Contains(t, sortedHeaders, "content-length",
+					"sorted headers should include content-length")
+			} else {
+				assert.NotContains(t, result, "content-length:",
+					"canonical headers should not contain content-length")
+			}
+		})
+	}
+}
+
+func TestV4Verifier_SignedHeadersSorting(t *testing.T) {
+	t.Parallel()
+
+	verifier := NewV4Verifier(nil)
+
+	tests := []struct {
+		name           string
+		signedHeaders  []string
+		expectedOrder  []string
+		headers        map[string]string
+	}{
+		{
+			name:          "already sorted headers",
+			signedHeaders: []string{"content-encoding", "host", "x-amz-date"},
+			expectedOrder: []string{"content-encoding", "host", "x-amz-date"},
+			headers: map[string]string{
+				"Content-Encoding": "aws-chunked",
+				"X-Amz-Date":       "20231215T000000Z",
+			},
+		},
+		{
+			name:          "unsorted headers",
+			signedHeaders: []string{"x-amz-date", "host", "content-encoding"},
+			expectedOrder: []string{"content-encoding", "host", "x-amz-date"},
+			headers: map[string]string{
+				"Content-Encoding": "aws-chunked",
+				"X-Amz-Date":       "20231215T000000Z",
+			},
+		},
+		{
+			name:          "reverse sorted headers",
+			signedHeaders: []string{"z-custom", "x-amz-date", "host", "content-type", "accept"},
+			expectedOrder: []string{"accept", "content-type", "host", "x-amz-date", "z-custom"},
+			headers: map[string]string{
+				"Accept":       "application/json",
+				"Content-Type": "application/octet-stream",
+				"X-Amz-Date":   "20231215T000000Z",
+				"Z-Custom":     "value",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest("PUT", "http://s3.amazonaws.com/bucket/key", nil)
+			req.Host = "s3.amazonaws.com"
+
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+
+			_, sortedHeaders := verifier.buildCanonicalHeaders(req, tt.signedHeaders)
+
+			assert.Equal(t, tt.expectedOrder, sortedHeaders,
+				"headers should be sorted alphabetically")
+		})
+	}
+}
+
+func TestV4Verifier_StreamingSignatureWithTrailers(t *testing.T) {
+	t.Parallel()
+
+	manager := createTestManager(t)
+	verifier := NewV4Verifier(manager)
+
+	// Test with trailing checksum headers (STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER)
+	// Note: This tests the initial request verification only, not the trailer signature
+	req := httptest.NewRequest("PUT", "http://s3.amazonaws.com/test-bucket/test-key", nil)
+	req.Host = "s3.amazonaws.com"
+	req.ContentLength = 1048756
+	req.Header.Set("X-Amz-Trailer", "x-amz-checksum-crc32c")
+
+	signedHeaders := []string{
+		"content-encoding",
+		"content-length",
+		"host",
+		"x-amz-content-sha256",
+		"x-amz-date",
+		"x-amz-decoded-content-length",
+		"x-amz-trailer",
+	}
+
+	signStreamingV4Request(req, testAccessKey, testSecretKey, testRegion, testService, signedHeaders, 1048576)
+
+	result, errCode := verifier.VerifyStreamingRequest(req)
+
+	assert.Equal(t, s3err.ErrNone, errCode)
+	require.NotNil(t, result)
+	assert.NotNil(t, result.Identity)
+	assert.NotEmpty(t, result.SigningKey)
 }

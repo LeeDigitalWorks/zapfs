@@ -8,9 +8,7 @@
 
 services:
   manager:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: zapfs:benchmark
     command:
       - manager
       - --ip=0.0.0.0
@@ -39,9 +37,7 @@ services:
       start_period: 10s
 
   metadata:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: zapfs:benchmark
     command:
       - metadata
       - --ip=0.0.0.0
@@ -71,9 +67,7 @@ services:
       start_period: 10s
 
   file:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: zapfs:benchmark
     command:
       - file
       - --bind_addr=0.0.0.0:8081

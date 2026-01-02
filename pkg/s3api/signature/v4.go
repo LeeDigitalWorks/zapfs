@@ -223,10 +223,11 @@ func (v *V4Verifier) buildCanonicalRequest(r *http.Request, signedHeaders []stri
 	canonicalQuery := v.buildCanonicalQueryString(r.URL.Query())
 
 	// 4. Canonical Headers (sorted, lowercase)
-	canonicalHeaders := v.buildCanonicalHeaders(r, signedHeaders)
+	canonicalHeaders, sortedSignedHeaders := v.buildCanonicalHeaders(r, signedHeaders)
 
 	// 5. Signed Headers (sorted, lowercase, semicolon-separated)
-	signedHeadersStr := strings.Join(signedHeaders, ";")
+	// Must be in the same order as they appear in the canonical headers
+	signedHeadersStr := strings.Join(sortedSignedHeaders, ";")
 
 	// 6. Hashed Payload
 	hashedPayload := r.Header.Get("X-Amz-Content-Sha256")
@@ -284,8 +285,9 @@ func (v *V4Verifier) buildCanonicalQueryString(query url.Values) string {
 	return strings.Join(parts, "&")
 }
 
-// buildCanonicalHeaders creates sorted canonical headers string
-func (v *V4Verifier) buildCanonicalHeaders(r *http.Request, signedHeaders []string) string {
+// buildCanonicalHeaders creates sorted canonical headers string and returns
+// the sorted list of header names for use in the signed headers list.
+func (v *V4Verifier) buildCanonicalHeaders(r *http.Request, signedHeaders []string) (string, []string) {
 	headers := make(map[string][]string)
 
 	// Collect values for signed headers
@@ -296,6 +298,21 @@ func (v *V4Verifier) buildCanonicalHeaders(r *http.Request, signedHeaders []stri
 		if h == "host" {
 			if r.Host != "" {
 				headers[h] = []string{r.Host}
+			}
+			continue
+		}
+
+		// Special case: Content-Length is stored in r.ContentLength by Go's HTTP server
+		// and may not be present in r.Header for some request types.
+		// For streaming uploads with Content-Encoding: aws-chunked, Content-Length
+		// represents the total size including chunk metadata.
+		if h == "content-length" {
+			// First try to get from header (preferred, as it's the original value)
+			if vals := r.Header.Values(h); len(vals) > 0 {
+				headers[h] = vals
+			} else if r.ContentLength >= 0 {
+				// Fall back to r.ContentLength if header not present
+				headers[h] = []string{strconv.FormatInt(r.ContentLength, 10)}
 			}
 			continue
 		}
@@ -324,7 +341,7 @@ func (v *V4Verifier) buildCanonicalHeaders(r *http.Request, signedHeaders []stri
 		parts = append(parts, fmt.Sprintf("%s:%s", name, strings.Join(trimmed, ",")))
 	}
 
-	return strings.Join(parts, "\n") + "\n"
+	return strings.Join(parts, "\n") + "\n", names
 }
 
 // buildStringToSign creates the string to sign per AWS spec

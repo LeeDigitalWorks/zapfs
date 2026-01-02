@@ -288,7 +288,6 @@ build_warp_cmd() {
         cmd+=" --obj.randsize"
     fi
 
-    cmd+=" --objects=$OBJECTS"
     cmd+=" --duration=$DURATION"
 
     if [[ -n "$OUTPUT_DIR" ]]; then
