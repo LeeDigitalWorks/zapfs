@@ -199,6 +199,20 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	// Register debug endpoint for bucket cache dump
+	debug.RegisterHandlerFunc("/debug/buckets/cache", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		entries := bucketStore.DumpCache()
+		response := map[string]any{
+			"cache_size": len(entries),
+			"is_ready":   bucketStore.IsReady(),
+			"entries":    entries,
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
 	// Filter chain using IAM service
 	chain := filter.NewChain()
 	chain.AddFilter(filter.NewRequestIDFilter())
@@ -370,7 +384,7 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		DefaultProfile:    "STANDARD",
 		IAMService:        iamService, // For KMS operations (enterprise feature)
 		TaskQueue:         tq,
-		CRRHook:           crrHook,  // Cross-region replication (enterprise feature)
+		CRRHook:           crrHook, // Cross-region replication (enterprise feature)
 		Emitter:           emitter, // S3 event notifications (enterprise feature)
 		// Cross-region replication credentials (enterprise: FeatureMultiRegion)
 		// Never log the secret key!
@@ -390,6 +404,11 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 	}
 	metadataServer := api.NewMetadataServer(cmd.Context(), serverCfg)
 	defer metadataServer.Shutdown()
+
+	// Register custom readiness check - service is only ready when caches are populated
+	debug.SetReadyCheck(func() bool {
+		return bucketStore.IsReady() && globalBucketCache.IsReady()
+	})
 
 	// Start servers
 	httpMux := http.NewServeMux()

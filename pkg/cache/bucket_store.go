@@ -226,3 +226,29 @@ func (bs *BucketStore) IsReady() bool {
 func (bs *BucketStore) Cache() *Cache[string, s3types.Bucket] {
 	return bs.cache
 }
+
+// BucketCacheEntry represents a bucket entry for cache dump
+type BucketCacheEntry struct {
+	Name       string `json:"name"`
+	OwnerID    string `json:"owner_id"`
+	Location   string `json:"location"`
+	CreateTime string `json:"create_time"`
+	HasPolicy  bool   `json:"has_policy"`
+	HasACL     bool   `json:"has_acl"`
+}
+
+// DumpCache returns all cached buckets for debugging
+func (bs *BucketStore) DumpCache() []BucketCacheEntry {
+	var entries []BucketCacheEntry
+	for name, bucket := range bs.cache.Iter() {
+		entries = append(entries, BucketCacheEntry{
+			Name:       name,
+			OwnerID:    bucket.OwnerID,
+			Location:   bucket.Location,
+			CreateTime: bucket.CreateTime.Format("2006-01-02T15:04:05Z"),
+			HasPolicy:  bucket.Policy != nil,
+			HasACL:     bucket.ACL != nil,
+		})
+	}
+	return entries
+}
