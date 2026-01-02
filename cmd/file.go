@@ -47,6 +47,7 @@ type FileServerOpts struct {
 	// Storage
 	IndexPath string
 	ECScheme  types.ECScheme
+	DirectIO  bool // Use O_DIRECT for writes (Linux only)
 	Backends  []BackendOpts
 
 	// GC configuration
@@ -73,6 +74,7 @@ type BackendOpts struct {
 	SecretKey    string
 	StorageClass string
 	Enabled      bool
+	DirectIO     bool // Use O_DIRECT for writes (Linux only, bypasses page cache)
 	MinFreeSpace string
 }
 
@@ -105,6 +107,7 @@ func init() {
 	// Storage
 	f.String("index_path", filepath.Join(os.TempDir(), "dir.idx"), "Path to store file index data")
 	f.String("ec_scheme", "4+2", "Erasure coding scheme (e.g., '4+2', '8+4', '10+4')")
+	f.Bool("direct_io", false, "Use O_DIRECT for disk writes (Linux only, bypasses page cache)")
 
 	// GC configuration
 	f.Duration("gc_interval", 1*time.Minute, "How often GC runs (0 = disabled)")
@@ -154,8 +157,9 @@ func runFileServer(cmd *cobra.Command, args []string) {
 		// Fallback to default local backend if none configured
 		backendID := "local-" + opts.NodeID
 		if err := backendManager.Add(backendID, types.BackendConfig{
-			Type: types.StorageTypeLocal,
-			Path: filepath.Join(opts.IndexPath, "data"),
+			Type:     types.StorageTypeLocal,
+			Path:     filepath.Join(opts.IndexPath, "data"),
+			DirectIO: opts.DirectIO,
 		}); err != nil {
 			logger.Fatal().Err(err).Msg("failed to create default local backend")
 		}
@@ -181,6 +185,7 @@ func runFileServer(cmd *cobra.Command, args []string) {
 				Region:    b.Region,
 				AccessKey: b.AccessKey,
 				SecretKey: b.SecretKey,
+				DirectIO:  b.DirectIO,
 			}
 
 			if err := backendManager.Add(b.ID, cfg); err != nil {
@@ -312,6 +317,7 @@ func loadFileOpts(cmd *cobra.Command) FileServerOpts {
 		AdvertiseAddr: advertiseAddr,
 		IndexPath:     f.String("index_path"),
 		ECScheme:      ecScheme,
+		DirectIO:      f.Bool("direct_io"),
 		Backends:      backends,
 		GCInterval:    f.Duration("gc_interval"),
 		GCGracePeriod: f.Duration("gc_grace_period"),

@@ -9,11 +9,11 @@ import (
 )
 
 // Buffer pool size classes (powers of 2)
-// Index 0 = 1KB, Index 1 = 2KB, ..., Index 10 = 1MB
+// Index 0 = 1KB, Index 1 = 2KB, ..., Index 12 = 4MB
 const (
 	minPoolSize   = 1 << 10 // 1KB minimum
-	maxPoolSize   = 1 << 20 // 1MB maximum
-	numPoolLevels = 11      // 1KB to 1MB (11 levels)
+	maxPoolSize   = 1 << 22 // 4MB maximum (matches chunk size)
+	numPoolLevels = 13      // 1KB to 4MB (13 levels)
 )
 
 var bufferPools [numPoolLevels]sync.Pool

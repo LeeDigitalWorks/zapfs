@@ -97,4 +97,8 @@ type BackendConfig struct {
 	AccessKey string            `json:"access_key,omitempty"`
 	SecretKey string            `json:"secret_key,omitempty"`
 	Options   map[string]string `json:"options,omitempty"`
+
+	// DirectIO enables O_DIRECT for writes (Linux only).
+	// Bypasses page cache for reduced memory pressure and more predictable latency.
+	DirectIO bool `json:"direct_io,omitempty"`
 }
