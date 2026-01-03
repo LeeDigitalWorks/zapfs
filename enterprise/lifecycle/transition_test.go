@@ -52,13 +52,15 @@ func (testLicenseChecker) Info() map[string]interface{} {
 	}
 }
 
-// setupTestLicense installs a test license checker that allows all features
+// testLicenseOnce ensures the test license is set exactly once
+var testLicenseOnce sync.Once
+
+// setupTestLicense installs a test license checker that allows all features.
+// Uses sync.Once to ensure the license is set only once across all parallel tests.
 func setupTestLicense(t *testing.T) {
 	t.Helper()
-	oldChecker := pkglicense.GetChecker()
-	pkglicense.SetChecker(testLicenseChecker{})
-	t.Cleanup(func() {
-		pkglicense.SetChecker(oldChecker)
+	testLicenseOnce.Do(func() {
+		pkglicense.SetChecker(testLicenseChecker{})
 	})
 }
 

@@ -7,7 +7,10 @@
 // Enterprise builds inject a real implementation at startup.
 package license
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 // ErrNotLicensed is returned when a feature is not licensed.
 var ErrNotLicensed = errors.New("feature requires enterprise license")
@@ -61,11 +64,17 @@ func (noopChecker) Info() map[string]interface{} {
 }
 
 // Global checker instance. Default is noopChecker.
-var checker Checker = noopChecker{}
+// Access is protected by checkerMu for thread safety during testing.
+var (
+	checker   Checker = noopChecker{}
+	checkerMu sync.RWMutex
+)
 
 // SetChecker sets the global license checker.
 // This is called by enterprise/license during initialization.
 func SetChecker(c Checker) {
+	checkerMu.Lock()
+	defer checkerMu.Unlock()
 	if c != nil {
 		checker = c
 	}
@@ -73,62 +82,73 @@ func SetChecker(c Checker) {
 
 // GetChecker returns the current license checker.
 func GetChecker() Checker {
+	checkerMu.RLock()
+	defer checkerMu.RUnlock()
 	return checker
 }
 
 // CheckFeature checks if a feature is licensed using the global checker.
 func CheckFeature(feature Feature) error {
-	return checker.CheckFeature(feature)
+	checkerMu.RLock()
+	c := checker
+	checkerMu.RUnlock()
+	return c.CheckFeature(feature)
 }
 
 // IsLicensed returns true if any valid license is present.
 func IsLicensed() bool {
-	return checker.IsLicensed()
+	checkerMu.RLock()
+	c := checker
+	checkerMu.RUnlock()
+	return c.IsLicensed()
 }
 
 // Info returns license metadata from the global checker.
 func Info() map[string]interface{} {
-	return checker.Info()
+	checkerMu.RLock()
+	c := checker
+	checkerMu.RUnlock()
+	return c.Info()
 }
 
 // Convenience functions for common feature checks.
 
 // CheckAccessLog checks if access logging feature is licensed.
 func CheckAccessLog() bool {
-	return checker.CheckFeature(FeatureAccessLog) == nil
+	return CheckFeature(FeatureAccessLog) == nil
 }
 
 // CheckKMS checks if KMS integration feature is licensed.
 func CheckKMS() bool {
-	return checker.CheckFeature(FeatureKMS) == nil
+	return CheckFeature(FeatureKMS) == nil
 }
 
 // CheckLifecycle checks if lifecycle feature is licensed.
 func CheckLifecycle() bool {
-	return checker.CheckFeature(FeatureLifecycle) == nil
+	return CheckFeature(FeatureLifecycle) == nil
 }
 
 // CheckMultiRegion checks if multi-region/replication feature is licensed.
 func CheckMultiRegion() bool {
-	return checker.CheckFeature(FeatureMultiRegion) == nil
+	return CheckFeature(FeatureMultiRegion) == nil
 }
 
 // CheckObjectLock checks if object lock feature is licensed.
 func CheckObjectLock() bool {
-	return checker.CheckFeature(FeatureObjectLock) == nil
+	return CheckFeature(FeatureObjectLock) == nil
 }
 
 // CheckEvents checks if event notifications feature is licensed.
 func CheckEvents() bool {
-	return checker.CheckFeature(FeatureEvents) == nil
+	return CheckFeature(FeatureEvents) == nil
 }
 
 // CheckLDAP checks if LDAP integration feature is licensed.
 func CheckLDAP() bool {
-	return checker.CheckFeature(FeatureLDAP) == nil
+	return CheckFeature(FeatureLDAP) == nil
 }
 
 // CheckBackup checks if backup/restore feature is licensed.
 func CheckBackup() bool {
-	return checker.CheckFeature(FeatureBackup) == nil
+	return CheckFeature(FeatureBackup) == nil
 }

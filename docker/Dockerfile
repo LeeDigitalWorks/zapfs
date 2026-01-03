@@ -17,8 +17,12 @@ RUN GOTOOLCHAIN=auto go mod download
 # Copy source
 COPY . .
 
+# Build tags (empty for community, "enterprise" for enterprise)
+ARG BUILD_TAGS=""
+
 # Build binary with optimizations
 RUN GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -tags "${BUILD_TAGS}" \
     -ldflags="-w -s -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
     -o /zapfs \
     .
