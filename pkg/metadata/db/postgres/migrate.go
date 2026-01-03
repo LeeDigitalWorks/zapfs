@@ -54,7 +54,12 @@ func (m *postgresMigrator) Apply(ctx context.Context, migration db.Migration) er
 	statements := splitSQLStatements(migration.SQL)
 	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
-		if stmt == "" || strings.HasPrefix(stmt, "--") {
+		if stmt == "" {
+			continue
+		}
+		// Strip leading comment lines from statement
+		stmt = stripLeadingComments(stmt)
+		if stmt == "" {
 			continue
 		}
 		if _, err := m.db.ExecContext(ctx, stmt); err != nil {
@@ -62,6 +67,20 @@ func (m *postgresMigrator) Apply(ctx context.Context, migration db.Migration) er
 		}
 	}
 	return nil
+}
+
+// stripLeadingComments removes leading SQL comment lines from a statement.
+func stripLeadingComments(stmt string) string {
+	lines := strings.Split(stmt, "\n")
+	for len(lines) > 0 {
+		line := strings.TrimSpace(lines[0])
+		if line == "" || strings.HasPrefix(line, "--") {
+			lines = lines[1:]
+			continue
+		}
+		break
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func (m *postgresMigrator) SetVersion(ctx context.Context, version int) error {
