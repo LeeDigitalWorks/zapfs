@@ -5,7 +5,6 @@
 [![Coverage](https://img.shields.io/codecov/c/github/LeeDigitalWorks/zapfs)](https://codecov.io/gh/LeeDigitalWorks/zapfs)
 [![Go Report Card](https://goreportcard.com/badge/github.com/LeeDigitalWorks/zapfs)](https://goreportcard.com/report/github.com/LeeDigitalWorks/zapfs)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/LeeDigitalWorks/zapfs?style=social)](https://github.com/LeeDigitalWorks/zapfs/stargazers)
 
 A distributed object storage system with an S3-compatible API, written in Go.
 
@@ -264,3 +263,7 @@ For enterprise licensing, support, and custom deployments:
 
 - **Portal**: [zapfs.io](https://zapfs.io) — Manage licenses and subscriptions
 - **Documentation**: [zapfs.io/docs](https://zapfs.io/docs) — Setup guides and API reference
+
+## Star History
+
+[![Star History Chart](https://starchart.cc/LeeDigitalWorks/zapfs.svg)](https://starchart.cc/LeeDigitalWorks/zapfs)

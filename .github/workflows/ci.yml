@@ -62,7 +62,10 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Use goinstall to build golangci-lint with the project's Go version
+          # This avoids "Go version used to build golangci-lint is lower" errors
+          install-mode: goinstall
+          version: v1.64.8
           args: --timeout=5m
 
   staticcheck:
