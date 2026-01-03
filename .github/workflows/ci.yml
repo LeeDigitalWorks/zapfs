@@ -80,7 +80,10 @@ jobs:
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
       - name: Run staticcheck
-        run: staticcheck ./...
+        run: |
+          # Use enterprise tags to include enterprise packages with build constraints
+          # Exclude proto-generated directories (contain deprecated Exporter usage from protoc)
+          staticcheck -tags enterprise $(go list -tags enterprise ./... | grep -v '/proto/.*_pb')
 
   build:
     name: Build Binary

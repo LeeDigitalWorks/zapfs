@@ -21,13 +21,12 @@ func (fs *FileServer) ListLocalChunks(_ *file_pb.ListLocalChunksRequest, stream 
 
 	err := fs.store.IterateChunks(func(id types.ChunkID, chunk types.Chunk) error {
 		return stream.Send(&file_pb.LocalChunkInfo{
-			ChunkId:      string(id),
-			Size:         int64(chunk.Size),
-			CreatedAt:    chunk.CreatedAt,
-			BackendId:    chunk.BackendID,
-			Path:         chunk.Path,
-			RefCount:     chunk.RefCount,
-			ZeroRefSince: chunk.ZeroRefSince,
+			ChunkId:   string(id),
+			Size:      int64(chunk.Size),
+			CreatedAt: chunk.CreatedAt,
+			BackendId: chunk.BackendID,
+			Path:      chunk.Path,
+			// Note: RefCount is now managed centrally in chunk_registry
 		})
 	})
 	if err != nil {
@@ -54,13 +53,12 @@ func (fs *FileServer) GetLocalChunk(_ context.Context, req *file_pb.GetLocalChun
 	}
 
 	return &file_pb.LocalChunkInfo{
-		ChunkId:      string(chunk.ID),
-		Size:         int64(chunk.Size),
-		CreatedAt:    chunk.CreatedAt,
-		BackendId:    chunk.BackendID,
-		Path:         chunk.Path,
-		RefCount:     chunk.RefCount,
-		ZeroRefSince: chunk.ZeroRefSince,
+		ChunkId:   string(chunk.ID),
+		Size:      int64(chunk.Size),
+		CreatedAt: chunk.CreatedAt,
+		BackendId: chunk.BackendID,
+		Path:      chunk.Path,
+		// Note: RefCount is now managed centrally in chunk_registry
 	}, nil
 }
 

@@ -135,8 +135,3 @@ func initializeLDAPBackedIAM(ldapURL string) (*iam.Service, error) {
 		CacheTTL:        5 * time.Minute,
 	})
 }
-
-// ldapEnabled returns true if LDAP is available in this build.
-func ldapEnabled() bool {
-	return true
-}

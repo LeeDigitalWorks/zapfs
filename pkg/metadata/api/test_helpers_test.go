@@ -170,12 +170,12 @@ func newTestServer(t *testing.T, opts ...TestServerOption) *MetadataServer {
 // It's designed to avoid data races when testify mocks are called concurrently
 // (e.g., in storage coordinator's writeToAllTargets which uses goroutines).
 type threadSafeFileClient struct {
-	mu            sync.Mutex
-	putObjectFn   func(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error)
-	getObjectFn   func(ctx context.Context, address, objectID string, callback client.ObjectWriter) (string, error)
-	getChunkFn    func(ctx context.Context, address, chunkID string, callback client.ObjectWriter) error
+	mu              sync.Mutex
+	putObjectFn     func(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error)
+	getObjectFn     func(ctx context.Context, address, objectID string, callback client.ObjectWriter) (string, error)
+	getChunkFn      func(ctx context.Context, address, chunkID string, callback client.ObjectWriter) error
 	getChunkRangeFn func(ctx context.Context, address, chunkID string, offset, length uint64, callback client.ObjectWriter) error
-	closeFn       func() error
+	closeFn         func() error
 }
 
 // newThreadSafeFileClient creates a thread-safe file client for concurrent PutObject tests.
@@ -246,16 +246,4 @@ func (m *threadSafeFileClient) Close() error {
 		return fn()
 	}
 	return nil
-}
-
-func (m *threadSafeFileClient) DecrementRefCount(ctx context.Context, address string, chunkID string, expectedRefCount uint32) (*client.DecrementRefCountResult, error) {
-	return &client.DecrementRefCountResult{ChunkID: chunkID, Success: true}, nil
-}
-
-func (m *threadSafeFileClient) DecrementRefCountBatch(ctx context.Context, address string, chunks []client.DecrementRefCountRequest) ([]*client.DecrementRefCountResult, error) {
-	results := make([]*client.DecrementRefCountResult, len(chunks))
-	for i, c := range chunks {
-		results[i] = &client.DecrementRefCountResult{ChunkID: c.ChunkID, Success: true}
-	}
-	return results, nil
 }

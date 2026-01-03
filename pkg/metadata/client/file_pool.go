@@ -95,8 +95,8 @@ func (p *FileClientPool) PutObject(
 	meta := &file_pb.PutObjectRequest{
 		Payload: &file_pb.PutObjectRequest_Meta{
 			Meta: &file_pb.PutObjectMeta{
-				ObjectId:           objectID,
-				TotalSize:          totalSize,
+				ObjectId:  objectID,
+				TotalSize: totalSize,
 			},
 		},
 	}
@@ -360,82 +360,13 @@ func (p *FileClientPool) DeleteObject(
 	}
 
 	_, err = client.DeleteObject(ctx, &file_pb.DeleteObjectRequest{
-		ObjectId:           objectID,
+		ObjectId: objectID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to delete object: %w", err)
 	}
 
 	return nil
-}
-
-// DecrementRefCount decrements a chunk's reference count on a file server.
-func (p *FileClientPool) DecrementRefCount(
-	ctx context.Context,
-	address string,
-	chunkID string,
-	expectedRefCount uint32,
-) (*DecrementRefCountResult, error) {
-	client, err := p.GetClient(ctx, address)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.DecrementRefCount(ctx, &file_pb.DecrementRefCountRequest{
-		ChunkId:          chunkID,
-		ExpectedRefCount: expectedRefCount,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrement ref count: %w", err)
-	}
-
-	return &DecrementRefCountResult{
-		ChunkID:     resp.ChunkId,
-		NewRefCount: resp.NewRefCount,
-		Success:     resp.Success,
-		Error:       resp.Error,
-	}, nil
-}
-
-// DecrementRefCountBatch decrements multiple chunks' reference counts.
-func (p *FileClientPool) DecrementRefCountBatch(
-	ctx context.Context,
-	address string,
-	chunks []DecrementRefCountRequest,
-) ([]*DecrementRefCountResult, error) {
-	client, err := p.GetClient(ctx, address)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build proto request
-	protoChunks := make([]*file_pb.DecrementRefCountRequest, len(chunks))
-	for i, c := range chunks {
-		protoChunks[i] = &file_pb.DecrementRefCountRequest{
-			ChunkId:          c.ChunkID,
-			ExpectedRefCount: c.ExpectedRefCount,
-		}
-	}
-
-	resp, err := client.DecrementRefCountBatch(ctx, &file_pb.DecrementRefCountBatchRequest{
-		Chunks: protoChunks,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrement ref counts: %w", err)
-	}
-
-	// Convert response
-	results := make([]*DecrementRefCountResult, len(resp.Results))
-	for i, r := range resp.Results {
-		results[i] = &DecrementRefCountResult{
-			ChunkID:     r.ChunkId,
-			NewRefCount: r.NewRefCount,
-			Success:     r.Success,
-			Error:       r.Error,
-		}
-	}
-
-	return results, nil
 }
 
 // Close closes all client connections in the pool.

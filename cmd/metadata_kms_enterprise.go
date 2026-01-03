@@ -125,8 +125,3 @@ func initializeExternalKMS(ctx context.Context) (encryption.KMSProvider, error) 
 
 	return adapter, nil
 }
-
-// externalKMSEnabled returns true if external KMS is available in this build.
-func externalKMSEnabled() bool {
-	return true
-}

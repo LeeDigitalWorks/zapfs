@@ -44,10 +44,6 @@ node_id = ""  # Required: set via flag, config, or NODE_ID env var
 index_path = "/tmp/zapfs/index"
 manager_addr = "localhost:8050"
 
-# Garbage Collection
-gc_interval = "1m"       # How often GC runs (0 = disabled)
-gc_grace_period = "5m"   # Grace period before deleting RefCount=0 chunks
-
 # Backend Configuration
 [backends.local_default]
 type = "local"

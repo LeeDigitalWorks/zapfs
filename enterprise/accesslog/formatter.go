@@ -28,32 +28,32 @@ func FormatAWSLogs(events []AccessLogEvent) []byte {
 	for _, e := range events {
 		// Format: owner bucket [time] ip requester request_id operation key "uri" status error bytes size time turnaround "referrer" "user_agent" version host_id sig_version cipher auth_type host tls access_point acl_required
 		fmt.Fprintf(&buf, "%s %s [%s] %s %s %s %s %s \"%s\" %d %s %d %d %d %d \"%s\" \"%s\" %s %s %s %s %s %s %s %s %s\n",
-			orDash(e.OwnerID),                                    // bucket_owner
-			orDash(e.Bucket),                                     // bucket
-			e.EventTime.Format("02/Jan/2006:15:04:05 -0700"),     // [time]
-			formatIP(e.RemoteIP),                                 // remote_ip
-			orDash(e.RequesterID),                                // requester
-			orDash(e.RequestID),                                  // request_id
-			orDash(e.Operation),                                  // operation
-			formatKey(e.ObjectKey),                               // key
-			escapeQuotes(e.RequestURI),                           // "request_uri"
-			e.HTTPStatus,                                         // http_status
-			orDash(e.ErrorCode),                                  // error_code
-			e.BytesSent,                                          // bytes_sent
-			e.ObjectSize,                                         // object_size
-			e.TotalTimeMs,                                        // total_time
-			e.TurnAroundMs,                                       // turn_around_time
-			escapeQuotes(e.Referer),                              // "referrer"
-			escapeQuotes(e.UserAgent),                            // "user_agent"
-			orDash(e.VersionID),                                  // version_id
-			"-",                                                  // host_id (internal)
-			orDash(e.SignatureVersion),                           // signature_version
-			"-",                                                  // cipher_suite
-			orDash(e.AuthType),                                   // authentication_type
-			orDash(e.HostHeader),                                 // host_header
-			orDash(e.TLSVersion),                                 // tls_version
-			"-",                                                  // access_point_arn
-			"-",                                                  // acl_required
+			orDash(e.OwnerID), // bucket_owner
+			orDash(e.Bucket),  // bucket
+			e.EventTime.Format("02/Jan/2006:15:04:05 -0700"), // [time]
+			formatIP(e.RemoteIP),                             // remote_ip
+			orDash(e.RequesterID),                            // requester
+			orDash(e.RequestID),                              // request_id
+			orDash(e.Operation),                              // operation
+			formatKey(e.ObjectKey),                           // key
+			escapeQuotes(e.RequestURI),                       // "request_uri"
+			e.HTTPStatus,                                     // http_status
+			orDash(e.ErrorCode),                              // error_code
+			e.BytesSent,                                      // bytes_sent
+			e.ObjectSize,                                     // object_size
+			e.TotalTimeMs,                                    // total_time
+			e.TurnAroundMs,                                   // turn_around_time
+			escapeQuotes(e.Referer),                          // "referrer"
+			escapeQuotes(e.UserAgent),                        // "user_agent"
+			orDash(e.VersionID),                              // version_id
+			"-",                                              // host_id (internal)
+			orDash(e.SignatureVersion),                       // signature_version
+			"-",                                              // cipher_suite
+			orDash(e.AuthType),                               // authentication_type
+			orDash(e.HostHeader),                             // host_header
+			orDash(e.TLSVersion),                             // tls_version
+			"-",                                              // access_point_arn
+			"-",                                              // acl_required
 		)
 	}
 
@@ -70,7 +70,7 @@ func orDash(s string) string {
 
 // formatIP formats an IP address or returns "-" if nil.
 func formatIP(ip net.IP) string {
-	if ip == nil || len(ip) == 0 {
+	if ip == nil {
 		return "-"
 	}
 	return ip.String()

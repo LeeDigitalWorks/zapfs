@@ -140,8 +140,3 @@ func registerOIDCHandlers(mux *http.ServeMux, handler http.Handler) {
 		logger.Info().Msg("OIDC endpoints registered at /v1/oidc/{login,callback}")
 	}
 }
-
-// oidcEnabled returns true if OIDC is available in this build.
-func oidcEnabled() bool {
-	return true
-}

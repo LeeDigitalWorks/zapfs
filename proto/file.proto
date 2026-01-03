@@ -19,9 +19,8 @@ service FileService {
   rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
   rpc BatchDeleteObjects(BatchDeleteObjectsRequest) returns (BatchDeleteObjectsResponse);
 
-  // RefCount management for GC
-  rpc DecrementRefCount(DecrementRefCountRequest) returns (DecrementRefCountResponse);
-  rpc DecrementRefCountBatch(DecrementRefCountBatchRequest) returns (DecrementRefCountBatchResponse);
+  // Note: DecrementRefCount and DecrementRefCountBatch RPCs have been removed.
+  // RefCount is now managed centrally in the metadata DB's chunk_registry table.
 
   // Chunk migration for cluster rebalancing
   // MigrateChunk transfers a chunk to a target server (called by manager or admin)
@@ -142,29 +141,6 @@ message MarkBackendWritableRequest {
   string backend_id = 1;
 }
 
-// RefCount management messages
-message DecrementRefCountRequest {
-  string chunk_id = 1;
-  // Optional: expected RefCount for compare-and-swap semantics
-  // If provided and doesn't match current RefCount, returns current value without decrementing
-  uint32 expected_ref_count = 2;
-}
-
-message DecrementRefCountResponse {
-  string chunk_id = 1;
-  uint32 new_ref_count = 2;      // RefCount after decrement (or current if CAS failed)
-  bool success = 3;              // true if decrement succeeded, false if CAS mismatch or not found
-  string error = 4;              // Error message if any
-}
-
-message DecrementRefCountBatchRequest {
-  repeated DecrementRefCountRequest chunks = 1;
-}
-
-message DecrementRefCountBatchResponse {
-  repeated DecrementRefCountResponse results = 1;
-}
-
 // Chunk migration messages
 
 message MigrateChunkRequest {
@@ -230,8 +206,7 @@ message LocalChunkInfo {
   int64 created_at = 3;
   string backend_id = 4;
   string path = 5;
-  uint32 ref_count = 6;
-  int64 zero_ref_since = 7;
+  // Note: ref_count and zero_ref_since removed - RefCount managed in chunk_registry
 }
 
 message GetLocalChunkRequest {

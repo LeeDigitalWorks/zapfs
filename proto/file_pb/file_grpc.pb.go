@@ -20,23 +20,21 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	FileService_Ping_FullMethodName                   = "/file_pb.FileService/Ping"
-	FileService_FileServerStatus_FullMethodName       = "/file_pb.FileService/FileServerStatus"
-	FileService_MarkBackendReadOnly_FullMethodName    = "/file_pb.FileService/MarkBackendReadOnly"
-	FileService_MarkBackendWritable_FullMethodName    = "/file_pb.FileService/MarkBackendWritable"
-	FileService_PutObject_FullMethodName              = "/file_pb.FileService/PutObject"
-	FileService_GetObject_FullMethodName              = "/file_pb.FileService/GetObject"
-	FileService_GetObjectRange_FullMethodName         = "/file_pb.FileService/GetObjectRange"
-	FileService_DeleteObject_FullMethodName           = "/file_pb.FileService/DeleteObject"
-	FileService_BatchDeleteObjects_FullMethodName     = "/file_pb.FileService/BatchDeleteObjects"
-	FileService_DecrementRefCount_FullMethodName      = "/file_pb.FileService/DecrementRefCount"
-	FileService_DecrementRefCountBatch_FullMethodName = "/file_pb.FileService/DecrementRefCountBatch"
-	FileService_MigrateChunk_FullMethodName           = "/file_pb.FileService/MigrateChunk"
-	FileService_ReceiveChunk_FullMethodName           = "/file_pb.FileService/ReceiveChunk"
-	FileService_GetChunk_FullMethodName               = "/file_pb.FileService/GetChunk"
-	FileService_ListLocalChunks_FullMethodName        = "/file_pb.FileService/ListLocalChunks"
-	FileService_GetLocalChunk_FullMethodName          = "/file_pb.FileService/GetLocalChunk"
-	FileService_DeleteLocalChunk_FullMethodName       = "/file_pb.FileService/DeleteLocalChunk"
+	FileService_Ping_FullMethodName                = "/file_pb.FileService/Ping"
+	FileService_FileServerStatus_FullMethodName    = "/file_pb.FileService/FileServerStatus"
+	FileService_MarkBackendReadOnly_FullMethodName = "/file_pb.FileService/MarkBackendReadOnly"
+	FileService_MarkBackendWritable_FullMethodName = "/file_pb.FileService/MarkBackendWritable"
+	FileService_PutObject_FullMethodName           = "/file_pb.FileService/PutObject"
+	FileService_GetObject_FullMethodName           = "/file_pb.FileService/GetObject"
+	FileService_GetObjectRange_FullMethodName      = "/file_pb.FileService/GetObjectRange"
+	FileService_DeleteObject_FullMethodName        = "/file_pb.FileService/DeleteObject"
+	FileService_BatchDeleteObjects_FullMethodName  = "/file_pb.FileService/BatchDeleteObjects"
+	FileService_MigrateChunk_FullMethodName        = "/file_pb.FileService/MigrateChunk"
+	FileService_ReceiveChunk_FullMethodName        = "/file_pb.FileService/ReceiveChunk"
+	FileService_GetChunk_FullMethodName            = "/file_pb.FileService/GetChunk"
+	FileService_ListLocalChunks_FullMethodName     = "/file_pb.FileService/ListLocalChunks"
+	FileService_GetLocalChunk_FullMethodName       = "/file_pb.FileService/GetLocalChunk"
+	FileService_DeleteLocalChunk_FullMethodName    = "/file_pb.FileService/DeleteLocalChunk"
 )
 
 // FileServiceClient is the client API for FileService service.
@@ -52,9 +50,6 @@ type FileServiceClient interface {
 	GetObjectRange(ctx context.Context, in *GetObjectRangeRequest, opts ...grpc.CallOption) (FileService_GetObjectRangeClient, error)
 	DeleteObject(ctx context.Context, in *DeleteObjectRequest, opts ...grpc.CallOption) (*DeleteObjectResponse, error)
 	BatchDeleteObjects(ctx context.Context, in *BatchDeleteObjectsRequest, opts ...grpc.CallOption) (*BatchDeleteObjectsResponse, error)
-	// RefCount management for GC
-	DecrementRefCount(ctx context.Context, in *DecrementRefCountRequest, opts ...grpc.CallOption) (*DecrementRefCountResponse, error)
-	DecrementRefCountBatch(ctx context.Context, in *DecrementRefCountBatchRequest, opts ...grpc.CallOption) (*DecrementRefCountBatchResponse, error)
 	// Chunk migration for cluster rebalancing
 	// MigrateChunk transfers a chunk to a target server (called by manager or admin)
 	MigrateChunk(ctx context.Context, in *MigrateChunkRequest, opts ...grpc.CallOption) (*MigrateChunkResponse, error)
@@ -228,24 +223,6 @@ func (c *fileServiceClient) BatchDeleteObjects(ctx context.Context, in *BatchDel
 	return out, nil
 }
 
-func (c *fileServiceClient) DecrementRefCount(ctx context.Context, in *DecrementRefCountRequest, opts ...grpc.CallOption) (*DecrementRefCountResponse, error) {
-	out := new(DecrementRefCountResponse)
-	err := c.cc.Invoke(ctx, FileService_DecrementRefCount_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *fileServiceClient) DecrementRefCountBatch(ctx context.Context, in *DecrementRefCountBatchRequest, opts ...grpc.CallOption) (*DecrementRefCountBatchResponse, error) {
-	out := new(DecrementRefCountBatchResponse)
-	err := c.cc.Invoke(ctx, FileService_DecrementRefCountBatch_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *fileServiceClient) MigrateChunk(ctx context.Context, in *MigrateChunkRequest, opts ...grpc.CallOption) (*MigrateChunkResponse, error) {
 	out := new(MigrateChunkResponse)
 	err := c.cc.Invoke(ctx, FileService_MigrateChunk_FullMethodName, in, out, opts...)
@@ -384,9 +361,6 @@ type FileServiceServer interface {
 	GetObjectRange(*GetObjectRangeRequest, FileService_GetObjectRangeServer) error
 	DeleteObject(context.Context, *DeleteObjectRequest) (*DeleteObjectResponse, error)
 	BatchDeleteObjects(context.Context, *BatchDeleteObjectsRequest) (*BatchDeleteObjectsResponse, error)
-	// RefCount management for GC
-	DecrementRefCount(context.Context, *DecrementRefCountRequest) (*DecrementRefCountResponse, error)
-	DecrementRefCountBatch(context.Context, *DecrementRefCountBatchRequest) (*DecrementRefCountBatchResponse, error)
 	// Chunk migration for cluster rebalancing
 	// MigrateChunk transfers a chunk to a target server (called by manager or admin)
 	MigrateChunk(context.Context, *MigrateChunkRequest) (*MigrateChunkResponse, error)
@@ -431,12 +405,6 @@ func (UnimplementedFileServiceServer) DeleteObject(context.Context, *DeleteObjec
 }
 func (UnimplementedFileServiceServer) BatchDeleteObjects(context.Context, *BatchDeleteObjectsRequest) (*BatchDeleteObjectsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BatchDeleteObjects not implemented")
-}
-func (UnimplementedFileServiceServer) DecrementRefCount(context.Context, *DecrementRefCountRequest) (*DecrementRefCountResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DecrementRefCount not implemented")
-}
-func (UnimplementedFileServiceServer) DecrementRefCountBatch(context.Context, *DecrementRefCountBatchRequest) (*DecrementRefCountBatchResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DecrementRefCountBatch not implemented")
 }
 func (UnimplementedFileServiceServer) MigrateChunk(context.Context, *MigrateChunkRequest) (*MigrateChunkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MigrateChunk not implemented")
@@ -645,42 +613,6 @@ func _FileService_BatchDeleteObjects_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _FileService_DecrementRefCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DecrementRefCountRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FileServiceServer).DecrementRefCount(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FileService_DecrementRefCount_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileServiceServer).DecrementRefCount(ctx, req.(*DecrementRefCountRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _FileService_DecrementRefCountBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DecrementRefCountBatchRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FileServiceServer).DecrementRefCountBatch(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FileService_DecrementRefCountBatch_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileServiceServer).DecrementRefCountBatch(ctx, req.(*DecrementRefCountBatchRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _FileService_MigrateChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MigrateChunkRequest)
 	if err := dec(in); err != nil {
@@ -833,14 +765,6 @@ var FileService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BatchDeleteObjects",
 			Handler:    _FileService_BatchDeleteObjects_Handler,
-		},
-		{
-			MethodName: "DecrementRefCount",
-			Handler:    _FileService_DecrementRefCount_Handler,
-		},
-		{
-			MethodName: "DecrementRefCountBatch",
-			Handler:    _FileService_DecrementRefCountBatch_Handler,
 		},
 		{
 			MethodName: "MigrateChunk",

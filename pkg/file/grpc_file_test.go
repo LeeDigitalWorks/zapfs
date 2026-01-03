@@ -10,7 +10,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/LeeDigitalWorks/zapfs/pkg/storage/store"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 
@@ -293,11 +292,6 @@ func (m *mockStore) DeleteObject(ctx context.Context, id uuid.UUID) error {
 	return args.Error(0)
 }
 
-func (m *mockStore) DecrementRefCountCAS(chunkID types.ChunkID, expected uint32, useCAS bool) (uint32, bool, error) {
-	args := m.Called(chunkID, expected, useCAS)
-	return args.Get(0).(uint32), args.Bool(1), args.Error(2)
-}
-
 // ============================================================================
 // DeleteObject Tests
 // ============================================================================
@@ -317,53 +311,6 @@ func TestDeleteObject_Success(t *testing.T) {
 	// Full handler testing would require interface refactoring
 	_ = mockSt
 	_ = fs
-}
-
-// ============================================================================
-// DecrementRefCount Tests (isolated function tests)
-// ============================================================================
-
-func TestDecrementRefCount_ChunkNotFound(t *testing.T) {
-	t.Parallel()
-
-	// Test that the handler correctly handles ErrChunkNotFound
-	// This tests the error handling logic path
-	mockSt := &mockStore{}
-	mockSt.On("DecrementRefCountCAS", mock.Anything, mock.Anything, mock.Anything).
-		Return(uint32(0), false, store.ErrChunkNotFound)
-
-	// The response should indicate chunk not found but not return an error
-	newCount, success, err := mockSt.DecrementRefCountCAS(types.ChunkID("test"), 0, false)
-	require.ErrorIs(t, err, store.ErrChunkNotFound)
-	assert.False(t, success)
-	assert.Equal(t, uint32(0), newCount)
-}
-
-func TestDecrementRefCount_CASSuccess(t *testing.T) {
-	t.Parallel()
-
-	mockSt := &mockStore{}
-	mockSt.On("DecrementRefCountCAS", types.ChunkID("chunk123"), uint32(5), true).
-		Return(uint32(4), true, nil)
-
-	newCount, success, err := mockSt.DecrementRefCountCAS(types.ChunkID("chunk123"), 5, true)
-	require.NoError(t, err)
-	assert.True(t, success)
-	assert.Equal(t, uint32(4), newCount)
-}
-
-func TestDecrementRefCount_CASFail(t *testing.T) {
-	t.Parallel()
-
-	mockSt := &mockStore{}
-	// CAS fails because ref count changed
-	mockSt.On("DecrementRefCountCAS", types.ChunkID("chunk123"), uint32(5), true).
-		Return(uint32(3), false, nil)
-
-	newCount, success, err := mockSt.DecrementRefCountCAS(types.ChunkID("chunk123"), 5, true)
-	require.NoError(t, err)
-	assert.False(t, success)
-	assert.Equal(t, uint32(3), newCount)
 }
 
 // ============================================================================
@@ -504,23 +451,6 @@ func TestGetObjectRange_Validation(t *testing.T) {
 			assert.Equal(t, tc.length, req.Length)
 		})
 	}
-}
-
-// ============================================================================
-// DecrementRefCountBatch Tests
-// ============================================================================
-
-func TestDecrementRefCountBatch_EmptyList(t *testing.T) {
-	t.Parallel()
-
-	fs := &FileServer{}
-
-	resp, err := fs.DecrementRefCountBatch(context.Background(), &file_pb.DecrementRefCountBatchRequest{
-		Chunks: []*file_pb.DecrementRefCountRequest{},
-	})
-
-	require.NoError(t, err)
-	assert.Empty(t, resp.Results)
 }
 
 // ============================================================================

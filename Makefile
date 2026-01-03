@@ -14,7 +14,7 @@ LDFLAGS = -s -w \
 
 all: install
 
-.PHONY: clean install test test-race lint mocks mocks-install integration build proto version
+.PHONY: clean install test test-race lint mocks mocks-install integration build proto version hooks-install
 
 # =============================================================================
 # Build Targets
@@ -155,6 +155,17 @@ fmt:
 
 vet:
 	go vet ./...
+
+staticcheck:
+	@which staticcheck > /dev/null || go install honnef.co/go/tools/cmd/staticcheck@latest
+	staticcheck $$(go list ./... | grep -v '/proto/.*_pb')
+
+# Install git pre-commit hook
+hooks-install:
+	@echo "Installing pre-commit hook..."
+	@ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+	@echo "Pre-commit hook installed successfully!"
+	@echo "The hook will run gofmt, go vet, staticcheck, and build checks on staged Go files."
 
 # =============================================================================
 # Protobuf Generation

@@ -55,18 +55,6 @@ type File interface {
 	// GetChunkRange retrieves a range of bytes from a chunk by its SHA-256 content hash
 	GetChunkRange(ctx context.Context, address string, chunkID string, offset, length uint64, writer ObjectWriter) error
 
-	// DecrementRefCount decrements a chunk's reference count on a file server
-	DecrementRefCount(ctx context.Context, address string, chunkID string, expectedRefCount uint32) (*DecrementRefCountResult, error)
-
-	// DecrementRefCountBatch decrements multiple chunks' reference counts
-	DecrementRefCountBatch(ctx context.Context, address string, chunks []DecrementRefCountRequest) ([]*DecrementRefCountResult, error)
-
 	// Close closes all connections
 	Close() error
-}
-
-// DecrementRefCountRequest is a request to decrement a single chunk's ref count
-type DecrementRefCountRequest struct {
-	ChunkID          string
-	ExpectedRefCount uint32
 }

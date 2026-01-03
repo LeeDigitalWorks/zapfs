@@ -50,10 +50,6 @@ type FileServerOpts struct {
 	DirectIO  bool // Use O_DIRECT for writes (Linux only)
 	Backends  []BackendOpts
 
-	// GC configuration
-	GCInterval    time.Duration // How often GC runs (0 = disabled)
-	GCGracePeriod time.Duration // Grace period before deleting RefCount=0 chunks
-
 	// Reconciliation configuration
 	ReconciliationInterval    time.Duration // How often to run reconciliation (0 = disabled)
 	ReconciliationGracePeriod time.Duration // Grace period before deleting orphan chunks
@@ -112,10 +108,6 @@ func init() {
 	f.String("index_path", filepath.Join(os.TempDir(), "dir.idx"), "Path to store file index data")
 	f.String("ec_scheme", "4+2", "Erasure coding scheme (e.g., '4+2', '8+4', '10+4')")
 	f.Bool("direct_io", false, "Use O_DIRECT for disk writes (Linux only, bypasses page cache)")
-
-	// GC configuration
-	f.Duration("gc_interval", 1*time.Minute, "How often GC runs (0 = disabled)")
-	f.Duration("gc_grace_period", 5*time.Minute, "Grace period before deleting RefCount=0 chunks")
 
 	// Reconciliation configuration
 	f.Duration("reconciliation_interval", 6*time.Hour, "How often to run chunk reconciliation with registry (0 = disabled)")
@@ -217,11 +209,9 @@ func runFileServer(cmd *cobra.Command, args []string) {
 
 	// Create file store
 	cfg := store.Config{
-		IndexPath:     opts.IndexPath,
-		Backends:      storeBackends,
-		ECScheme:      opts.ECScheme,
-		GCInterval:    opts.GCInterval,
-		GCGracePeriod: opts.GCGracePeriod,
+		IndexPath: opts.IndexPath,
+		Backends:  storeBackends,
+		ECScheme:  opts.ECScheme,
 	}
 
 	logger.Info().
@@ -229,8 +219,6 @@ func runFileServer(cmd *cobra.Command, args []string) {
 		Int("data_shards", opts.ECScheme.DataShards).
 		Int("parity_shards", opts.ECScheme.ParityShards).
 		Int("num_backends", len(storeBackends)).
-		Dur("gc_interval", opts.GCInterval).
-		Dur("gc_grace_period", opts.GCGracePeriod).
 		Msg("File server configuration")
 
 	fileMux := http.NewServeMux()
@@ -345,8 +333,6 @@ func loadFileOpts(cmd *cobra.Command) FileServerOpts {
 		ECScheme:                  ecScheme,
 		DirectIO:                  f.Bool("direct_io"),
 		Backends:                  backends,
-		GCInterval:                f.Duration("gc_interval"),
-		GCGracePeriod:             f.Duration("gc_grace_period"),
 		ReconciliationInterval:    f.Duration("reconciliation_interval"),
 		ReconciliationGracePeriod: f.Duration("reconciliation_grace_period"),
 		CertFile:                  f.String("cert_file"),

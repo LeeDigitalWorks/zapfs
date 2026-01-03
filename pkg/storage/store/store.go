@@ -13,7 +13,6 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/ec"
-	"github.com/LeeDigitalWorks/zapfs/pkg/storage/gc"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/placer"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
@@ -22,10 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prometheusgo "github.com/prometheus/client_model/go"
 )
-
-// Number of striped locks for RefCount operations
-// Using 256 locks provides good parallelism while limiting memory overhead
-const numRefCountLocks = 256
 
 // FileStore implements Store using indexed chunks on multiple backends
 type FileStore struct {
@@ -36,14 +31,9 @@ type FileStore struct {
 	backends     map[string]*types.Backend
 	backendMutex sync.RWMutex
 
-	// Striped locks for atomic RefCount operations
-	// ChunkID is hashed to select a lock, preventing race conditions
-	refCountLocks [numRefCountLocks]sync.Mutex
-
 	manager   *backend.Manager
 	placer    placer.Placer
 	ecManager *ec.ECManager
-	gcWorkers []*gc.GCWorker
 
 	scheme types.ECScheme
 }
@@ -54,11 +44,6 @@ type Config struct {
 	IndexKind IndexKind // memory or leveldb
 	Backends  []*types.Backend
 	ECScheme  types.ECScheme
-
-	// GC configuration
-	GCInterval    time.Duration // How often GC runs (0 = disabled)
-	GCGracePeriod time.Duration // Grace period before deleting RefCount=0 chunks
-	GCConcurrency int           // Parallel chunk deletions per GC run
 }
 
 // IndexKind specifies the index backend type
@@ -72,10 +57,9 @@ const (
 // NewFileStore creates a new FileStore
 func NewFileStore(cfg Config, manager *backend.Manager) (*FileStore, error) {
 	fs := &FileStore{
-		backends:  make(map[string]*types.Backend),
-		manager:   manager,
-		gcWorkers: make([]*gc.GCWorker, 0),
-		scheme:    cfg.ECScheme,
+		backends: make(map[string]*types.Backend),
+		manager:  manager,
+		scheme:   cfg.ECScheme,
 	}
 
 	var err error
@@ -141,30 +125,6 @@ func NewFileStore(cfg Config, manager *backend.Manager) (*FileStore, error) {
 	}
 	fs.ecManager = ec.NewECManager(fs.chunkIdx, fs.ecIdx, fs.placer, manager, rsEncoder, cfg.ECScheme)
 
-	// Start GC workers for each backend (if GC is enabled)
-	if cfg.GCInterval > 0 {
-		for _, b := range cfg.Backends {
-			gcWorker := gc.NewGCWorkerWithConfig(gc.GCWorkerConfig{
-				ChunkIdx:    fs.chunkIdx,
-				BackendID:   b.ID,
-				Interval:    cfg.GCInterval,
-				GracePeriod: cfg.GCGracePeriod,
-				Concurrency: cfg.GCConcurrency,
-				Manager:     manager,
-				OnChunkDeleted: func(chunk types.Chunk) {
-					// Update metrics when GC deletes a chunk
-					ChunkTotalCount.Dec()
-					ChunkTotalBytes.Sub(float64(chunk.Size))
-					ChunkZeroRefCount.Dec()
-					ChunkZeroRefBytes.Sub(float64(chunk.Size))
-					ChunkOperations.WithLabelValues("delete").Inc()
-				},
-			})
-			gcWorker.Start()
-			fs.gcWorkers = append(fs.gcWorkers, gcWorker)
-		}
-	}
-
 	// Initialize metrics from existing index
 	fs.initializeMetrics()
 
@@ -172,10 +132,6 @@ func NewFileStore(cfg Config, manager *backend.Manager) (*FileStore, error) {
 }
 
 func (fs *FileStore) Close() error {
-	for _, gc := range fs.gcWorkers {
-		gc.Stop()
-	}
-
 	if fs.objectIdx != nil {
 		fs.objectIdx.Close()
 	}
@@ -317,41 +273,31 @@ func (fs *FileStore) GetECGroup(id uuid.UUID) (*types.ECGroup, error) {
 
 // IndexStats holds statistics about the chunk index
 type IndexStats struct {
-	TotalChunks   int64 `json:"total_chunks"`
-	TotalBytes    int64 `json:"total_bytes"`
-	ZeroRefChunks int64 `json:"zero_ref_chunks"`
-	ZeroRefBytes  int64 `json:"zero_ref_bytes"`
+	TotalChunks int64 `json:"total_chunks"`
+	TotalBytes  int64 `json:"total_bytes"`
 }
 
 // initializeMetrics populates Prometheus metrics from the existing index.
 // Called on startup to restore metrics after restart.
 func (fs *FileStore) initializeMetrics() {
-	var totalChunks, totalBytes, zeroRefChunks, zeroRefBytes float64
+	var totalChunks, totalBytes float64
 
 	fs.chunkIdx.Iterate(func(id types.ChunkID, chunk types.Chunk) error {
 		totalChunks++
 		totalBytes += float64(chunk.Size)
-		if chunk.RefCount == 0 {
-			zeroRefChunks++
-			zeroRefBytes += float64(chunk.Size)
-		}
 		return nil
 	})
 
 	ChunkTotalCount.Set(totalChunks)
 	ChunkTotalBytes.Set(totalBytes)
-	ChunkZeroRefCount.Set(zeroRefChunks)
-	ChunkZeroRefBytes.Set(zeroRefBytes)
 }
 
 // GetIndexStats returns statistics about the chunk index.
 // Uses Prometheus metrics for O(1) performance instead of iterating.
 func (fs *FileStore) GetIndexStats() (*IndexStats, error) {
 	return &IndexStats{
-		TotalChunks:   int64(getGaugeValue(ChunkTotalCount)),
-		TotalBytes:    int64(getGaugeValue(ChunkTotalBytes)),
-		ZeroRefChunks: int64(getGaugeValue(ChunkZeroRefCount)),
-		ZeroRefBytes:  int64(getGaugeValue(ChunkZeroRefBytes)),
+		TotalChunks: int64(getGaugeValue(ChunkTotalCount)),
+		TotalBytes:  int64(getGaugeValue(ChunkTotalBytes)),
 	}, nil
 }
 
@@ -366,19 +312,6 @@ func getGaugeValue(g prometheus.Gauge) float64 {
 		return m.Gauge.GetValue()
 	}
 	return 0
-}
-
-// ForceGC triggers an immediate GC run for a specific backend (or all if empty)
-// Returns the number of workers that ran.
-func (fs *FileStore) ForceGC(backendID string) int {
-	workersRun := 0
-	for _, gcWorker := range fs.gcWorkers {
-		if backendID == "" || gcWorker.BackendID() == backendID {
-			gcWorker.RunWithGracePeriod(0) // Force immediate deletion
-			workersRun++
-		}
-	}
-	return workersRun
 }
 
 // IterateChunks iterates over all chunks in the index.
@@ -430,13 +363,12 @@ func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data
 		return nil, err
 	}
 
-	// Index chunk - RefCount=0 since chunk_registry tracks refs centrally
+	// Index chunk locally (RefCount managed centrally in chunk_registry)
 	chunk := types.Chunk{
 		ID:        chunkID,
 		BackendID: backend.ID,
 		Path:      path,
 		Size:      uint64(len(data)),
-		RefCount:  0, // Managed by chunk_registry
 		CreatedAt: time.Now().Unix(),
 	}
 	if err := fs.chunkIdx.PutSync(chunkID, chunk); err != nil {

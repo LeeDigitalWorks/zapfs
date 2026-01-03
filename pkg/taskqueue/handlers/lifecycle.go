@@ -115,25 +115,10 @@ func (h *LifecycleHandler) handleExpiration(ctx context.Context, payload taskque
 	}
 
 	// Soft-delete the object (mark as deleted)
+	// Note: RefCount decrements are now handled transactionally in the metadata DB's
+	// chunk_registry table when the object is deleted. No need to call file servers.
 	if err := h.db.DeleteObject(ctx, payload.Bucket, payload.Key); err != nil {
 		return fmt.Errorf("delete object: %w", err)
-	}
-
-	// Decrement chunk ref counts via file service
-	if len(obj.ChunkRefs) > 0 && h.fileClient != nil {
-		for _, chunk := range obj.ChunkRefs {
-			if chunk.FileServerAddr != "" {
-				_, err := h.fileClient.DecrementRefCount(ctx, chunk.FileServerAddr, chunk.ChunkID.String(), 0)
-				if err != nil {
-					// Log but don't fail - chunks will be cleaned up by GC
-					logger.Warn().
-						Err(err).
-						Str("chunk_id", chunk.ChunkID.String()).
-						Str("address", chunk.FileServerAddr).
-						Msg("Failed to decrement chunk ref count")
-				}
-			}
-		}
 	}
 
 	lifecycle.BytesExpired.Add(float64(obj.Size))
@@ -170,23 +155,10 @@ func (h *LifecycleHandler) handleVersionExpiration(ctx context.Context, payload 
 	}
 
 	// Delete the specific version
+	// Note: RefCount decrements are now handled transactionally in the metadata DB's
+	// chunk_registry table when the version is deleted. No need to call file servers.
 	if err := h.db.DeleteObjectVersion(ctx, payload.Bucket, payload.Key, payload.VersionID); err != nil {
 		return fmt.Errorf("delete object version: %w", err)
-	}
-
-	// Decrement chunk ref counts
-	if len(obj.ChunkRefs) > 0 && h.fileClient != nil {
-		for _, chunk := range obj.ChunkRefs {
-			if chunk.FileServerAddr != "" {
-				_, err := h.fileClient.DecrementRefCount(ctx, chunk.FileServerAddr, chunk.ChunkID.String(), 0)
-				if err != nil {
-					logger.Warn().
-						Err(err).
-						Str("chunk_id", chunk.ChunkID.String()).
-						Msg("Failed to decrement chunk ref count")
-				}
-			}
-		}
 	}
 
 	lifecycle.BytesExpired.Add(float64(obj.Size))
@@ -223,28 +195,9 @@ func (h *LifecycleHandler) handleAbortMultipart(ctx context.Context, payload tas
 		return fmt.Errorf("get multipart upload: %w", err)
 	}
 
-	// Get and clean up any uploaded parts
-	parts, _, err := h.db.ListParts(ctx, payload.UploadID, 0, 10000)
-	if err != nil {
-		logger.Warn().Err(err).Str("upload_id", payload.UploadID).Msg("Failed to list parts")
-	} else {
-		// Decrement ref counts for uploaded chunks
-		for _, part := range parts {
-			for _, chunk := range part.ChunkRefs {
-				if chunk.FileServerAddr != "" && h.fileClient != nil {
-					_, err := h.fileClient.DecrementRefCount(ctx, chunk.FileServerAddr, chunk.ChunkID.String(), 0)
-					if err != nil {
-						logger.Warn().
-							Err(err).
-							Str("chunk_id", chunk.ChunkID.String()).
-							Msg("Failed to decrement part chunk ref count")
-					}
-				}
-			}
-		}
-	}
-
 	// Delete the upload record and parts
+	// Note: RefCount decrements are now handled transactionally in the metadata DB's
+	// chunk_registry table when the upload/parts are deleted. No need to call file servers.
 	if err := h.db.DeleteMultipartUpload(ctx, payload.Bucket, payload.Key, payload.UploadID); err != nil {
 		return fmt.Errorf("delete multipart upload: %w", err)
 	}

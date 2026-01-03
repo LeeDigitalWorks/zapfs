@@ -16,17 +16,15 @@ import (
 
 // RegisterAdminHandlers registers admin HTTP endpoints on the debug mux.
 // These endpoints expose internal state for debugging and testing:
-//   - GET /admin/chunks/{chunkID} - Get chunk info (RefCount, ZeroRefSince, etc.)
+//   - GET /admin/chunks/{chunkID} - Get chunk info
 //   - GET /admin/index/stats - Overall index statistics
 //   - GET /admin/ec-groups/{groupID} - Get EC group info
-//   - POST /admin/gc/run - Force GC scan (query param: backend=<id>)
 //
 // Must be called before debug.GetMux() is invoked.
 func (fs *FileServer) RegisterAdminHandlers() {
 	debug.RegisterHandlerFunc("/admin/chunks/", fs.handleGetChunk)
 	debug.RegisterHandlerFunc("/admin/index/stats", fs.handleIndexStats)
 	debug.RegisterHandlerFunc("/admin/ec-groups/", fs.handleGetECGroup)
-	debug.RegisterHandlerFunc("/admin/gc/run", fs.handleForceGC)
 }
 
 // handleGetChunk returns chunk metadata by ID
@@ -101,32 +99,4 @@ func (fs *FileServer) handleGetECGroup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(group)
-}
-
-// ForceGCResponse is returned by the force GC endpoint
-type ForceGCResponse struct {
-	Status     string `json:"status"`
-	BackendID  string `json:"backend_id,omitempty"`
-	WorkersRun int    `json:"workers_run"`
-}
-
-// handleForceGC triggers an immediate GC run
-// POST /admin/gc/run?backend={backendID}
-func (fs *FileServer) handleForceGC(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	backendID := r.URL.Query().Get("backend")
-	workersRun := fs.store.ForceGC(backendID)
-
-	resp := ForceGCResponse{
-		Status:     "ok",
-		BackendID:  backendID,
-		WorkersRun: workersRun,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
 }

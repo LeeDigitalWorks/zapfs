@@ -26,21 +26,8 @@ var (
 		Help:      "Total bytes across all chunks",
 	})
 
-	// ChunkZeroRefCount tracks chunks with RefCount=0 (eligible for GC)
-	ChunkZeroRefCount = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "zapfs",
-		Subsystem: "storage",
-		Name:      "chunks_zero_ref_total",
-		Help:      "Number of chunks with zero reference count (eligible for GC)",
-	})
-
-	// ChunkZeroRefBytes tracks bytes in chunks with RefCount=0
-	ChunkZeroRefBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "zapfs",
-		Subsystem: "storage",
-		Name:      "chunks_zero_ref_bytes_total",
-		Help:      "Bytes in chunks with zero reference count",
-	})
+	// Note: ChunkZeroRefCount and ChunkZeroRefBytes removed.
+	// RefCount is now managed centrally in the metadata DB's chunk_registry table.
 
 	// ChunkOperations tracks chunk operations by type
 	ChunkOperations = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -64,8 +51,6 @@ func init() {
 	debug.Registry().MustRegister(
 		ChunkTotalCount,
 		ChunkTotalBytes,
-		ChunkZeroRefCount,
-		ChunkZeroRefBytes,
 		ChunkOperations,
 		ChunkDedupeHits,
 	)

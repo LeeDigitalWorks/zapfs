@@ -168,23 +168,6 @@ func ExecuteTransition(ctx context.Context, deps *TransitionDeps, payload taskqu
 		return fmt.Errorf("update object metadata: %w", err)
 	}
 
-	// Decrement old chunk ref counts (GC will clean up when refs reach 0)
-	if len(obj.ChunkRefs) > 0 && deps.FileClient != nil {
-		for _, chunk := range obj.ChunkRefs {
-			if chunk.FileServerAddr != "" {
-				_, err := deps.FileClient.DecrementRefCount(ctx, chunk.FileServerAddr, chunk.ChunkID.String(), 0)
-				if err != nil {
-					// Log but don't fail - chunks will be cleaned up by GC
-					logger.Warn().
-						Err(err).
-						Str("chunk_id", chunk.ChunkID.String()).
-						Str("address", chunk.FileServerAddr).
-						Msg("Failed to decrement chunk ref count during transition")
-				}
-			}
-		}
-	}
-
 	// Record metrics
 	TransitionsTotal.WithLabelValues(payload.StorageClass, "success").Inc()
 	TransitionBytesTotal.WithLabelValues(payload.StorageClass).Add(float64(obj.Size))

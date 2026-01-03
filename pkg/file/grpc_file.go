@@ -5,12 +5,10 @@ package file
 
 import (
 	"context"
-	"errors"
 	"io"
 	"sync"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
-	"github.com/LeeDigitalWorks/zapfs/pkg/storage/store"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
@@ -379,60 +377,6 @@ func (fs *FileServer) BatchDeleteObjects(ctx context.Context, req *file_pb.Batch
 	}, nil
 }
 
-// DecrementRefCount decrements a chunk's reference count.
-// Supports optional compare-and-swap semantics via expected_ref_count.
-func (fs *FileServer) DecrementRefCount(ctx context.Context, req *file_pb.DecrementRefCountRequest) (*file_pb.DecrementRefCountResponse, error) {
-	chunkID := types.ChunkID(req.ChunkId)
-
-	// Use CAS if expected_ref_count is non-zero
-	useCAS := req.ExpectedRefCount > 0
-
-	newCount, success, err := fs.store.DecrementRefCountCAS(chunkID, req.ExpectedRefCount, useCAS)
-	if err != nil {
-		if errors.Is(err, store.ErrChunkNotFound) {
-			return &file_pb.DecrementRefCountResponse{
-				ChunkId:     req.ChunkId,
-				NewRefCount: 0,
-				Success:     false,
-				Error:       "chunk not found",
-			}, nil
-		}
-		return nil, status.Errorf(codes.Internal, "failed to decrement ref count: %v", err)
-	}
-
-	logger.Debug().
-		Str("chunk_id", req.ChunkId).
-		Uint32("new_ref_count", newCount).
-		Bool("success", success).
-		Msg("DecrementRefCount completed")
-
-	return &file_pb.DecrementRefCountResponse{
-		ChunkId:     req.ChunkId,
-		NewRefCount: newCount,
-		Success:     success,
-	}, nil
-}
-
-// DecrementRefCountBatch decrements multiple chunks' reference counts.
-func (fs *FileServer) DecrementRefCountBatch(ctx context.Context, req *file_pb.DecrementRefCountBatchRequest) (*file_pb.DecrementRefCountBatchResponse, error) {
-	results := make([]*file_pb.DecrementRefCountResponse, 0, len(req.Chunks))
-
-	for _, chunk := range req.Chunks {
-		resp, err := fs.DecrementRefCount(ctx, chunk)
-		if err != nil {
-			// Log error but continue processing other chunks
-			logger.Error().Err(err).Str("chunk_id", chunk.ChunkId).Msg("failed to decrement ref count in batch")
-			results = append(results, &file_pb.DecrementRefCountResponse{
-				ChunkId: chunk.ChunkId,
-				Success: false,
-				Error:   err.Error(),
-			})
-		} else {
-			results = append(results, resp)
-		}
-	}
-
-	return &file_pb.DecrementRefCountBatchResponse{
-		Results: results,
-	}, nil
-}
+// Note: DecrementRefCount and DecrementRefCountBatch RPCs have been removed.
+// RefCount is now managed centrally in the metadata DB's chunk_registry table,
+// not on individual file servers. See workspace/plans/chunk-registry-redesign.md.
