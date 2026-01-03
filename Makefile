@@ -1,9 +1,20 @@
 SOURCE_DIR = .
 MOCKERY_VERSION = v3.2.5
 
+# Version info (can be overridden)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Linker flags for version injection
+LDFLAGS = -s -w \
+	-X github.com/LeeDigitalWorks/zapfs/cmd.Version=$(VERSION) \
+	-X github.com/LeeDigitalWorks/zapfs/cmd.GitCommit=$(GIT_COMMIT) \
+	-X github.com/LeeDigitalWorks/zapfs/cmd.BuildDate=$(BUILD_DATE)
+
 all: install
 
-.PHONY: clean install test test-race lint mocks mocks-install integration build proto
+.PHONY: clean install test test-race lint mocks mocks-install integration build proto version
 
 # =============================================================================
 # Build Targets
@@ -12,10 +23,16 @@ all: install
 # Build enterprise edition (single binary for all users)
 # License key at runtime determines which features are available
 build:
-	go build -tags enterprise -ldflags="-s -w" -o zapfs .
+	go build -tags enterprise -ldflags="$(LDFLAGS)" -o zapfs .
 
 install:
-	go install -tags enterprise -ldflags="-s -w"
+	go install -tags enterprise -ldflags="$(LDFLAGS)"
+
+# Print version info
+version:
+	@echo "Version:    $(VERSION)"
+	@echo "Git Commit: $(GIT_COMMIT)"
+	@echo "Build Date: $(BUILD_DATE)"
 
 clean:
 	go clean $(SOURCE_DIR)

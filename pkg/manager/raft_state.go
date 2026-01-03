@@ -258,14 +258,6 @@ func copyCondition(c iam.Condition) iam.Condition {
 	return condCopy
 }
 
-// copyStringSlice creates a deep copy of a string slice.
-func copyStringSlice(s []string) []string {
-	if s == nil {
-		return nil
-	}
-	return append([]string(nil), s...)
-}
-
 // Restore restores state from a snapshot.
 // Must be called with the write lock held.
 func (s *FSMState) Restore(snapshot *fsmSnapshot) {

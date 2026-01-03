@@ -22,8 +22,3 @@ func initializeOIDCBackedIAM(issuer string) (*iam.Service, http.Handler, error) 
 func registerOIDCHandlers(mux *http.ServeMux, handler http.Handler) {
 	// No-op in community edition
 }
-
-// oidcEnabled returns false in community edition.
-func oidcEnabled() bool {
-	return false
-}

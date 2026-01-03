@@ -5,6 +5,8 @@ package api
 
 import (
 	"context"
+	"io"
+	"sync"
 	"testing"
 
 	cachemocks "github.com/LeeDigitalWorks/zapfs/mocks/cache"
@@ -162,4 +164,98 @@ func newTestServer(t *testing.T, opts ...TestServerOption) *MetadataServer {
 	})
 
 	return srv
+}
+
+// threadSafeFileClient is a thread-safe wrapper for file client mocks.
+// It's designed to avoid data races when testify mocks are called concurrently
+// (e.g., in storage coordinator's writeToAllTargets which uses goroutines).
+type threadSafeFileClient struct {
+	mu            sync.Mutex
+	putObjectFn   func(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error)
+	getObjectFn   func(ctx context.Context, address, objectID string, callback client.ObjectWriter) (string, error)
+	getChunkFn    func(ctx context.Context, address, chunkID string, callback client.ObjectWriter) error
+	getChunkRangeFn func(ctx context.Context, address, chunkID string, offset, length uint64, callback client.ObjectWriter) error
+	closeFn       func() error
+}
+
+// newThreadSafeFileClient creates a thread-safe file client for concurrent PutObject tests.
+func newThreadSafeFileClient() *threadSafeFileClient {
+	return &threadSafeFileClient{
+		closeFn: func() error { return nil },
+	}
+}
+
+// OnPutObject sets the handler for PutObject calls.
+func (m *threadSafeFileClient) OnPutObject(fn func(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.putObjectFn = fn
+}
+
+func (m *threadSafeFileClient) PutObject(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error) {
+	m.mu.Lock()
+	fn := m.putObjectFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, address, objectID, data, totalSize)
+	}
+	// Drain the reader to avoid blocking
+	io.Copy(io.Discard, data)
+	return &client.PutObjectResult{ObjectID: objectID, Size: totalSize}, nil
+}
+
+func (m *threadSafeFileClient) GetObject(ctx context.Context, address, objectID string, callback client.ObjectWriter) (string, error) {
+	m.mu.Lock()
+	fn := m.getObjectFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, address, objectID, callback)
+	}
+	return "", nil
+}
+
+func (m *threadSafeFileClient) GetObjectRange(ctx context.Context, address, objectID string, offset, length uint64, callback client.ObjectWriter) (string, error) {
+	return "", nil
+}
+
+func (m *threadSafeFileClient) GetChunk(ctx context.Context, address, chunkID string, callback client.ObjectWriter) error {
+	m.mu.Lock()
+	fn := m.getChunkFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, address, chunkID, callback)
+	}
+	return nil
+}
+
+func (m *threadSafeFileClient) GetChunkRange(ctx context.Context, address, chunkID string, offset, length uint64, callback client.ObjectWriter) error {
+	m.mu.Lock()
+	fn := m.getChunkRangeFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, address, chunkID, offset, length, callback)
+	}
+	return nil
+}
+
+func (m *threadSafeFileClient) Close() error {
+	m.mu.Lock()
+	fn := m.closeFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return nil
+}
+
+func (m *threadSafeFileClient) DecrementRefCount(ctx context.Context, address string, chunkID string, expectedRefCount uint32) (*client.DecrementRefCountResult, error) {
+	return &client.DecrementRefCountResult{ChunkID: chunkID, Success: true}, nil
+}
+
+func (m *threadSafeFileClient) DecrementRefCountBatch(ctx context.Context, address string, chunks []client.DecrementRefCountRequest) ([]*client.DecrementRefCountResult, error) {
+	results := make([]*client.DecrementRefCountResult, len(chunks))
+	for i, c := range chunks {
+		results[i] = &client.DecrementRefCountResult{ChunkID: c.ChunkID, Success: true}
+	}
+	return results, nil
 }

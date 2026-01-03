@@ -16,8 +16,3 @@ import (
 func initializeLDAPBackedIAM(ldapURL string) (*iam.Service, error) {
 	return nil, fmt.Errorf("LDAP integration requires enterprise edition")
 }
-
-// ldapEnabled returns false in community edition.
-func ldapEnabled() bool {
-	return false
-}

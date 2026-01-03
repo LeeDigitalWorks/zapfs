@@ -18,8 +18,3 @@ func initializeExternalKMS(ctx context.Context) (encryption.KMSProvider, error) 
 	// This is not an error; KMS is an optional feature
 	return nil, nil
 }
-
-// externalKMSEnabled returns false in community builds.
-func externalKMSEnabled() bool {
-	return false
-}

@@ -825,14 +825,32 @@ func TestPutObjectHandler(t *testing.T) {
 
 		// Setup mocks
 		mockMgr := clientmocks.NewMockManager(t)
-		mockFile := clientmocks.NewMockFile(t)
-
-		// Setup test server with IAM service
-		srv := newTestServer(t, WithManagerClient(mockMgr), WithFileClient(mockFile), WithIAMService(iamSvc))
 
 		bucket := "test-bucket"
 		key := "kms-encrypted.txt"
 		body := []byte("data encrypted with KMS")
+
+		// Use thread-safe file client to avoid data race in concurrent PutObject calls
+		// Testify mocks have a data race when concurrent goroutines call the same method
+		// because testify reflects on arguments for comparison while io.Pipe is being written to
+		tsFileClient := newThreadSafeFileClient()
+		tsFileClient.OnPutObject(func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error) {
+			// Drain the reader (required for pipe-based streaming in storage coordinator)
+			readData, err := io.ReadAll(data)
+			if err != nil {
+				return nil, err
+			}
+			// Verify that data is encrypted (size should be larger than plaintext)
+			assert.Greater(t, uint64(len(readData)), uint64(len(body)), "encrypted data should be larger than plaintext")
+			return &client.PutObjectResult{
+				ObjectID: objectID,
+				Size:     uint64(len(readData)),
+				ETag:     "dummy-etag",
+			}, nil
+		})
+
+		// Setup test server with IAM service
+		srv := newTestServer(t, WithManagerClient(mockMgr), WithFileClient(tsFileClient), WithIAMService(iamSvc))
 
 		// Create bucket
 		err = srv.db.CreateBucket(ctx, &types.BucketInfo{
@@ -861,25 +879,6 @@ func TestPutObjectHandler(t *testing.T) {
 					},
 				},
 			}, nil)
-
-		// Setup file client mock - MUST drain the reader for the storage coordinator's
-		// pipe-based streaming to work correctly
-		mockFile.EXPECT().
-			PutObject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error) {
-				// Drain the reader (required for pipe-based streaming in storage coordinator)
-				readData, err := io.ReadAll(data)
-				if err != nil {
-					return nil, err
-				}
-				// Verify that data is encrypted (size should be larger than plaintext)
-				assert.Greater(t, uint64(len(readData)), uint64(len(body)), "encrypted data should be larger than plaintext")
-				return &client.PutObjectResult{
-					ObjectID: objectID,
-					Size:     uint64(len(readData)),
-					ETag:     "dummy-etag",
-				}, nil
-			})
 
 		// Create request with SSE-KMS headers
 		req := httptest.NewRequest("PUT", "/"+bucket+"/"+key, bytes.NewReader(body))
@@ -1061,10 +1060,28 @@ func TestPutObjectHandler(t *testing.T) {
 
 			// Setup mocks
 			mockMgr := clientmocks.NewMockManager(t)
-			mockFile := clientmocks.NewMockFile(t)
+
+			// Determine which file client to use
+			// Use thread-safe client for tests that exercise PutObject to avoid testify data races
+			// Testify mocks have a data race when concurrent goroutines call the same method
+			// because testify reflects on arguments for comparison while io.Pipe is being written to
+			var fileClient client.File
+			if tc.mockFileResult != nil || tc.mockFileError != nil {
+				result, fileErr := tc.mockFileResult, tc.mockFileError
+				tsFileClient := newThreadSafeFileClient()
+				tsFileClient.OnPutObject(func(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error) {
+					// Must drain the reader or the pipe will block/error
+					io.Copy(io.Discard, data)
+					return result, fileErr
+				})
+				fileClient = tsFileClient
+			} else {
+				mockFile := clientmocks.NewMockFile(t)
+				fileClient = mockFile
+			}
 
 			// Setup test server
-			srv := newTestServer(t, WithManagerClient(mockMgr), WithFileClient(mockFile))
+			srv := newTestServer(t, WithManagerClient(mockMgr), WithFileClient(fileClient))
 
 			ctx := context.Background()
 
@@ -1105,17 +1122,6 @@ func TestPutObjectHandler(t *testing.T) {
 				mockMgr.EXPECT().
 					GetReplicationTargets(mock.Anything, mock.Anything).
 					Return(tc.mockManagerResponse, tc.mockManagerError)
-			}
-
-			// Setup file client mock expectations
-			if tc.mockFileResult != nil || tc.mockFileError != nil {
-				mockFile.EXPECT().
-					PutObject(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Run(func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64) {
-						// Must drain the reader or the pipe will block/error
-						io.Copy(io.Discard, data)
-					}).
-					Return(tc.mockFileResult, tc.mockFileError)
 			}
 
 			// Create request
@@ -1238,12 +1244,13 @@ func TestGetObjectHandler_SSEKMS(t *testing.T) {
 			name: "GetObject with SSE-KMS - success",
 			key:  "kms-encrypted.txt",
 			setupMocks: func(t *testing.T, mockMgr *clientmocks.MockManager, mockFile *clientmocks.MockFile, bucket, key string, encryptedData []byte, etag string) {
+				// Use GetChunk instead of deprecated GetObject
 				mockFile.EXPECT().
-					GetObject(mock.Anything, "file-server-1:8080", "chunk-1", mock.Anything).
-					Run(func(ctx context.Context, address string, objectID string, writer client.ObjectWriter) {
+					GetChunk(mock.Anything, "file-server-1:8080", "chunk-1", mock.Anything).
+					Run(func(ctx context.Context, address string, chunkID string, writer client.ObjectWriter) {
 						writer(encryptedData)
 					}).
-					Return(etag, nil)
+					Return(nil)
 			},
 			expectedCode:  http.StatusOK,
 			skipOnLicense: true,
@@ -1262,12 +1269,13 @@ func TestGetObjectHandler_SSEKMS(t *testing.T) {
 			key:         "kms-encrypted-range.txt",
 			rangeHeader: "bytes=0-4",
 			setupMocks: func(t *testing.T, mockMgr *clientmocks.MockManager, mockFile *clientmocks.MockFile, bucket, key string, encryptedData []byte, etag string) {
+				// Use GetChunk instead of deprecated GetObject
 				mockFile.EXPECT().
-					GetObject(mock.Anything, "file-server-1:8080", "chunk-1", mock.Anything).
-					Run(func(ctx context.Context, address string, objectID string, writer client.ObjectWriter) {
+					GetChunk(mock.Anything, "file-server-1:8080", "chunk-1", mock.Anything).
+					Run(func(ctx context.Context, address string, chunkID string, writer client.ObjectWriter) {
 						writer(encryptedData)
 					}).
-					Return(etag, nil)
+					Return(nil)
 			},
 			expectedCode:  http.StatusPartialContent,
 			skipOnLicense: true,

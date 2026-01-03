@@ -4,6 +4,7 @@
 package file
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestReconciliationService_DisabledWhenIntervalZero(t *testing.T) {
 
 	// Start should return immediately since interval=0
 	// The doneCh should be closed immediately
-	svc.Start(nil)
+	svc.Start(context.TODO())
 
 	select {
 	case <-svc.doneCh:
