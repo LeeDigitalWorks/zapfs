@@ -1088,6 +1088,8 @@ func (s *MetadataServer) PostObjectHandler(d *data.Data, w http.ResponseWriter) 
 	}
 
 	// Build service request
+	// TODO: ContentType should be passed to PutObjectRequest when supported
+	_ = contentType
 	req := &object.PutObjectRequest{
 		Bucket:        bucket,
 		Key:           result.Key,

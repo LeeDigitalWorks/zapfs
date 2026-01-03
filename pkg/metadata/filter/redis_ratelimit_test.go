@@ -267,8 +267,8 @@ func TestRedisRateLimiter_Refill(t *testing.T) {
 	}
 
 	// Should be exhausted (or very close to it)
-	result, _ := limiter.Allow(ctx, "refill-key", 1)
 	// Don't assert false here as timing may allow a refill
+	_, _ = limiter.Allow(ctx, "refill-key", 1)
 
 	// Wait for refill (at 100/s, 100ms = 10 tokens)
 	time.Sleep(150 * time.Millisecond)

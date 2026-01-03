@@ -216,6 +216,7 @@ func (p *AWSProvider) CreateKey(ctx context.Context, input CreateKeyInput) (*Key
 		if err != nil {
 			// Key was created but alias failed - log warning but don't fail
 			// The key is still usable by its ID
+			_ = err // Intentionally ignored - alias failure is non-fatal
 		}
 	}
 

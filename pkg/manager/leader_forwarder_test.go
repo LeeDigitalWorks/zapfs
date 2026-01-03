@@ -174,9 +174,8 @@ func startTestGRPCServer(t *testing.T, server *testManagerServer) string {
 	manager_pb.RegisterManagerServiceServer(s, server)
 
 	go func() {
-		if err := s.Serve(lis); err != nil {
-			// Server stopped, this is expected during cleanup
-		}
+		// Server stopped error is expected during cleanup
+		_ = s.Serve(lis)
 	}()
 
 	t.Cleanup(func() {

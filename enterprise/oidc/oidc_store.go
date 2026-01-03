@@ -73,8 +73,6 @@ type Store struct {
 	// State management for OAuth2 flow
 	statesMu sync.RWMutex
 	states   map[string]stateEntry
-
-	mu sync.RWMutex
 }
 
 type stateEntry struct {

@@ -66,10 +66,9 @@ func (h *CRRHook) AfterPutObject(ctx context.Context, bucket *s3types.Bucket, ke
 			destBucket = bucket.Name
 		}
 
-		destRegion := "default" // TODO: Parse from destination ARN
-		if rule.Destination.StorageClass != "" {
-			// Could use storage class to determine region
-		}
+		// TODO: Parse region from destination ARN; storage class could inform region
+		destRegion := "default"
+		_ = rule.Destination.StorageClass // Reserved for future region mapping
 
 		// Create replication task
 		task, err := enttaskqueue.NewReplicationTask(enttaskqueue.ReplicationPayload{

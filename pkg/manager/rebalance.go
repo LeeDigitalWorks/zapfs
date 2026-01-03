@@ -105,13 +105,13 @@ func (ms *ManagerServer) GetClusterStatus(ctx context.Context, req *manager_pb.G
 	return &manager_pb.GetClusterStatusResponse{
 		FileServers: servers,
 		Capacity: &manager_pb.ClusterCapacitySummary{
-			TotalBytes:        totalBytes,
-			UsedBytes:         usedBytes,
-			AvgUsagePercent:   avgUsage,
-			MaxUsagePercent:   maxUsage,
-			MinUsagePercent:   minUsage,
-			ImbalancePercent:  maxUsage - minUsage,
-			OnlineServers:     int32(onlineCount),
+			TotalBytes:       totalBytes,
+			UsedBytes:        usedBytes,
+			AvgUsagePercent:  avgUsage,
+			MaxUsagePercent:  maxUsage,
+			MinUsagePercent:  minUsage,
+			ImbalancePercent: maxUsage - minUsage,
+			OnlineServers:    int32(onlineCount),
 		},
 	}, nil
 }
@@ -340,10 +340,8 @@ func (ms *ManagerServer) ExecuteRebalance(req *manager_pb.ExecuteRebalanceReques
 	var migrationsCompleted int32
 	var bytesMoved int64
 
-	maxConcurrent := int(req.GetMaxConcurrent())
-	if maxConcurrent <= 0 {
-		maxConcurrent = 1
-	}
+	// TODO: Use maxConcurrent for parallel migrations
+	_ = req.GetMaxConcurrent()
 
 	deleteSource := req.GetDeleteSource()
 

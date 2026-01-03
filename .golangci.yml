@@ -1,0 +1,52 @@
+# golangci-lint configuration for ZapFS
+# See https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  # Use enterprise build tags to include enterprise packages
+  build-tags:
+    - enterprise
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosimple
+  disable:
+    # Disable noisy linters
+    - depguard
+    # errcheck is noisy with existing codebase - enable gradually
+    - errcheck
+
+issues:
+  # Don't limit issues
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Exclude generated proto directories
+  exclude-dirs:
+    - proto/common_pb
+    - proto/file_pb
+    - proto/iam_pb
+    - proto/manager_pb
+    - proto/metadata_pb
+    - proto/usage_pb
+
+  # Exclude generated file patterns
+  exclude-files:
+    - ".*\\.pb\\.go$"
+    - ".*_grpc\\.pb\\.go$"
+
+  exclude-rules:
+    # Ignore deprecation warnings in proto generated files
+    - path: "proto/"
+      linters:
+        - staticcheck
+      text: "SA1019"
+
+    # Ignore all issues in mocks
+    - path: "mocks/"
+      linters:
+        - unused

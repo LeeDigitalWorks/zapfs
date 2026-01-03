@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
@@ -43,7 +42,6 @@ type Store struct {
 	// Connection pool for LDAP
 	pool     chan *ldap.Conn
 	poolSize int
-	mu       sync.Mutex
 }
 
 // Config holds LDAP connection and attribute configuration
@@ -300,9 +298,9 @@ func (s *Store) lookupLDAPUser(username string) (*ldapUser, error) {
 		s.config.BaseDN,
 		ldap.ScopeWholeSubtree,
 		ldap.NeverDerefAliases,
-		1,                                  // SizeLimit: only need 1 result
-		int(s.config.Timeout/time.Second),  // TimeLimit
-		false,                              // TypesOnly
+		1,                                 // SizeLimit: only need 1 result
+		int(s.config.Timeout/time.Second), // TimeLimit
+		false,                             // TypesOnly
 		filter,
 		attributes,
 		nil,

@@ -28,8 +28,7 @@ func init() {
 		panic(err)
 	}
 
-	level := zerolog.InfoLevel
-	level, err = zerolog.ParseLevel(os.Getenv("LOG_LEVEL"))
+	level, err := zerolog.ParseLevel(os.Getenv("LOG_LEVEL"))
 	if err != nil || level == zerolog.NoLevel {
 		level = zerolog.InfoLevel
 		log.Warn().Err(err).Msgf("invalid LOG_LEVEL, defaulting to INFO")
