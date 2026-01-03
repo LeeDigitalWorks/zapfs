@@ -283,9 +283,10 @@ func (ms *ManagerServer) applyUpdateServiceStatus(data json.RawMessage) interfac
 
 	// Notify topology subscribers
 	eventType := manager_pb.TopologyEvent_SERVICE_UPDATED
-	if update.NewStatus == ServiceActive {
+	switch update.NewStatus {
+	case ServiceActive:
 		eventType = manager_pb.TopologyEvent_SERVICE_ADDED // Semantically "came back online"
-	} else if update.NewStatus == ServiceOffline {
+	case ServiceOffline:
 		eventType = manager_pb.TopologyEvent_SERVICE_REMOVED // Semantically "went offline"
 	}
 
@@ -314,7 +315,7 @@ func statusToString(s ServiceStatus) string {
 
 func (ms *ManagerServer) applyUpdatePolicy(data json.RawMessage) interface{} {
 	var policy manager_pb.PlacementPolicy
-	if err := json.Unmarshal(data, &policy); err != nil {
+	if err := protojson.Unmarshal(data, &policy); err != nil {
 		return err
 	}
 
@@ -334,7 +335,7 @@ func (ms *ManagerServer) applyUpdatePolicy(data json.RawMessage) interface{} {
 
 func (ms *ManagerServer) applyCreateCollection(data json.RawMessage) interface{} {
 	var col manager_pb.Collection
-	if err := json.Unmarshal(data, &col); err != nil {
+	if err := protojson.Unmarshal(data, &col); err != nil {
 		return err
 	}
 
@@ -405,7 +406,7 @@ func (ms *ManagerServer) applyDeleteCollection(data json.RawMessage) interface{}
 
 func (ms *ManagerServer) applyUpdateCollection(data json.RawMessage) interface{} {
 	var col manager_pb.Collection
-	if err := json.Unmarshal(data, &col); err != nil {
+	if err := protojson.Unmarshal(data, &col); err != nil {
 		return err
 	}
 
