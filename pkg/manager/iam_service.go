@@ -76,7 +76,7 @@ func (ms *ManagerServer) StreamCredentials(req *iam_pb.StreamCredentialsRequest,
 		close(eventCh)
 	}()
 
-	logger.Info().Uint64("subscriber_id", subID).Uint64("since_version", req.SinceVersion).Msg("IAM stream subscriber connected")
+	logger.Debug().Uint64("subscriber_id", subID).Uint64("since_version", req.SinceVersion).Msg("IAM stream subscriber connected")
 
 	// Send catch-up events if client is behind (sinceVersion is a timestamp in nanos)
 	if req.SinceVersion > 0 && req.SinceVersion < ms.iamVersion.Load() {
@@ -99,7 +99,7 @@ func (ms *ManagerServer) StreamCredentials(req *iam_pb.StreamCredentialsRequest,
 				return err
 			}
 		case <-stream.Context().Done():
-			logger.Info().Uint64("subscriber_id", subID).Msg("IAM stream subscriber disconnected")
+			logger.Debug().Uint64("subscriber_id", subID).Msg("IAM stream subscriber disconnected")
 			return nil
 		}
 	}

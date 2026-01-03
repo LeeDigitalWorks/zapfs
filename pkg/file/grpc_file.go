@@ -344,7 +344,7 @@ func (fs *FileServer) DeleteObject(ctx context.Context, req *file_pb.DeleteObjec
 		}, nil
 	}
 
-	logger.Info().Str("object_id", objectID).Msg("DeleteObject completed")
+	logger.Debug().Str("object_id", objectID).Msg("DeleteObject completed")
 
 	return &file_pb.DeleteObjectResponse{
 		ObjectId:  objectID,

@@ -187,7 +187,7 @@ func (ms *ManagerServer) applyRegisterService(data json.RawMessage) interface{} 
 	// Only increment topology version if this is a new service or has material changes
 	if isNewOrChanged {
 		ms.state.TopologyVersion++
-		logger.Info().
+		logger.Debug().
 			Str("service_id", serviceID).
 			Str("type", req.ServiceType.String()).
 			Uint64("topology_version", ms.state.TopologyVersion).
@@ -231,7 +231,7 @@ func (ms *ManagerServer) applyUnregisterService(data json.RawMessage) interface{
 	delete(registry, serviceID)
 	ms.state.TopologyVersion++
 
-	logger.Info().
+	logger.Debug().
 		Str("service_id", serviceID).
 		Uint64("topology_version", ms.state.TopologyVersion).
 		Msg("Service unregistered via Raft")
@@ -274,7 +274,7 @@ func (ms *ManagerServer) applyUpdateServiceStatus(data json.RawMessage) interfac
 	reg.Status = update.NewStatus
 	ms.state.TopologyVersion++
 
-	logger.Info().
+	logger.Debug().
 		Str("service_id", update.ServiceID).
 		Str("old_status", statusToString(oldStatus)).
 		Str("new_status", statusToString(update.NewStatus)).
@@ -325,7 +325,7 @@ func (ms *ManagerServer) applyUpdatePolicy(data json.RawMessage) interface{} {
 	ms.state.PlacementPolicy = &policy
 	ms.state.TopologyVersion++
 
-	logger.Info().
+	logger.Debug().
 		Uint32("num_replicas", policy.NumReplicas).
 		Uint64("topology_version", ms.state.TopologyVersion).
 		Msg("Placement policy updated via Raft")
@@ -352,7 +352,7 @@ func (ms *ManagerServer) applyCreateCollection(data json.RawMessage) interface{}
 	ms.state.AddCollectionToIndexes(&col)
 	ms.state.CollectionsVersion++
 
-	logger.Info().
+	logger.Debug().
 		Str("collection", col.Name).
 		Str("owner", col.Owner).
 		Uint64("version", ms.state.CollectionsVersion).
@@ -389,7 +389,7 @@ func (ms *ManagerServer) applyDeleteCollection(data json.RawMessage) interface{}
 	delete(ms.state.Collections, req.Name)
 	ms.state.CollectionsVersion++
 
-	logger.Info().
+	logger.Debug().
 		Str("collection", req.Name).
 		Uint64("version", ms.state.CollectionsVersion).
 		Msg("Collection deleted via Raft")
@@ -430,7 +430,7 @@ func (ms *ManagerServer) applyUpdateCollection(data json.RawMessage) interface{}
 
 		ms.state.CollectionsVersion++
 
-		logger.Info().
+		logger.Debug().
 			Str("collection", col.Name).
 			Str("tier", col.Tier).
 			Uint64("version", ms.state.CollectionsVersion).
@@ -494,7 +494,7 @@ func (ms *ManagerServer) applyIAMCreateUser(data json.RawMessage) interface{} {
 
 	ms.state.AddIAMUser(req.Identity)
 
-	logger.Info().
+	logger.Debug().
 		Str("user", req.Identity.Name).
 		Int("credentials", len(req.Identity.Credentials)).
 		Uint64("iam_version", ms.state.IAMVersion).
@@ -523,7 +523,7 @@ func (ms *ManagerServer) applyIAMUpdateUser(data json.RawMessage) interface{} {
 
 	ms.state.UpdateIAMUser(req.Identity)
 
-	logger.Info().
+	logger.Debug().
 		Str("user", req.Identity.Name).
 		Uint64("iam_version", ms.state.IAMVersion).
 		Msg("IAM user updated via Raft")
@@ -546,7 +546,7 @@ func (ms *ManagerServer) applyIAMDeleteUser(data json.RawMessage) interface{} {
 
 	ms.state.RemoveIAMUser(req.UserName)
 
-	logger.Info().
+	logger.Debug().
 		Str("user", req.UserName).
 		Uint64("iam_version", ms.state.IAMVersion).
 		Msg("IAM user deleted via Raft")
@@ -582,7 +582,7 @@ func (ms *ManagerServer) applyIAMCreateKey(data json.RawMessage) interface{} {
 	ms.state.IAMCredentialIndex[req.Credential.AccessKey] = req.UserName
 	ms.state.IAMVersion++
 
-	logger.Info().
+	logger.Debug().
 		Str("user", req.UserName).
 		Str("access_key", req.Credential.AccessKey).
 		Uint64("iam_version", ms.state.IAMVersion).
@@ -623,7 +623,7 @@ func (ms *ManagerServer) applyIAMDeleteKey(data json.RawMessage) interface{} {
 	delete(ms.state.IAMCredentialIndex, req.AccessKey)
 	ms.state.IAMVersion++
 
-	logger.Info().
+	logger.Debug().
 		Str("user", req.UserName).
 		Str("access_key", req.AccessKey).
 		Uint64("iam_version", ms.state.IAMVersion).
@@ -651,7 +651,7 @@ func (ms *ManagerServer) applyIAMCreatePolicy(data json.RawMessage) interface{} 
 
 	ms.state.AddIAMPolicy(req.Policy)
 
-	logger.Info().
+	logger.Debug().
 		Str("policy", req.Policy.ID).
 		Uint64("iam_version", ms.state.IAMVersion).
 		Msg("IAM policy created via Raft")
@@ -674,7 +674,7 @@ func (ms *ManagerServer) applyIAMDeletePolicy(data json.RawMessage) interface{} 
 
 	ms.state.RemoveIAMPolicy(req.PolicyID)
 
-	logger.Info().
+	logger.Debug().
 		Str("policy", req.PolicyID).
 		Uint64("iam_version", ms.state.IAMVersion).
 		Msg("IAM policy deleted via Raft")
