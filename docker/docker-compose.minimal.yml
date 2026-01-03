@@ -78,8 +78,6 @@ services:
       - --node_id=file-1
       - --advertise_addr=file-1:8081
       - --manager_addr=manager:8050
-      - --gc_interval=5m
-      - --gc_grace_period=10m
       - --reconciliation_interval=30s
       - --reconciliation_grace_period=10s
     ports:
@@ -110,8 +108,6 @@ services:
       - --node_id=file-2
       - --advertise_addr=file-2:8091
       - --manager_addr=manager:8050
-      - --gc_interval=5m
-      - --gc_grace_period=10m
       - --reconciliation_interval=30s
       - --reconciliation_grace_period=10s
     ports:

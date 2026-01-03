@@ -53,8 +53,8 @@ type Config struct {
 // Connection pool defaults tuned for high-throughput workloads
 // Based on patterns from Vitess, PlanetScale, and CockroachDB recommendations
 const (
-	DefaultMaxOpenConns    = 50  // Allow more parallel queries
-	DefaultMaxIdleConns    = 25  // Keep connections warm to avoid reconnect overhead
+	DefaultMaxOpenConns    = 100 // Allow more parallel queries
+	DefaultMaxIdleConns    = 50  // Keep connections warm to avoid reconnect overhead
 	DefaultConnMaxLifetime = 300 // 5 minutes (seconds)
 	DefaultConnMaxIdleTime = 120 // 2 minutes - keep idle connections longer (seconds)
 )
