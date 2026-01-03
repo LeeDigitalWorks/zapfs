@@ -253,15 +253,18 @@ func TestWorker_MultiplePolls_Synctest(t *testing.T) {
 		// Start worker
 		w.Start(ctx)
 
-		// Enqueue 3 tasks with delay between them
+		// Enqueue 3 tasks
 		for i := range 3 {
 			_ = q.Enqueue(context.Background(), &Task{
 				Type:    "test-type",
 				Payload: []byte{byte(i)},
 			})
-			time.Sleep(60 * time.Millisecond) // Let worker poll
-			synctest.Wait()
 		}
+
+		// Wait enough time for all tasks to be processed
+		// (3 tasks * poll interval + buffer for processing)
+		time.Sleep(200 * time.Millisecond)
+		synctest.Wait()
 
 		assert.Equal(t, int32(3), processCount.Load())
 
