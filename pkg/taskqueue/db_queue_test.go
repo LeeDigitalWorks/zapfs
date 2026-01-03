@@ -61,7 +61,23 @@ func TestIsDeadlockError(t *testing.T) {
 		{
 			name:     "case sensitivity - lowercase deadlock",
 			err:      errors.New("deadlock found"),
-			expected: false, // case sensitive check
+			expected: false, // case sensitive check for MySQL Deadlock
+		},
+		// PostgreSQL deadlock error cases
+		{
+			name:     "postgres deadlock error code 40P01",
+			err:      errors.New("ERROR: deadlock detected (SQLSTATE 40P01)"),
+			expected: true,
+		},
+		{
+			name:     "postgres deadlock detected message",
+			err:      errors.New("pq: deadlock detected"),
+			expected: true,
+		},
+		{
+			name:     "postgres wrapped deadlock",
+			err:      errors.New("database error: 40P01 deadlock detected"),
+			expected: true,
 		},
 	}
 
@@ -80,4 +96,67 @@ func TestDeadlockRetryConstants(t *testing.T) {
 	assert.Equal(t, 3, maxDeadlockRetries, "should retry up to 3 times")
 	assert.LessOrEqual(t, baseDeadlockBackoff.Milliseconds(), int64(50),
 		"base backoff should be <= 50ms to avoid slow tests")
+}
+
+func TestRebind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		driver   Driver
+		query    string
+		expected string
+	}{
+		{
+			name:     "mysql driver - no change",
+			driver:   DriverMySQL,
+			query:    "SELECT * FROM tasks WHERE id = ? AND status = ?",
+			expected: "SELECT * FROM tasks WHERE id = ? AND status = ?",
+		},
+		{
+			name:     "postgres driver - simple query",
+			driver:   DriverPostgres,
+			query:    "SELECT * FROM tasks WHERE id = ?",
+			expected: "SELECT * FROM tasks WHERE id = $1",
+		},
+		{
+			name:     "postgres driver - multiple placeholders",
+			driver:   DriverPostgres,
+			query:    "INSERT INTO tasks (id, type, status) VALUES (?, ?, ?)",
+			expected: "INSERT INTO tasks (id, type, status) VALUES ($1, $2, $3)",
+		},
+		{
+			name:     "postgres driver - complex query",
+			driver:   DriverPostgres,
+			query:    "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ? AND worker_id = ?",
+			expected: "UPDATE tasks SET status = $1, updated_at = $2 WHERE id = $3 AND worker_id = $4",
+		},
+		{
+			name:     "postgres driver - no placeholders",
+			driver:   DriverPostgres,
+			query:    "SELECT * FROM tasks",
+			expected: "SELECT * FROM tasks",
+		},
+		{
+			name:     "empty driver defaults to mysql (no change)",
+			driver:   "",
+			query:    "SELECT * FROM tasks WHERE id = ?",
+			expected: "SELECT * FROM tasks WHERE id = ?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := &DBQueue{driver: tt.driver}
+			result := q.rebind(tt.query)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestDriverConstants(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, Driver("mysql"), DriverMySQL)
+	assert.Equal(t, Driver("postgres"), DriverPostgres)
 }

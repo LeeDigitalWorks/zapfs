@@ -21,18 +21,30 @@ const (
 	baseDeadlockBackoff = 10 * time.Millisecond
 )
 
+// Driver identifies a database driver type for the task queue.
+type Driver string
+
+const (
+	// DriverMySQL uses MySQL/MariaDB/Vitess with ? placeholders
+	DriverMySQL Driver = "mysql"
+	// DriverPostgres uses PostgreSQL/CockroachDB with $N placeholders
+	DriverPostgres Driver = "postgres"
+)
+
 // DBQueue is a database-backed implementation of Queue.
-// Uses MySQL/Vitess for durable, distributed task storage.
+// Supports MySQL/Vitess and PostgreSQL/CockroachDB for durable, distributed task storage.
 // Supports multiple concurrent workers via FOR UPDATE SKIP LOCKED.
 type DBQueue struct {
 	db                *sql.DB
 	tableName         string
 	visibilityTimeout time.Duration // How long a task can be "running" before being reclaimed
+	driver            Driver        // Database driver type for SQL dialect differences
 }
 
 // DBQueueConfig configures the database queue.
 type DBQueueConfig struct {
 	DB                *sql.DB
+	Driver            Driver        // Database driver (mysql, postgres). Defaults to mysql.
 	TableName         string        // Defaults to "tasks"
 	VisibilityTimeout time.Duration // How long before a running task is considered abandoned (default: 5m)
 }
@@ -48,14 +60,39 @@ func NewDBQueue(cfg DBQueueConfig) (*DBQueue, error) {
 	if cfg.VisibilityTimeout == 0 {
 		cfg.VisibilityTimeout = 5 * time.Minute
 	}
+	if cfg.Driver == "" {
+		cfg.Driver = DriverMySQL
+	}
 
 	q := &DBQueue{
 		db:                cfg.DB,
 		tableName:         cfg.TableName,
 		visibilityTimeout: cfg.VisibilityTimeout,
+		driver:            cfg.Driver,
 	}
 
 	return q, nil
+}
+
+// rebind converts MySQL-style ? placeholders to PostgreSQL-style $N placeholders
+// if the driver is PostgreSQL. For MySQL, it returns the query unchanged.
+func (q *DBQueue) rebind(query string) string {
+	if q.driver != DriverPostgres {
+		return query
+	}
+
+	// Count placeholders and replace them with $1, $2, etc.
+	var result strings.Builder
+	n := 1
+	for i := 0; i < len(query); i++ {
+		if query[i] == '?' {
+			result.WriteString(fmt.Sprintf("$%d", n))
+			n++
+		} else {
+			result.WriteByte(query[i])
+		}
+	}
+	return result.String()
 }
 
 func (q *DBQueue) Enqueue(ctx context.Context, task *Task) error {
@@ -73,11 +110,11 @@ func (q *DBQueue) Enqueue(ctx context.Context, task *Task) error {
 	}
 	task.UpdatedAt = time.Now()
 
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		INSERT INTO %s (id, type, status, priority, payload, scheduled_at,
 			attempts, max_retries, created_at, updated_at, region)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, q.tableName)
+	`, q.tableName))
 
 	_, err := q.db.ExecContext(ctx, query,
 		task.ID, task.Type, task.Status, task.Priority, task.Payload,
@@ -87,14 +124,22 @@ func (q *DBQueue) Enqueue(ctx context.Context, task *Task) error {
 	return err
 }
 
-// isDeadlockError checks if the error is a MySQL deadlock error (Error 1213)
+// isDeadlockError checks if the error is a database deadlock error.
+// Supports both MySQL (Error 1213) and PostgreSQL (40P01).
 func isDeadlockError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// MySQL error 1213: Deadlock found when trying to get lock
 	errStr := err.Error()
-	return strings.Contains(errStr, "Error 1213") || strings.Contains(errStr, "Deadlock")
+	// MySQL error 1213: Deadlock found when trying to get lock
+	if strings.Contains(errStr, "Error 1213") || strings.Contains(errStr, "Deadlock") {
+		return true
+	}
+	// PostgreSQL error 40P01: deadlock_detected
+	if strings.Contains(errStr, "40P01") || strings.Contains(errStr, "deadlock detected") {
+		return true
+	}
+	return false
 }
 
 func (q *DBQueue) Dequeue(ctx context.Context, workerID string, taskTypes ...TaskType) (*Task, error) {
@@ -125,7 +170,7 @@ func (q *DBQueue) Dequeue(ctx context.Context, workerID string, taskTypes ...Tas
 
 func (q *DBQueue) dequeueOnce(ctx context.Context, workerID string, taskTypes ...TaskType) (*Task, error) {
 	// Use SELECT ... FOR UPDATE SKIP LOCKED for concurrent workers
-	// This is MySQL 8.0+ / MariaDB 10.6+ / Vitess feature
+	// Supported in MySQL 8.0+, MariaDB 10.6+, Vitess, PostgreSQL 9.5+, CockroachDB
 
 	tx, err := q.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -154,7 +199,7 @@ func (q *DBQueue) dequeueOnce(ctx context.Context, workerID string, taskTypes ..
 
 	// Select highest priority, oldest first
 	// Also reclaim tasks that have been running too long (worker crashed)
-	selectQuery := fmt.Sprintf(`
+	selectQuery := q.rebind(fmt.Sprintf(`
 		SELECT id, type, status, priority, payload, scheduled_at, started_at,
 			completed_at, attempts, max_retries, retry_after, last_error,
 			created_at, updated_at, heartbeat_at, region, worker_id
@@ -168,7 +213,7 @@ func (q *DBQueue) dequeueOnce(ctx context.Context, workerID string, taskTypes ..
 		ORDER BY priority DESC, scheduled_at ASC
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED
-	`, q.tableName, typeFilter)
+	`, q.tableName, typeFilter))
 
 	row := tx.QueryRowContext(ctx, selectQuery, args...)
 
@@ -212,11 +257,11 @@ func (q *DBQueue) dequeueOnce(ctx context.Context, workerID string, taskTypes ..
 	}
 
 	// Mark as running with fresh heartbeat
-	updateQuery := fmt.Sprintf(`
+	updateQuery := q.rebind(fmt.Sprintf(`
 		UPDATE %s SET status = 'running', started_at = ?, heartbeat_at = ?,
 			worker_id = ?, attempts = ?, updated_at = ?
 		WHERE id = ?
-	`, q.tableName)
+	`, q.tableName))
 
 	_, err = tx.ExecContext(ctx, updateQuery, now, now, workerID, attempts, now, task.ID)
 	if err != nil {
@@ -238,10 +283,10 @@ func (q *DBQueue) dequeueOnce(ctx context.Context, workerID string, taskTypes ..
 
 func (q *DBQueue) Complete(ctx context.Context, taskID string) error {
 	now := time.Now()
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		UPDATE %s SET status = 'completed', completed_at = ?, updated_at = ?
 		WHERE id = ?
-	`, q.tableName)
+	`, q.tableName))
 
 	result, err := q.db.ExecContext(ctx, query, now, now, taskID)
 	if err != nil {
@@ -276,11 +321,11 @@ func (q *DBQueue) Fail(ctx context.Context, taskID string, taskErr error) error 
 		task.WorkerID = ""
 	}
 
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		UPDATE %s SET status = ?, attempts = ?, last_error = ?,
 			retry_after = ?, worker_id = ?, updated_at = ?
 		WHERE id = ?
-	`, q.tableName)
+	`, q.tableName))
 
 	var retryAfter *time.Time
 	if !task.RetryAfter.IsZero() {
@@ -296,10 +341,10 @@ func (q *DBQueue) Fail(ctx context.Context, taskID string, taskErr error) error 
 
 func (q *DBQueue) Cancel(ctx context.Context, taskID string) error {
 	now := time.Now()
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		UPDATE %s SET status = 'cancelled', updated_at = ?
 		WHERE id = ?
-	`, q.tableName)
+	`, q.tableName))
 
 	result, err := q.db.ExecContext(ctx, query, now, taskID)
 	if err != nil {
@@ -314,12 +359,12 @@ func (q *DBQueue) Cancel(ctx context.Context, taskID string) error {
 }
 
 func (q *DBQueue) Get(ctx context.Context, taskID string) (*Task, error) {
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		SELECT id, type, status, priority, payload, scheduled_at, started_at,
 			completed_at, attempts, max_retries, retry_after, last_error,
 			created_at, updated_at, heartbeat_at, region, worker_id
 		FROM %s WHERE id = ?
-	`, q.tableName)
+	`, q.tableName))
 
 	row := q.db.QueryRowContext(ctx, query, taskID)
 
@@ -391,7 +436,7 @@ func (q *DBQueue) List(ctx context.Context, filter TaskFilter) ([]*Task, error) 
 		query += fmt.Sprintf(" OFFSET %d", filter.Offset)
 	}
 
-	rows, err := q.db.QueryContext(ctx, query, args...)
+	rows, err := q.db.QueryContext(ctx, q.rebind(query), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -513,11 +558,11 @@ func (q *DBQueue) Stats(ctx context.Context) (*QueueStats, error) {
 func (q *DBQueue) Cleanup(ctx context.Context, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan)
 
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE status IN ('completed', 'cancelled')
 		AND completed_at < ?
-	`, q.tableName)
+	`, q.tableName))
 
 	result, err := q.db.ExecContext(ctx, query, cutoff)
 	if err != nil {
@@ -558,10 +603,10 @@ func (q *DBQueue) Heartbeat(ctx context.Context, taskID string, workerID string)
 
 func (q *DBQueue) heartbeatOnce(ctx context.Context, taskID string, workerID string) error {
 	now := time.Now()
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		UPDATE %s SET heartbeat_at = ?, updated_at = ?
 		WHERE id = ? AND worker_id = ? AND status = 'running'
-	`, q.tableName)
+	`, q.tableName))
 
 	result, err := q.db.ExecContext(ctx, query, now, now, taskID, workerID)
 	if err != nil {
@@ -581,7 +626,7 @@ func (q *DBQueue) ReclaimStale(ctx context.Context) (int, error) {
 	staleThreshold := time.Now().Add(-q.visibilityTimeout)
 	now := time.Now()
 
-	query := fmt.Sprintf(`
+	query := q.rebind(fmt.Sprintf(`
 		UPDATE %s
 		SET status = 'pending',
 			worker_id = NULL,
@@ -591,7 +636,7 @@ func (q *DBQueue) ReclaimStale(ctx context.Context) (int, error) {
 		WHERE status = 'running'
 			AND heartbeat_at < ?
 			AND attempts < max_retries
-	`, q.tableName)
+	`, q.tableName))
 
 	result, err := q.db.ExecContext(ctx, query, now, staleThreshold)
 	if err != nil {
@@ -601,7 +646,7 @@ func (q *DBQueue) ReclaimStale(ctx context.Context) (int, error) {
 	rows, _ := result.RowsAffected()
 
 	// Mark exceeded retries as dead letter
-	deadLetterQuery := fmt.Sprintf(`
+	deadLetterQuery := q.rebind(fmt.Sprintf(`
 		UPDATE %s
 		SET status = 'dead_letter',
 			worker_id = NULL,
@@ -610,7 +655,7 @@ func (q *DBQueue) ReclaimStale(ctx context.Context) (int, error) {
 		WHERE status = 'running'
 			AND heartbeat_at < ?
 			AND attempts >= max_retries
-	`, q.tableName)
+	`, q.tableName))
 
 	deadResult, err := q.db.ExecContext(ctx, deadLetterQuery, now, staleThreshold)
 	if err != nil {
