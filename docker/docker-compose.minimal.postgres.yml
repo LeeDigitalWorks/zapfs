@@ -14,15 +14,15 @@ services:
       - --db_driver=postgres
       - --db_dsn=postgres://zapfs:zapfs@postgres:5432/zapfs?sslmode=disable
       - --manager_addr=manager:8050
-    depends_on:
+    depends_on: !override
       postgres:
         condition: service_healthy
       manager:
         condition: service_healthy
 
-  # Disable MySQL
+  # Disable MySQL by moving to non-default profile
   mysql:
-    profiles: ["disabled"]
+    profiles: ["mysql-only"]
 
   postgres:
     image: postgres:16
