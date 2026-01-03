@@ -126,19 +126,19 @@ func (ms *ManagerServer) TriggerReconciliation(ctx context.Context, req *manager
 	serverID := req.GetServerId()
 	var serversTriggered []string
 
-	ms.mu.RLock()
+	ms.state.RLock()
 	if serverID == "" {
 		// Trigger for all file servers
-		for id := range ms.fileServices {
+		for id := range ms.state.FileServices {
 			serversTriggered = append(serversTriggered, id)
 		}
 	} else {
 		// Trigger for specific server
-		if _, exists := ms.fileServices[serverID]; exists {
+		if _, exists := ms.state.FileServices[serverID]; exists {
 			serversTriggered = append(serversTriggered, serverID)
 		}
 	}
-	ms.mu.RUnlock()
+	ms.state.RUnlock()
 
 	if len(serversTriggered) == 0 {
 		return &manager_pb.TriggerReconciliationResponse{
@@ -165,10 +165,10 @@ func (ms *ManagerServer) TriggerReconciliation(ctx context.Context, req *manager
 
 // getMetadataServiceAddress returns the address of an available metadata service.
 func (ms *ManagerServer) getMetadataServiceAddress() (string, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
-	for _, svc := range ms.metadataServices {
+	for _, svc := range ms.state.MetadataServices {
 		if svc.Status == ServiceActive && svc.Location != nil {
 			return fmt.Sprintf("%s:%d", svc.Location.GetAddress(), svc.Location.GetGrpcPort()), nil
 		}

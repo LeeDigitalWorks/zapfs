@@ -9,6 +9,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/proto/common_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
@@ -32,6 +33,15 @@ const (
 	CommandDeleteCollection    CommandType = "delete_collection"
 	CommandUpdateCollection    CommandType = "update_collection"
 	CommandUpdateServiceStatus CommandType = "update_service_status"
+
+	// IAM commands
+	CommandIAMCreateUser   CommandType = "iam_create_user"
+	CommandIAMUpdateUser   CommandType = "iam_update_user"
+	CommandIAMDeleteUser   CommandType = "iam_delete_user"
+	CommandIAMCreateKey    CommandType = "iam_create_key"
+	CommandIAMDeleteKey    CommandType = "iam_delete_key"
+	CommandIAMCreatePolicy CommandType = "iam_create_policy"
+	CommandIAMDeletePolicy CommandType = "iam_delete_policy"
 )
 
 // ServiceStatusUpdate represents a status change for a service (goes through Raft)
@@ -56,7 +66,7 @@ func (ms *ManagerServer) Apply(l *raft.Log) interface{} {
 		return err
 	}
 
-	logger.Info().Str("type", string(cmd.Type)).Msg("Applying raft command")
+	logger.Debug().Str("type", string(cmd.Type)).Msg("Applying raft command")
 
 	switch cmd.Type {
 	case CommandRegisterService:
@@ -73,6 +83,21 @@ func (ms *ManagerServer) Apply(l *raft.Log) interface{} {
 		return ms.applyUpdateCollection(cmd.Data)
 	case CommandUpdateServiceStatus:
 		return ms.applyUpdateServiceStatus(cmd.Data)
+	// IAM commands
+	case CommandIAMCreateUser:
+		return ms.applyIAMCreateUser(cmd.Data)
+	case CommandIAMUpdateUser:
+		return ms.applyIAMUpdateUser(cmd.Data)
+	case CommandIAMDeleteUser:
+		return ms.applyIAMDeleteUser(cmd.Data)
+	case CommandIAMCreateKey:
+		return ms.applyIAMCreateKey(cmd.Data)
+	case CommandIAMDeleteKey:
+		return ms.applyIAMDeleteKey(cmd.Data)
+	case CommandIAMCreatePolicy:
+		return ms.applyIAMCreatePolicy(cmd.Data)
+	case CommandIAMDeletePolicy:
+		return ms.applyIAMDeletePolicy(cmd.Data)
 	default:
 		return fmt.Errorf("unknown command type: %s", cmd.Type)
 	}
@@ -80,39 +105,11 @@ func (ms *ManagerServer) Apply(l *raft.Log) interface{} {
 
 // Snapshot returns a snapshot of the FSM state
 func (ms *ManagerServer) Snapshot() (raft.FSMSnapshot, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
-	// Clone state for snapshot
-	snapshot := &fsmSnapshot{
-		FileServices:       make(map[string]*ServiceRegistration),
-		MetadataServices:   make(map[string]*ServiceRegistration),
-		Collections:        make(map[string]*manager_pb.Collection),
-		TopologyVersion:    ms.topologyVersion,
-		CollectionsVersion: ms.collectionsVersion,
-		PlacementPolicy:    ms.placementPolicy,
-		RegionID:           ms.regionID,
-	}
-
-	// Deep copy file services
-	for k, v := range ms.fileServices {
-		regCopy := *v
-		snapshot.FileServices[k] = &regCopy
-	}
-
-	// Deep copy metadata services
-	for k, v := range ms.metadataServices {
-		regCopy := *v
-		snapshot.MetadataServices[k] = &regCopy
-	}
-
-	// Deep copy collections
-	for k, v := range ms.collections {
-		colCopy := proto.Clone(v).(*manager_pb.Collection)
-		snapshot.Collections[k] = colCopy
-	}
-
-	logger.Info().Msg("Created FSM snapshot")
+	snapshot := ms.state.Snapshot()
+	logger.Debug().Msg("Created FSM snapshot")
 	return snapshot, nil
 }
 
@@ -125,31 +122,20 @@ func (ms *ManagerServer) Restore(rc io.ReadCloser) error {
 		return err
 	}
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
-	ms.fileServices = snapshot.FileServices
-	ms.metadataServices = snapshot.MetadataServices
-	ms.collections = snapshot.Collections
-	ms.topologyVersion = snapshot.TopologyVersion
-	ms.collectionsVersion = snapshot.CollectionsVersion
-	ms.placementPolicy = snapshot.PlacementPolicy
-	ms.regionID = snapshot.RegionID
-
-	// Rebuild optimized indexes from restored collections
-	ms.collectionsByOwner = make(map[string][]string)
-	ms.ownerCollectionCount = make(map[string]int)
-	ms.collectionsByTier = make(map[string][]string)
-	for _, col := range ms.collections {
-		ms.addCollectionToIndexes(col)
-	}
+	ms.state.Restore(&snapshot)
 
 	logger.Info().
-		Int("file_services", len(ms.fileServices)).
-		Int("metadata_services", len(ms.metadataServices)).
-		Int("collections", len(ms.collections)).
-		Uint64("topology_version", ms.topologyVersion).
-		Uint64("collections_version", ms.collectionsVersion).
+		Int("file_services", len(ms.state.FileServices)).
+		Int("metadata_services", len(ms.state.MetadataServices)).
+		Int("collections", len(ms.state.Collections)).
+		Int("iam_users", len(ms.state.IAMUsers)).
+		Int("iam_policies", len(ms.state.IAMPolicies)).
+		Uint64("topology_version", ms.state.TopologyVersion).
+		Uint64("collections_version", ms.state.CollectionsVersion).
+		Uint64("iam_version", ms.state.IAMVersion).
 		Msg("Restored state from snapshot")
 
 	return nil
@@ -164,11 +150,11 @@ func (ms *ManagerServer) applyRegisterService(data json.RawMessage) interface{} 
 		return err
 	}
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
 	serviceID := deriveServiceID(req.ServiceType, req.Location)
-	registry := ms.getRegistry(req.ServiceType)
+	registry := ms.state.GetRegistry(req.ServiceType)
 
 	now := time.Now()
 	registration := &ServiceRegistration{
@@ -177,7 +163,7 @@ func (ms *ManagerServer) applyRegisterService(data json.RawMessage) interface{} 
 		Status:                   ServiceActive,
 		RegisteredAt:             now,
 		LastHeartbeat:            now,
-		LastKnownTopologyVersion: ms.topologyVersion,
+		LastKnownTopologyVersion: ms.state.TopologyVersion,
 	}
 
 	// Add service-specific metadata
@@ -200,11 +186,11 @@ func (ms *ManagerServer) applyRegisterService(data json.RawMessage) interface{} 
 
 	// Only increment topology version if this is a new service or has material changes
 	if isNewOrChanged {
-		ms.topologyVersion++
+		ms.state.TopologyVersion++
 		logger.Info().
 			Str("service_id", serviceID).
 			Str("type", req.ServiceType.String()).
-			Uint64("topology_version", ms.topologyVersion).
+			Uint64("topology_version", ms.state.TopologyVersion).
 			Bool("is_new", !exists).
 			Msg("Service registered via Raft (topology changed)")
 
@@ -236,18 +222,18 @@ func (ms *ManagerServer) applyUnregisterService(data json.RawMessage) interface{
 		return err
 	}
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
 	serviceID := deriveServiceID(req.ServiceType, req.Location)
-	registry := ms.getRegistry(req.ServiceType)
+	registry := ms.state.GetRegistry(req.ServiceType)
 
 	delete(registry, serviceID)
-	ms.topologyVersion++
+	ms.state.TopologyVersion++
 
 	logger.Info().
 		Str("service_id", serviceID).
-		Uint64("topology_version", ms.topologyVersion).
+		Uint64("topology_version", ms.state.TopologyVersion).
 		Msg("Service unregistered via Raft")
 
 	// Notify topology subscribers (PUSH update)
@@ -267,10 +253,10 @@ func (ms *ManagerServer) applyUpdateServiceStatus(data json.RawMessage) interfac
 		return err
 	}
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
-	registry := ms.getRegistry(update.ServiceType)
+	registry := ms.state.GetRegistry(update.ServiceType)
 	reg, exists := registry[update.ServiceID]
 	if !exists {
 		logger.Warn().
@@ -286,13 +272,13 @@ func (ms *ManagerServer) applyUpdateServiceStatus(data json.RawMessage) interfac
 	}
 
 	reg.Status = update.NewStatus
-	ms.topologyVersion++
+	ms.state.TopologyVersion++
 
 	logger.Info().
 		Str("service_id", update.ServiceID).
 		Str("old_status", statusToString(oldStatus)).
 		Str("new_status", statusToString(update.NewStatus)).
-		Uint64("topology_version", ms.topologyVersion).
+		Uint64("topology_version", ms.state.TopologyVersion).
 		Msg("Service status updated via Raft")
 
 	// Notify topology subscribers
@@ -332,15 +318,15 @@ func (ms *ManagerServer) applyUpdatePolicy(data json.RawMessage) interface{} {
 		return err
 	}
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
-	ms.placementPolicy = &policy
-	ms.topologyVersion++
+	ms.state.PlacementPolicy = &policy
+	ms.state.TopologyVersion++
 
 	logger.Info().
 		Uint32("num_replicas", policy.NumReplicas).
-		Uint64("topology_version", ms.topologyVersion).
+		Uint64("topology_version", ms.state.TopologyVersion).
 		Msg("Placement policy updated via Raft")
 
 	return nil
@@ -352,26 +338,26 @@ func (ms *ManagerServer) applyCreateCollection(data json.RawMessage) interface{}
 		return err
 	}
 
-	ms.mu.Lock()
+	ms.state.Lock()
 
 	// Check if already exists
-	if _, exists := ms.collections[col.Name]; exists {
-		ms.mu.Unlock()
+	if _, exists := ms.state.Collections[col.Name]; exists {
+		ms.state.Unlock()
 		return fmt.Errorf("collection %s already exists", col.Name)
 	}
 
-	ms.collections[col.Name] = &col
+	ms.state.Collections[col.Name] = &col
 	// CRITICAL: Update optimized lookup maps
-	ms.addCollectionToIndexes(&col)
-	ms.collectionsVersion++
+	ms.state.AddCollectionToIndexes(&col)
+	ms.state.CollectionsVersion++
 
 	logger.Info().
 		Str("collection", col.Name).
 		Str("owner", col.Owner).
-		Uint64("version", ms.collectionsVersion).
+		Uint64("version", ms.state.CollectionsVersion).
 		Msg("Collection created via Raft")
 
-	ms.mu.Unlock()
+	ms.state.Unlock()
 
 	// Notify collection subscribers (for multi-region cache sync)
 	ms.notifyCollectionSubscribers(manager_pb.CollectionEvent_CREATED, []*manager_pb.Collection{&col})
@@ -387,27 +373,27 @@ func (ms *ManagerServer) applyDeleteCollection(data json.RawMessage) interface{}
 		return err
 	}
 
-	ms.mu.Lock()
+	ms.state.Lock()
 
 	// Get collection before deletion to update indexes and notify
 	var deletedCol *manager_pb.Collection
-	if col, exists := ms.collections[req.Name]; exists {
+	if col, exists := ms.state.Collections[req.Name]; exists {
 		// Make a copy for notification (use proto.Clone to avoid copylocks)
 		deletedCol = proto.Clone(col).(*manager_pb.Collection)
 		deletedCol.IsDeleted = true
 		// CRITICAL: Update optimized lookup maps
-		ms.removeCollectionFromIndexes(col)
+		ms.state.RemoveCollectionFromIndexes(col)
 	}
 
-	delete(ms.collections, req.Name)
-	ms.collectionsVersion++
+	delete(ms.state.Collections, req.Name)
+	ms.state.CollectionsVersion++
 
 	logger.Info().
 		Str("collection", req.Name).
-		Uint64("version", ms.collectionsVersion).
+		Uint64("version", ms.state.CollectionsVersion).
 		Msg("Collection deleted via Raft")
 
-	ms.mu.Unlock()
+	ms.state.Unlock()
 
 	// Notify collection subscribers (for multi-region cache sync)
 	if deletedCol != nil {
@@ -423,32 +409,274 @@ func (ms *ManagerServer) applyUpdateCollection(data json.RawMessage) interface{}
 		return err
 	}
 
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
-	if existing, exists := ms.collections[col.Name]; exists {
+	if existing, exists := ms.state.Collections[col.Name]; exists {
 		// Remove from old indexes if owner or tier changed
 		if existing.Owner != col.Owner || existing.Tier != col.Tier {
-			ms.removeCollectionFromIndexes(existing)
+			ms.state.RemoveCollectionFromIndexes(existing)
 		}
 
 		// Update fields (preserve creation time)
 		col.CreatedAt = existing.CreatedAt
-		ms.collections[col.Name] = &col
+		ms.state.Collections[col.Name] = &col
 
 		// Add to new indexes if owner or tier changed
 		if existing.Owner != col.Owner || existing.Tier != col.Tier {
-			ms.addCollectionToIndexes(&col)
+			ms.state.AddCollectionToIndexes(&col)
 		}
 
-		ms.collectionsVersion++
+		ms.state.CollectionsVersion++
 
 		logger.Info().
 			Str("collection", col.Name).
 			Str("tier", col.Tier).
-			Uint64("version", ms.collectionsVersion).
+			Uint64("version", ms.state.CollectionsVersion).
 			Msg("Collection updated via Raft")
 	}
+
+	return nil
+}
+
+// ===== IAM APPLY HANDLERS =====
+
+// IAMCreateUserRequest is the Raft command data for creating a user.
+type IAMCreateUserRequest struct {
+	Identity *iam.Identity `json:"identity"`
+}
+
+// IAMDeleteUserRequest is the Raft command data for deleting a user.
+type IAMDeleteUserRequest struct {
+	UserName string `json:"user_name"`
+}
+
+// IAMCreateKeyRequest is the Raft command data for creating an access key.
+type IAMCreateKeyRequest struct {
+	UserName   string          `json:"user_name"`
+	Credential *iam.Credential `json:"credential"`
+}
+
+// IAMDeleteKeyRequest is the Raft command data for deleting an access key.
+type IAMDeleteKeyRequest struct {
+	UserName  string `json:"user_name"`
+	AccessKey string `json:"access_key"`
+}
+
+// IAMCreatePolicyRequest is the Raft command data for creating a policy.
+type IAMCreatePolicyRequest struct {
+	Policy *iam.Policy `json:"policy"`
+}
+
+// IAMDeletePolicyRequest is the Raft command data for deleting a policy.
+type IAMDeletePolicyRequest struct {
+	PolicyID string `json:"policy_id"`
+}
+
+func (ms *ManagerServer) applyIAMCreateUser(data json.RawMessage) interface{} {
+	var req IAMCreateUserRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	if req.Identity == nil {
+		return fmt.Errorf("identity is required")
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	// Check if user already exists
+	if _, exists := ms.state.IAMUsers[req.Identity.Name]; exists {
+		return fmt.Errorf("user %s already exists", req.Identity.Name)
+	}
+
+	ms.state.AddIAMUser(req.Identity)
+
+	logger.Info().
+		Str("user", req.Identity.Name).
+		Int("credentials", len(req.Identity.Credentials)).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM user created via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyIAMUpdateUser(data json.RawMessage) interface{} {
+	var req IAMCreateUserRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	if req.Identity == nil {
+		return fmt.Errorf("identity is required")
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	// Check if user exists
+	if _, exists := ms.state.IAMUsers[req.Identity.Name]; !exists {
+		return fmt.Errorf("user %s not found", req.Identity.Name)
+	}
+
+	ms.state.UpdateIAMUser(req.Identity)
+
+	logger.Info().
+		Str("user", req.Identity.Name).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM user updated via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyIAMDeleteUser(data json.RawMessage) interface{} {
+	var req IAMDeleteUserRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	if _, exists := ms.state.IAMUsers[req.UserName]; !exists {
+		return fmt.Errorf("user %s not found", req.UserName)
+	}
+
+	ms.state.RemoveIAMUser(req.UserName)
+
+	logger.Info().
+		Str("user", req.UserName).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM user deleted via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyIAMCreateKey(data json.RawMessage) interface{} {
+	var req IAMCreateKeyRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	identity, exists := ms.state.IAMUsers[req.UserName]
+	if !exists {
+		return fmt.Errorf("user %s not found", req.UserName)
+	}
+
+	// Check for duplicate access key
+	for _, cred := range identity.Credentials {
+		if cred.AccessKey == req.Credential.AccessKey {
+			return fmt.Errorf("access key %s already exists", req.Credential.AccessKey)
+		}
+	}
+
+	// Add the new credential
+	identity.Credentials = append(identity.Credentials, req.Credential)
+
+	// Update indexes
+	ms.state.IAMCredentialIndex[req.Credential.AccessKey] = req.UserName
+	ms.state.IAMVersion++
+
+	logger.Info().
+		Str("user", req.UserName).
+		Str("access_key", req.Credential.AccessKey).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM access key created via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyIAMDeleteKey(data json.RawMessage) interface{} {
+	var req IAMDeleteKeyRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	identity, exists := ms.state.IAMUsers[req.UserName]
+	if !exists {
+		return fmt.Errorf("user %s not found", req.UserName)
+	}
+
+	// Find and remove the credential
+	found := false
+	for i, cred := range identity.Credentials {
+		if cred.AccessKey == req.AccessKey {
+			identity.Credentials = append(identity.Credentials[:i], identity.Credentials[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("access key %s not found for user %s", req.AccessKey, req.UserName)
+	}
+
+	// Update indexes
+	delete(ms.state.IAMCredentialIndex, req.AccessKey)
+	ms.state.IAMVersion++
+
+	logger.Info().
+		Str("user", req.UserName).
+		Str("access_key", req.AccessKey).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM access key deleted via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyIAMCreatePolicy(data json.RawMessage) interface{} {
+	var req IAMCreatePolicyRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	if req.Policy == nil {
+		return fmt.Errorf("policy is required")
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	if _, exists := ms.state.IAMPolicies[req.Policy.ID]; exists {
+		return fmt.Errorf("policy %s already exists", req.Policy.ID)
+	}
+
+	ms.state.AddIAMPolicy(req.Policy)
+
+	logger.Info().
+		Str("policy", req.Policy.ID).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM policy created via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyIAMDeletePolicy(data json.RawMessage) interface{} {
+	var req IAMDeletePolicyRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	if _, exists := ms.state.IAMPolicies[req.PolicyID]; !exists {
+		return fmt.Errorf("policy %s not found", req.PolicyID)
+	}
+
+	ms.state.RemoveIAMPolicy(req.PolicyID)
+
+	logger.Info().
+		Str("policy", req.PolicyID).
+		Uint64("iam_version", ms.state.IAMVersion).
+		Msg("IAM policy deleted via Raft")
 
 	return nil
 }
@@ -554,6 +782,10 @@ type fsmSnapshot struct {
 	RegionID           string                            `json:"region_id"`
 	Collections        map[string]*manager_pb.Collection `json:"collections"`
 	CollectionsVersion uint64                            `json:"collections_version"`
+	// IAM state
+	IAMUsers    map[string]*iam.Identity `json:"iam_users,omitempty"`
+	IAMPolicies map[string]*iam.Policy   `json:"iam_policies,omitempty"`
+	IAMVersion  uint64                   `json:"iam_version,omitempty"`
 }
 
 func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
@@ -569,7 +801,7 @@ func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 		return err
 	}
 
-	logger.Info().Msg("Persisted FSM snapshot")
+	logger.Debug().Msg("Persisted FSM snapshot")
 	return nil
 }
 

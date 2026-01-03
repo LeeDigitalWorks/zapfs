@@ -13,6 +13,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/enterprise/kms"
 	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/spf13/viper"
 )
 
@@ -37,7 +38,7 @@ func getKMSBool(key string) bool {
 // initializeExternalKMS creates an external KMS provider from configuration.
 // This is only available in the enterprise edition with FeatureKMS license.
 // Configuration can come from CLI flags (--kms_provider) or TOML config ([kms] provider).
-func initializeExternalKMS(ctx context.Context) (*kms.Adapter, error) {
+func initializeExternalKMS(ctx context.Context) (encryption.KMSProvider, error) {
 	provider := getKMSString("provider")
 	if provider == "" {
 		return nil, nil // External KMS not configured

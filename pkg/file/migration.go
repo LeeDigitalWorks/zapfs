@@ -203,18 +203,18 @@ func (fs *FileServer) ReceiveChunk(stream file_pb.FileService_ReceiveChunkServer
 	}
 
 	// Get target backend
-	backend, ok := fs.store.GetBackend(backendID)
+	_, ok := fs.store.GetBackend(backendID)
 	if !ok {
 		// Fall back to default backend
-		backend = fs.store.GetDefaultBackend()
-		if backend == nil {
+		defaultBackend := fs.store.GetDefaultBackend()
+		if defaultBackend == nil {
 			return stream.SendAndClose(&file_pb.ReceiveChunkResponse{
 				Success: false,
 				Error:   "no backend available",
 				ChunkId: string(chunkID),
 			})
 		}
-		backendID = backend.ID
+		backendID = defaultBackend.ID
 	}
 
 	// Collect all data
@@ -249,7 +249,7 @@ func (fs *FileServer) ReceiveChunk(stream file_pb.FileService_ReceiveChunkServer
 		if string(actualChecksum) != expectedChecksum && string(chunkID) != expectedChecksum {
 			return stream.SendAndClose(&file_pb.ReceiveChunkResponse{
 				Success: false,
-				Error:   fmt.Sprintf("checksum mismatch"),
+				Error:   "checksum mismatch",
 				ChunkId: string(chunkID),
 			})
 		}

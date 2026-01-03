@@ -27,12 +27,24 @@ type TaskWorkerConfig struct {
 	ObjectService object.Service
 	RegionConfig  *manager.RegionConfig
 	Credentials   ReplicationCredentials
+
+	// Dependencies for event notification handler (enterprise only)
+	NotificationStore any                  // events.NotificationStore in enterprise
+	EventPublishers   EventPublisherConfig // Publisher configuration
 }
 
 // ReplicationCredentials provides credentials for cross-region replication.
 type ReplicationCredentials struct {
 	AccessKeyID     string
 	SecretAccessKey string
+}
+
+// EventPublisherConfig configures event notification publishers.
+type EventPublisherConfig struct {
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+	RedisChannel  string
 }
 
 // TaskWorkerManager is a stub for community edition.

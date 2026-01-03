@@ -8,10 +8,12 @@ package resiliency
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +23,7 @@ type ChunkRegistryEntry struct {
 	Size         int64
 	RefCount     int32
 	ZeroRefSince sql.NullInt64
-	CreatedAt    time.Time
+	CreatedAt    int64 // Unix timestamp
 }
 
 // ChunkReplica represents a row in the chunk_replicas table
@@ -29,30 +31,42 @@ type ChunkReplica struct {
 	ChunkID    string
 	ServerID   string
 	BackendID  string
-	VerifiedAt sql.NullTime
+	VerifiedAt int64 // Unix timestamp
 }
 
 // DBClient wraps a database connection for test queries
 type DBClient struct {
-	db *sql.DB
-	t  *testing.T
+	db         *sql.DB
+	t          *testing.T
+	isPostgres bool
 }
 
-// NewDBClient creates a database client for testing
+// NewDBClient creates a database client for testing.
+// Supports both MySQL and PostgreSQL DSNs:
+//   - MySQL: zapfs:zapfs@tcp(localhost:3306)/zapfs
+//   - PostgreSQL: postgres://zapfs:zapfs@localhost:5432/zapfs?sslmode=disable
 func NewDBClient(t *testing.T, dsn string) *DBClient {
 	t.Helper()
 
-	db, err := sql.Open("mysql", dsn)
-	require.NoError(t, err, "failed to open database connection")
+	// Detect driver from DSN
+	driver := "mysql"
+	isPostgres := false
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		driver = "postgres"
+		isPostgres = true
+	}
+
+	db, err := sql.Open(driver, dsn)
+	require.NoError(t, err, "failed to open %s database connection", driver)
 
 	err = db.Ping()
-	require.NoError(t, err, "failed to ping database")
+	require.NoError(t, err, "failed to ping %s database", driver)
 
 	t.Cleanup(func() {
 		db.Close()
 	})
 
-	return &DBClient{db: db, t: t}
+	return &DBClient{db: db, t: t, isPostgres: isPostgres}
 }
 
 // GetChunkRegistry queries the chunk_registry table for a specific chunk
@@ -62,9 +76,14 @@ func (c *DBClient) GetChunkRegistry(chunkID string) (*ChunkRegistryEntry, error)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT chunk_id, size, ref_count, zero_ref_since, created_at
-		FROM chunk_registry WHERE chunk_id = ?`
+	var query string
+	if c.isPostgres {
+		query = `SELECT chunk_id, size, ref_count, zero_ref_since, created_at
+			FROM chunk_registry WHERE chunk_id = $1`
+	} else {
+		query = `SELECT chunk_id, size, ref_count, zero_ref_since, created_at
+			FROM chunk_registry WHERE chunk_id = ?`
+	}
 
 	row := c.db.QueryRowContext(ctx, query, chunkID)
 
@@ -92,9 +111,14 @@ func (c *DBClient) GetChunkReplicas(chunkID string) ([]ChunkReplica, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT chunk_id, server_id, backend_id, verified_at
-		FROM chunk_replicas WHERE chunk_id = ?`
+	var query string
+	if c.isPostgres {
+		query = `SELECT chunk_id, server_id, backend_id, verified_at
+			FROM chunk_replicas WHERE chunk_id = $1`
+	} else {
+		query = `SELECT chunk_id, server_id, backend_id, verified_at
+			FROM chunk_replicas WHERE chunk_id = ?`
+	}
 
 	rows, err := c.db.QueryContext(ctx, query, chunkID)
 	if err != nil {
@@ -129,7 +153,12 @@ func (c *DBClient) CountChunksOnServer(serverID string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `SELECT COUNT(*) FROM chunk_replicas WHERE server_id = ?`
+	var query string
+	if c.isPostgres {
+		query = `SELECT COUNT(*) FROM chunk_replicas WHERE server_id = $1`
+	} else {
+		query = `SELECT COUNT(*) FROM chunk_replicas WHERE server_id = ?`
+	}
 	row := c.db.QueryRowContext(ctx, query, serverID)
 
 	var count int

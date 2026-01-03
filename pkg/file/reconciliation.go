@@ -111,7 +111,7 @@ func (rs *ReconciliationService) RunOnce(ctx context.Context) *ReconciliationRep
 		ServerID: rs.config.ServerID,
 	}
 
-	logger.Info().
+	logger.Debug().
 		Str("server_id", rs.config.ServerID).
 		Dur("grace_period", rs.config.GracePeriod).
 		Bool("dry_run", rs.config.DryRun).
@@ -127,7 +127,7 @@ func (rs *ReconciliationService) RunOnce(ctx context.Context) *ReconciliationRep
 	}
 	report.ExpectedChunks = int64(len(expectedChunks))
 
-	logger.Info().
+	logger.Debug().
 		Int("expected_chunks", len(expectedChunks)).
 		Msg("Received expected chunks from manager")
 
@@ -181,10 +181,6 @@ func (rs *ReconciliationService) RunOnce(ctx context.Context) *ReconciliationRep
 				// Continue with other chunks
 			} else {
 				orphansDeleted++
-				logger.Info().
-					Str("chunk_id", chunkIDStr).
-					Uint64("size", chunk.Size).
-					Msg("Deleted orphan chunk")
 			}
 		}
 

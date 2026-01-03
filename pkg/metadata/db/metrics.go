@@ -191,6 +191,13 @@ func (m *MetricsDB) ListDeletedObjects(ctx context.Context, olderThan int64, lim
 	return objs, err
 }
 
+func (m *MetricsDB) UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error {
+	start := time.Now()
+	err := m.db.UpdateObjectTransition(ctx, objectID, storageClass, transitionedAt, transitionedRef)
+	recordMetric("update_object_transition", start, err)
+	return err
+}
+
 // ============================================================================
 // BucketStore implementation
 // ============================================================================
@@ -786,6 +793,13 @@ func (m *metricsTxStore) ListDeletedObjects(ctx context.Context, olderThan int64
 	objs, err := m.tx.ListDeletedObjects(ctx, olderThan, limit)
 	recordMetric("tx_list_deleted_objects", start, err)
 	return objs, err
+}
+
+func (m *metricsTxStore) UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error {
+	start := time.Now()
+	err := m.tx.UpdateObjectTransition(ctx, objectID, storageClass, transitionedAt, transitionedRef)
+	recordMetric("tx_update_object_transition", start, err)
+	return err
 }
 
 func (m *metricsTxStore) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {

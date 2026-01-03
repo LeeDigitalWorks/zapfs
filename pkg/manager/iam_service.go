@@ -19,19 +19,45 @@ import (
 
 // GetCredential retrieves a credential by access key
 func (ms *ManagerServer) GetCredential(ctx context.Context, req *iam_pb.GetCredentialRequest) (*iam_pb.GetCredentialResponse, error) {
-	identity, cred, found := ms.iamService.LookupByAccessKey(ctx, req.AccessKey)
-	if !found {
-		return &iam_pb.GetCredentialResponse{
-			Found:   false,
-			Version: ms.iamVersion.Load(),
-		}, nil
+	// Try Raft store first (primary)
+	if ms.raftCredStore != nil {
+		identity, cred, err := ms.raftCredStore.GetCredential(ctx, req.AccessKey)
+		if err == nil {
+			return &iam_pb.GetCredentialResponse{
+				Credential: ms.identityToProto(identity, cred, req.IncludeSecret),
+				Found:      true,
+				Version:    ms.getIAMVersion(),
+			}, nil
+		}
+	}
+
+	// Fallback to legacy iamService
+	if ms.iamService != nil {
+		identity, cred, found := ms.iamService.LookupByAccessKey(ctx, req.AccessKey)
+		if found {
+			return &iam_pb.GetCredentialResponse{
+				Credential: ms.identityToProto(identity, cred, req.IncludeSecret),
+				Found:      true,
+				Version:    ms.iamVersion.Load(),
+			}, nil
+		}
 	}
 
 	return &iam_pb.GetCredentialResponse{
-		Credential: ms.identityToProto(identity, cred, req.IncludeSecret),
-		Found:      true,
-		Version:    ms.iamVersion.Load(),
+		Found:   false,
+		Version: ms.getIAMVersion(),
 	}, nil
+}
+
+// getIAMVersion returns the current IAM version from Raft or legacy store
+func (ms *ManagerServer) getIAMVersion() uint64 {
+	if ms.raftCredStore != nil {
+		raftVersion := ms.raftCredStore.GetVersion()
+		if raftVersion > 0 {
+			return raftVersion
+		}
+	}
+	return ms.iamVersion.Load()
 }
 
 // StreamCredentials streams credential changes to metadata services in real-time
@@ -82,21 +108,110 @@ func (ms *ManagerServer) StreamCredentials(req *iam_pb.StreamCredentialsRequest,
 // sendCatchUpEvents sends credentials updated since the given timestamp
 func (ms *ManagerServer) sendCatchUpEvents(stream iam_pb.IAMService_StreamCredentialsServer, sinceVersion uint64) error {
 	sinceTime := time.Unix(0, int64(sinceVersion))
+	ctx := stream.Context()
+	sentKeys := make(map[string]bool) // Track sent access keys to avoid duplicates
 
-	users, err := ms.iamService.ListUsers(stream.Context())
-	if err != nil {
-		return err
+	// Send from Raft store first
+	if ms.raftCredStore != nil {
+		identities, err := ms.raftCredStore.ListCredentials(ctx)
+		if err == nil {
+			for _, identity := range identities {
+				for _, cred := range identity.Credentials {
+					if cred.CreatedAt.After(sinceTime) {
+						event := &iam_pb.CredentialEvent{
+							Type:       iam_pb.CredentialEvent_EVENT_TYPE_CREATED,
+							Credential: ms.identityToProto(identity, cred, true),
+							Version:    ms.getIAMVersion(),
+							Timestamp:  timestamppb.Now(),
+						}
+						if err := stream.Send(event); err != nil {
+							return err
+						}
+						sentKeys[cred.AccessKey] = true
+					}
+				}
+			}
+		}
 	}
 
-	for _, username := range users {
-		identity, err := ms.iamService.GetUser(stream.Context(), username)
+	// Fallback to legacy service for any credentials not in Raft
+	if ms.iamService != nil {
+		users, err := ms.iamService.ListUsers(ctx)
 		if err != nil {
-			continue
+			return nil // Non-fatal, Raft already sent
 		}
 
-		for _, cred := range identity.Credentials {
-			// Only send credentials created/updated after sinceVersion
-			if cred.CreatedAt.After(sinceTime) {
+		for _, username := range users {
+			identity, err := ms.iamService.GetUser(ctx, username)
+			if err != nil {
+				continue
+			}
+
+			for _, cred := range identity.Credentials {
+				if sentKeys[cred.AccessKey] {
+					continue // Already sent from Raft
+				}
+				if cred.CreatedAt.After(sinceTime) {
+					event := &iam_pb.CredentialEvent{
+						Type:       iam_pb.CredentialEvent_EVENT_TYPE_CREATED,
+						Credential: ms.identityToProto(identity, cred, true),
+						Version:    ms.iamVersion.Load(),
+						Timestamp:  timestamppb.Now(),
+					}
+					if err := stream.Send(event); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// sendAllCredentials sends all credentials (for initial sync)
+func (ms *ManagerServer) sendAllCredentials(stream iam_pb.IAMService_StreamCredentialsServer) error {
+	ctx := stream.Context()
+	sentKeys := make(map[string]bool) // Track sent access keys to avoid duplicates
+
+	// Send from Raft store first
+	if ms.raftCredStore != nil {
+		identities, err := ms.raftCredStore.ListCredentials(ctx)
+		if err == nil {
+			for _, identity := range identities {
+				for _, cred := range identity.Credentials {
+					event := &iam_pb.CredentialEvent{
+						Type:       iam_pb.CredentialEvent_EVENT_TYPE_CREATED,
+						Credential: ms.identityToProto(identity, cred, true),
+						Version:    ms.getIAMVersion(),
+						Timestamp:  timestamppb.Now(),
+					}
+					if err := stream.Send(event); err != nil {
+						return err
+					}
+					sentKeys[cred.AccessKey] = true
+				}
+			}
+		}
+	}
+
+	// Fallback to legacy service for any credentials not in Raft
+	if ms.iamService != nil {
+		users, err := ms.iamService.ListUsers(ctx)
+		if err != nil {
+			return nil // Non-fatal, Raft already sent
+		}
+
+		for _, username := range users {
+			identity, err := ms.iamService.GetUser(ctx, username)
+			if err != nil {
+				continue
+			}
+
+			for _, cred := range identity.Credentials {
+				if sentKeys[cred.AccessKey] {
+					continue // Already sent from Raft
+				}
 				event := &iam_pb.CredentialEvent{
 					Type:       iam_pb.CredentialEvent_EVENT_TYPE_CREATED,
 					Credential: ms.identityToProto(identity, cred, true),
@@ -113,52 +228,49 @@ func (ms *ManagerServer) sendCatchUpEvents(stream iam_pb.IAMService_StreamCreden
 	return nil
 }
 
-// sendAllCredentials sends all credentials (for initial sync)
-func (ms *ManagerServer) sendAllCredentials(stream iam_pb.IAMService_StreamCredentialsServer) error {
-	users, err := ms.iamService.ListUsers(stream.Context())
-	if err != nil {
-		return err
-	}
-
-	for _, username := range users {
-		identity, err := ms.iamService.GetUser(stream.Context(), username)
-		if err != nil {
-			continue
-		}
-
-		for _, cred := range identity.Credentials {
-			event := &iam_pb.CredentialEvent{
-				Type:       iam_pb.CredentialEvent_EVENT_TYPE_CREATED,
-				Credential: ms.identityToProto(identity, cred, true),
-				Version:    ms.iamVersion.Load(),
-				Timestamp:  timestamppb.Now(),
-			}
-			if err := stream.Send(event); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
 // ListCredentials returns all credentials for initial sync
 func (ms *ManagerServer) ListCredentials(req *iam_pb.ListCredentialsRequest, stream iam_pb.IAMService_ListCredentialsServer) error {
-	users, err := ms.iamService.ListUsers(stream.Context())
-	if err != nil {
-		return err
+	ctx := stream.Context()
+	sentKeys := make(map[string]bool) // Track sent access keys to avoid duplicates
+
+	// Send from Raft store first
+	if ms.raftCredStore != nil {
+		identities, err := ms.raftCredStore.ListCredentials(ctx)
+		if err == nil {
+			for _, identity := range identities {
+				for _, cred := range identity.Credentials {
+					if req.StatusFilter == "" || cred.Status == req.StatusFilter {
+						if err := stream.Send(ms.identityToProto(identity, cred, true)); err != nil {
+							return err
+						}
+						sentKeys[cred.AccessKey] = true
+					}
+				}
+			}
+		}
 	}
 
-	for _, username := range users {
-		identity, err := ms.iamService.GetUser(stream.Context(), username)
+	// Fallback to legacy service for any credentials not in Raft
+	if ms.iamService != nil {
+		users, err := ms.iamService.ListUsers(ctx)
 		if err != nil {
-			continue
+			return nil // Non-fatal, Raft already sent
 		}
 
-		for _, cred := range identity.Credentials {
-			if req.StatusFilter == "" || cred.Status == req.StatusFilter {
-				if err := stream.Send(ms.identityToProto(identity, cred, true)); err != nil {
-					return err
+		for _, username := range users {
+			identity, err := ms.iamService.GetUser(ctx, username)
+			if err != nil {
+				continue
+			}
+
+			for _, cred := range identity.Credentials {
+				if sentKeys[cred.AccessKey] {
+					continue // Already sent from Raft
+				}
+				if req.StatusFilter == "" || cred.Status == req.StatusFilter {
+					if err := stream.Send(ms.identityToProto(identity, cred, true)); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -169,19 +281,41 @@ func (ms *ManagerServer) ListCredentials(req *iam_pb.ListCredentialsRequest, str
 
 // GetIAMVersion returns the current IAM data version
 func (ms *ManagerServer) GetIAMVersion(ctx context.Context, req *iam_pb.GetIAMVersionRequest) (*iam_pb.GetIAMVersionResponse, error) {
-	users, _ := ms.iamService.ListUsers(ctx)
-
 	var credCount uint64
-	for _, username := range users {
-		if identity, err := ms.iamService.GetUser(ctx, username); err == nil {
-			credCount += uint64(len(identity.Credentials))
+
+	// Count from Raft store first
+	if ms.raftCredStore != nil {
+		identities, err := ms.raftCredStore.ListCredentials(ctx)
+		if err == nil {
+			for _, identity := range identities {
+				credCount += uint64(len(identity.Credentials))
+			}
 		}
 	}
 
+	// Add from legacy service (if any credentials not in Raft)
+	if ms.iamService != nil {
+		users, _ := ms.iamService.ListUsers(ctx)
+		for _, username := range users {
+			if identity, err := ms.iamService.GetUser(ctx, username); err == nil {
+				// Only count credentials not already counted from Raft
+				for _, cred := range identity.Credentials {
+					if ms.raftCredStore != nil {
+						if _, _, err := ms.raftCredStore.GetCredential(ctx, cred.AccessKey); err == nil {
+							continue // Already counted from Raft
+						}
+					}
+					credCount++
+				}
+			}
+		}
+	}
+
+	version := ms.getIAMVersion()
 	return &iam_pb.GetIAMVersionResponse{
-		Version:         ms.iamVersion.Load(),
+		Version:         version,
 		CredentialCount: credCount,
-		LastUpdated:     timestamppb.New(time.Unix(0, int64(ms.iamVersion.Load()))),
+		LastUpdated:     timestamppb.New(time.Unix(0, int64(version))),
 	}, nil
 }
 

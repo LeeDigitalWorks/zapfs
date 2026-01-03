@@ -13,6 +13,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -29,7 +30,6 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 
-	"github.com/google/btree"
 	"google.golang.org/grpc"
 )
 
@@ -49,29 +49,13 @@ type ManagerServer struct {
 	manager_pb.UnimplementedManagerServiceServer
 	iam_pb.UnimplementedIAMServiceServer
 
-	mu               sync.RWMutex
-	fileServices     map[string]*ServiceRegistration
-	metadataServices map[string]*ServiceRegistration
-	topologyVersion  uint64
-
-	// Collections (storage namespaces / buckets)
-	collections        map[string]*manager_pb.Collection
-	collectionsVersion uint64
-
-	// Optimized collection lookups
-	collectionsByOwner   map[string][]string
-	ownerCollectionCount map[string]int
-	collectionsByTier    map[string][]string
-	collectionsByTime    *btree.BTree
-
-	// Configuration
-	placementPolicy *manager_pb.PlacementPolicy
-	regionID        string
+	// Raft-replicated state (isolated for clean snapshots)
+	state *FSMState
 
 	// Multi-region support (enterprise)
-	regionConfig *RegionConfig  // Multi-region configuration (nil = single-region mode)
-	regionClient *RegionClient  // Cross-region forwarding client (nil = single-region mode)
-	regionSyncer *RegionSyncer  // Periodic cache sync from primary (nil = single-region mode)
+	regionConfig *RegionConfig // Multi-region configuration (nil = single-region mode)
+	regionClient *RegionClient // Cross-region forwarding client (nil = single-region mode)
+	regionSyncer *RegionSyncer // Periodic cache sync from primary (nil = single-region mode)
 
 	// Raft (embedded consensus)
 	raftNode *RaftNode
@@ -80,14 +64,16 @@ type ManagerServer struct {
 	licenseChecker license.Checker
 
 	// Cached cluster capacity (updated via heartbeats)
-	clusterCapacity ClusterCapacity
+	clusterCapacity   ClusterCapacity
+	clusterCapacityMu sync.RWMutex
 
 	// IAM - centralized credential management
-	iamService   *iam.Service
-	iamVersion   atomic.Uint64                           // Unix timestamp in nanos
-	iamSubsMu    sync.RWMutex                            // Protects subscribers
-	iamSubs      map[uint64]chan *iam_pb.CredentialEvent // Subscriber channels
-	iamNextSubID atomic.Uint64
+	iamService    *iam.Service            // Legacy service for TOML/config-based credentials
+	raftCredStore *RaftCredentialStore    // Raft-backed credential store (primary)
+	iamVersion    atomic.Uint64           // Unix timestamp in nanos
+	iamSubsMu     sync.RWMutex            // Protects subscribers
+	iamSubs       map[uint64]chan *iam_pb.CredentialEvent // Subscriber channels
+	iamNextSubID  atomic.Uint64
 
 	// Topology watch subscribers (PUSH-based updates)
 	topoSubsMu    sync.RWMutex
@@ -103,7 +89,8 @@ type ManagerServer struct {
 	leaderForwarder *LeaderForwarder
 
 	// Data loss detection / recovery
-	collectionsRecoveryRequired bool // Set true if data loss detected, freezes bucket creates
+	collectionsRecoveryRequired   bool // Set true if data loss detected, freezes bucket creates
+	collectionsRecoveryRequiredMu sync.RWMutex
 
 	// Metadata client pool for reconciliation queries
 	metadataClientPool *pool.Pool[metadata_pb.MetadataServiceClient]
@@ -146,27 +133,15 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 	}
 
 	ms := &ManagerServer{
-		regionID:             regionID,
-		fileServices:         make(map[string]*ServiceRegistration),
-		metadataServices:     make(map[string]*ServiceRegistration),
-		collections:          make(map[string]*manager_pb.Collection),
-		collectionsVersion:   1,
-		collectionsByOwner:   make(map[string][]string),
-		ownerCollectionCount: make(map[string]int),
-		collectionsByTier:    make(map[string][]string),
-		collectionsByTime:    btree.New(2),
-		placementPolicy: &manager_pb.PlacementPolicy{
-			NumReplicas: defaultNumReplicas,
-		},
-		topologyVersion:      1,
-		leaderForwarder:      NewLeaderForwarder(),
-		iamService:           iamService,
-		licenseChecker:       licenseChecker,
-		iamSubs:              make(map[uint64]chan *iam_pb.CredentialEvent),
-		topoSubs:             make(map[uint64]chan *manager_pb.TopologyEvent),
-		colSubs:              make(map[uint64]chan *manager_pb.CollectionEvent),
-		metadataClientPool:   pool.NewPool(metadataClientFactory),
-		shutdownCh:           make(chan struct{}),
+		state:              NewFSMState(regionID, defaultNumReplicas),
+		leaderForwarder:   NewLeaderForwarder(),
+		iamService:        iamService,
+		licenseChecker:    licenseChecker,
+		iamSubs:           make(map[uint64]chan *iam_pb.CredentialEvent),
+		topoSubs:          make(map[uint64]chan *manager_pb.TopologyEvent),
+		colSubs:           make(map[uint64]chan *manager_pb.CollectionEvent),
+		metadataClientPool: pool.NewPool(metadataClientFactory),
+		shutdownCh:        make(chan struct{}),
 	}
 
 	// Initialize IAM version to current timestamp (nanoseconds)
@@ -177,6 +152,9 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 		return nil, fmt.Errorf("failed to create raft node: %w", err)
 	}
 	ms.raftNode = raftNode
+
+	// Initialize Raft-backed credential store
+	ms.raftCredStore = NewRaftCredentialStore(ms)
 
 	if err := raftNode.WaitForLeader(leaderTimeout); err != nil {
 		logger.Warn().Err(err).Msg("No leader elected yet")
@@ -254,44 +232,49 @@ func (ms *ManagerServer) ConfigureBackupScheduler(config BackupSchedulerConfig) 
 // checkDataLossCondition checks if metadata services have buckets but manager has none.
 // This indicates potential data loss (Raft data corrupted/deleted but metadata DBs intact).
 // If detected, sets collectionsRecoveryRequired to freeze bucket creates.
-// IMPORTANT: Must be called while holding ms.mu lock.
+// IMPORTANT: Must be called while holding state lock.
 func (ms *ManagerServer) checkDataLossCondition(serviceID string, metadataBucketCount uint64) {
 	// Only check if manager has 0 collections and metadata has some
-	if len(ms.collections) == 0 && metadataBucketCount > 0 {
+	if len(ms.state.Collections) == 0 && metadataBucketCount > 0 {
+		ms.collectionsRecoveryRequiredMu.Lock()
 		if !ms.collectionsRecoveryRequired {
 			// First detection - log critical error and set flag
 			logger.Error().
 				Str("service_id", serviceID).
 				Uint64("metadata_buckets", metadataBucketCount).
-				Int("manager_collections", len(ms.collections)).
+				Int("manager_collections", len(ms.state.Collections)).
 				Msg("DATA LOSS DETECTED: metadata service has buckets but manager has 0 collections. " +
 					"Bucket creates frozen until recovery. Use 'zapfs manager recover' to restore.")
 			ms.collectionsRecoveryRequired = true
 			ManagerDataLossDetected.Set(1)
 			ManagerRecoveryRequired.Set(1)
 		}
+		ms.collectionsRecoveryRequiredMu.Unlock()
 	}
 
 	// Update collections metric
-	ManagerCollectionsTotal.Set(float64(len(ms.collections)))
+	ManagerCollectionsTotal.Set(float64(len(ms.state.Collections)))
 }
 
 // IsRecoveryRequired returns true if the manager detected data loss and
 // bucket creates are frozen pending recovery.
 func (ms *ManagerServer) IsRecoveryRequired() bool {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.collectionsRecoveryRequiredMu.RLock()
+	defer ms.collectionsRecoveryRequiredMu.RUnlock()
 	return ms.collectionsRecoveryRequired
 }
 
 // ClearRecoveryMode clears the recovery required flag after successful recovery.
 // This should only be called after explicit recovery operation.
 func (ms *ManagerServer) ClearRecoveryMode() {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.collectionsRecoveryRequiredMu.Lock()
+	defer ms.collectionsRecoveryRequiredMu.Unlock()
 	if ms.collectionsRecoveryRequired {
+		ms.state.RLock()
+		collCount := len(ms.state.Collections)
+		ms.state.RUnlock()
 		logger.Info().
-			Int("collections", len(ms.collections)).
+			Int("collections", collCount).
 			Msg("Recovery mode cleared - bucket creates enabled")
 		ms.collectionsRecoveryRequired = false
 		ManagerDataLossDetected.Set(0)
@@ -302,6 +285,74 @@ func (ms *ManagerServer) ClearRecoveryMode() {
 // GetIAMService returns the IAM service
 func (ms *ManagerServer) GetIAMService() *iam.Service {
 	return ms.iamService
+}
+
+// GetRaftCredentialStore returns the Raft-backed credential store
+func (ms *ManagerServer) GetRaftCredentialStore() *RaftCredentialStore {
+	return ms.raftCredStore
+}
+
+// BootstrapIAMFromConfig bootstraps IAM credentials from the legacy config (TOML) into Raft.
+// This should be called once on the leader after cluster initialization.
+// If Raft already has IAM users, this is a no-op.
+func (ms *ManagerServer) BootstrapIAMFromConfig(ctx context.Context) error {
+	if ms.iamService == nil {
+		logger.Info().Msg("No legacy IAM service configured, skipping bootstrap")
+		return nil
+	}
+
+	// Check if Raft already has users
+	if ms.raftCredStore.HasUsers() {
+		logger.Info().Msg("IAM state exists in Raft, skipping TOML bootstrap")
+		return nil
+	}
+
+	// Must be leader to bootstrap
+	if !ms.raftNode.IsLeader() {
+		logger.Info().Msg("Not leader, skipping IAM bootstrap")
+		return nil
+	}
+
+	// Get all users from legacy service
+	users, err := ms.iamService.ListUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list users from legacy service: %w", err)
+	}
+
+	if len(users) == 0 {
+		logger.Info().Msg("No users in legacy IAM config to bootstrap")
+		return nil
+	}
+
+	logger.Info().Int("users", len(users)).Msg("Bootstrapping IAM from TOML config into Raft")
+
+	for _, username := range users {
+		identity, err := ms.iamService.GetUser(ctx, username)
+		if err != nil {
+			logger.Warn().Err(err).Str("user", username).Msg("Failed to get user from legacy service")
+			continue
+		}
+
+		// Ensure credentials are encrypted before storing in Raft
+		for _, cred := range identity.Credentials {
+			if len(cred.EncryptedSecret) == 0 && cred.SecretKey != "" {
+				if err := iam.SecureCredential(cred); err != nil {
+					logger.Warn().Err(err).Str("user", username).Msg("Failed to encrypt credential")
+					continue
+				}
+			}
+		}
+
+		if err := ms.raftCredStore.CreateUser(ctx, identity); err != nil {
+			logger.Warn().Err(err).Str("user", username).Msg("Failed to create user in Raft")
+			continue
+		}
+
+		logger.Info().Str("user", username).Int("credentials", len(identity.Credentials)).Msg("Bootstrapped user into Raft")
+	}
+
+	logger.Info().Int("users", len(users)).Msg("IAM bootstrap complete")
+	return nil
 }
 
 // IsClusterReady returns true if the Raft cluster has an elected leader
@@ -389,13 +440,13 @@ func (ms *ManagerServer) healthCheckLoop() {
 }
 
 func (ms *ManagerServer) checkServiceHealth(timeout time.Duration) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
 	now := time.Now()
 	var offlineServices []*manager_pb.ServiceInfo
 
-	for id, reg := range ms.fileServices {
+	for id, reg := range ms.state.FileServices {
 		if now.Sub(reg.LastHeartbeat) > timeout && reg.Status == ServiceActive {
 			logger.Info().Msgf("File service %s is OFFLINE (no heartbeat for %v)", id, now.Sub(reg.LastHeartbeat))
 			reg.Status = ServiceOffline
@@ -406,7 +457,7 @@ func (ms *ManagerServer) checkServiceHealth(timeout time.Duration) {
 		}
 	}
 
-	for id, reg := range ms.metadataServices {
+	for id, reg := range ms.state.MetadataServices {
 		if now.Sub(reg.LastHeartbeat) > timeout && reg.Status == ServiceActive {
 			logger.Info().Msgf("Metadata service %s is OFFLINE (no heartbeat for %v)", id, now.Sub(reg.LastHeartbeat))
 			reg.Status = ServiceOffline
@@ -418,8 +469,8 @@ func (ms *ManagerServer) checkServiceHealth(timeout time.Duration) {
 	}
 
 	if len(offlineServices) > 0 {
-		ms.topologyVersion++
-		logger.Info().Msgf("Topology version updated to %d", ms.topologyVersion)
+		ms.state.TopologyVersion++
+		logger.Info().Msgf("Topology version updated to %d", ms.state.TopologyVersion)
 
 		// Notify topology subscribers (PUSH update)
 		ms.notifyTopologySubscribers(manager_pb.TopologyEvent_SERVICE_REMOVED, offlineServices)
@@ -427,10 +478,7 @@ func (ms *ManagerServer) checkServiceHealth(timeout time.Duration) {
 }
 
 func (ms *ManagerServer) getRegistry(serviceType manager_pb.ServiceType) map[string]*ServiceRegistration {
-	if serviceType == manager_pb.ServiceType_FILE_SERVICE {
-		return ms.fileServices
-	}
-	return ms.metadataServices
+	return ms.state.GetRegistry(serviceType)
 }
 
 // deriveServiceID creates a stable service identifier.
@@ -448,12 +496,12 @@ func deriveServiceID(serviceType manager_pb.ServiceType, location *common_pb.Loc
 // ===== CLUSTER CAPACITY & LICENSE ENFORCEMENT =====
 
 // updateClusterCapacity recalculates and caches cluster-wide capacity from file services.
-// Should be called with ms.mu held (write lock).
+// Should be called with state lock held (read lock is sufficient).
 func (ms *ManagerServer) updateClusterCapacity() {
 	var totalBytes, usedBytes uint64
 	var activeServices int
 
-	for _, reg := range ms.fileServices {
+	for _, reg := range ms.state.FileServices {
 		if reg.Status != ServiceActive {
 			continue
 		}
@@ -467,12 +515,14 @@ func (ms *ManagerServer) updateClusterCapacity() {
 		}
 	}
 
+	ms.clusterCapacityMu.Lock()
 	ms.clusterCapacity = ClusterCapacity{
 		TotalBytes:   totalBytes,
 		UsedBytes:    usedBytes,
 		UpdatedAt:    time.Now(),
 		FileServices: activeServices,
 	}
+	ms.clusterCapacityMu.Unlock()
 
 	logger.Debug().
 		Str("total", humanize.IBytes(totalBytes)).
@@ -484,18 +534,18 @@ func (ms *ManagerServer) updateClusterCapacity() {
 // GetClusterCapacity returns the cached cluster capacity metrics.
 // This is O(1) and safe for frequent reads.
 func (ms *ManagerServer) GetClusterCapacity() ClusterCapacity {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.clusterCapacityMu.RLock()
+	defer ms.clusterCapacityMu.RUnlock()
 	return ms.clusterCapacity
 }
 
 // GetActiveFileServiceCount returns the number of active file services.
 func (ms *ManagerServer) GetActiveFileServiceCount() int {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	count := 0
-	for _, reg := range ms.fileServices {
+	for _, reg := range ms.state.FileServices {
 		if reg.Status == ServiceActive {
 			count++
 		}

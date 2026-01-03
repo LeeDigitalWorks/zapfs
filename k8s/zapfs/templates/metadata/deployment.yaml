@@ -102,6 +102,32 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if not .Values.metadata.affinity }}
+      affinity:
+        # Anti-affinity: spread metadata servers across nodes for HA
+        podAntiAffinity:
+          {{- if .Values.metadata.antiAffinityStrict }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "zapfs.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: metadata
+            topologyKey: kubernetes.io/hostname
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "zapfs.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: metadata
+              topologyKey: kubernetes.io/hostname
+          {{- end }}
+      {{- end }}
+      {{- with .Values.metadata.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.metadata.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}

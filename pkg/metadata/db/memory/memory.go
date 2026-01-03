@@ -271,6 +271,23 @@ func (d *DB) ListDeletedObjects(ctx context.Context, olderThan int64, limit int)
 	return result, nil
 }
 
+// UpdateObjectTransition updates an object's storage class and transition metadata.
+func (d *DB) UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for key, obj := range d.objects {
+		if obj.ID.String() == objectID {
+			obj.StorageClass = storageClass
+			obj.TransitionedAt = transitionedAt
+			obj.TransitionedRef = transitionedRef
+			d.objects[key] = obj
+			return nil
+		}
+	}
+	return db.ErrObjectNotFound
+}
+
 // ============================================================================
 // Bucket Operations
 // ============================================================================

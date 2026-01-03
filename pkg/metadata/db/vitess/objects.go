@@ -29,7 +29,7 @@ func (v *Vitess) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ? AND object_key = ? AND is_latest = 1 AND deleted_at = 0
 	`, bucket, key)
@@ -39,7 +39,7 @@ func (v *Vitess) GetObject(ctx context.Context, bucket, key string) (*types.Obje
 
 func (v *Vitess) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE id = ?
 	`, id.String())
@@ -102,7 +102,7 @@ func (v *Vitess) ListObjectsV2(ctx context.Context, params *db.ListObjectsParams
 
 	// Build efficient query with proper indexes
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ?
 		  AND object_key LIKE ?
@@ -188,7 +188,7 @@ func (v *Vitess) ListObjectsV2(ctx context.Context, params *db.ListObjectsParams
 
 func (v *Vitess) ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE deleted_at > 0 AND deleted_at < ?
 		ORDER BY deleted_at
@@ -207,4 +207,28 @@ func (v *Vitess) ListDeletedObjects(ctx context.Context, olderThan int64, limit 
 	defer rows.Close()
 
 	return scanObjects(rows)
+}
+
+// UpdateObjectTransition updates an object's storage class and transition metadata.
+func (v *Vitess) UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error {
+	query := `
+		UPDATE objects
+		SET storage_class = ?, transitioned_at = ?, transitioned_ref = ?
+		WHERE id = ?
+	`
+
+	result, err := v.db.ExecContext(ctx, query, storageClass, transitionedAt, transitionedRef, objectID)
+	if err != nil {
+		return fmt.Errorf("update object transition: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return db.ErrObjectNotFound
+	}
+
+	return nil
 }

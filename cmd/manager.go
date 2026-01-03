@@ -368,6 +368,7 @@ func startManagerAdminServer(opts ManagerServerOpts, ms *manager.ManagerServer, 
 	// Mount IAM admin handlers (uses ManagerServer to notify subscribers on changes)
 	iamHandler := manager.NewIAMAdminHandler(ms.GetIAMService())
 	iamHandler.SetNotifier(ms) // ManagerServer implements CredentialNotifier
+	iamHandler.SetRaftStore(ms.GetRaftCredentialStore()) // Use Raft for mutations (Phase 2)
 	mux.Handle("/v1/iam/", iamHandler)
 
 	// Register OIDC handlers if configured (enterprise feature)

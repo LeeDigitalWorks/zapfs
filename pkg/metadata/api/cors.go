@@ -82,8 +82,6 @@ func (s *MetadataServer) PutBucketCorsHandler(d *data.Data, w http.ResponseWrite
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
-
-	logger.Info().Str("bucket", d.S3Info.Bucket).Int("rules", len(cors.Rules)).Msg("bucket CORS updated")
 }
 
 // DeleteBucketCorsHandler removes the CORS configuration for a bucket.
@@ -107,8 +105,6 @@ func (s *MetadataServer) DeleteBucketCorsHandler(d *data.Data, w http.ResponseWr
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
-
-	logger.Info().Str("bucket", d.S3Info.Bucket).Msg("bucket CORS deleted")
 }
 
 // OptionsPreflightHandler handles CORS preflight OPTIONS requests.

@@ -1,0 +1,46 @@
+# PostgreSQL override for minimal cluster
+# Usage: docker compose -f docker-compose.minimal.yml -f docker-compose.minimal.postgres.yml up -d
+#
+# This replaces MySQL with PostgreSQL and reconfigures the metadata service
+
+services:
+  metadata:
+    command:
+      - metadata
+      - --ip=0.0.0.0
+      - --http_port=8082
+      - --grpc_port=8083
+      - --debug_port=8085
+      - --db_driver=postgres
+      - --db_dsn=postgres://zapfs:zapfs@postgres:5432/zapfs?sslmode=disable
+      - --manager_addr=manager:8050
+    depends_on:
+      postgres:
+        condition: service_healthy
+      manager:
+        condition: service_healthy
+
+  # Disable MySQL
+  mysql:
+    profiles: ["disabled"]
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: zapfs
+      POSTGRES_USER: zapfs
+      POSTGRES_PASSWORD: zapfs
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - zapfs-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zapfs -d zapfs"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

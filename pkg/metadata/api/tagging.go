@@ -79,8 +79,6 @@ func (s *MetadataServer) PutBucketTaggingHandler(d *data.Data, w http.ResponseWr
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
-
-	logger.Info().Str("bucket", d.S3Info.Bucket).Int("tags", len(tagSet.Tags)).Msg("bucket tagging updated")
 }
 
 // DeleteBucketTaggingHandler removes the tag set for a bucket.
@@ -104,8 +102,6 @@ func (s *MetadataServer) DeleteBucketTaggingHandler(d *data.Data, w http.Respons
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
-
-	logger.Info().Str("bucket", d.S3Info.Bucket).Msg("bucket tagging deleted")
 }
 
 // GetObjectTaggingHandler returns the tag set for an object.
@@ -177,8 +173,6 @@ func (s *MetadataServer) PutObjectTaggingHandler(d *data.Data, w http.ResponseWr
 		w.Header().Set("x-amz-version-id", result.VersionID)
 	}
 	w.WriteHeader(http.StatusOK)
-
-	logger.Info().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Int("tags", len(tagSet.Tags)).Msg("object tagging updated")
 }
 
 // DeleteObjectTaggingHandler removes the tag set for an object.
@@ -206,6 +200,4 @@ func (s *MetadataServer) DeleteObjectTaggingHandler(d *data.Data, w http.Respons
 		w.Header().Set("x-amz-version-id", result.VersionID)
 	}
 	w.WriteHeader(http.StatusNoContent)
-
-	logger.Info().Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("object tagging deleted")
 }

@@ -14,8 +14,7 @@ import (
 
 func TestReportReconciliation(t *testing.T) {
 	ms := &ManagerServer{
-		fileServices:     make(map[string]*ServiceRegistration),
-		metadataServices: make(map[string]*ServiceRegistration),
+		state: NewFSMState("test-region", 3),
 	}
 
 	ctx := context.Background()
@@ -41,7 +40,7 @@ func TestReportReconciliation(t *testing.T) {
 
 func TestGetMetadataServiceAddress_NoServices(t *testing.T) {
 	ms := &ManagerServer{
-		metadataServices: make(map[string]*ServiceRegistration),
+		state: NewFSMState("test-region", 3),
 	}
 
 	addr, err := ms.getMetadataServiceAddress()

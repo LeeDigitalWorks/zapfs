@@ -45,8 +45,16 @@ type StoragePool struct {
 	// Region for cloud backends
 	Region string `json:"region,omitempty"`
 
+	// Bucket for S3-compatible backends
+	Bucket string `json:"bucket,omitempty"`
+
 	// StorageClass for cloud backends (e.g., GLACIER, STANDARD_IA)
 	StorageClass string `json:"storage_class,omitempty"`
+
+	// AccessKey and SecretKey for S3-compatible backends
+	// Note: For production, prefer IAM roles or CredentialsRef
+	AccessKey string `json:"access_key,omitempty"`
+	SecretKey string `json:"secret_key,omitempty"`
 
 	// Credentials reference (not the actual secret)
 	CredentialsRef string `json:"credentials_ref,omitempty"`

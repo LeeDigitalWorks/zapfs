@@ -19,7 +19,7 @@ import (
 
 func (p *Postgres) GetObjectByID(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
 	row := p.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE id = $1
 	`, id.String())
@@ -39,7 +39,7 @@ func (p *Postgres) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 func (p *Postgres) GetObject(ctx context.Context, bucket, key string) (*types.ObjectRef, error) {
 	row := p.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = $1 AND object_key = $2 AND deleted_at = 0 AND is_latest = TRUE
 	`, bucket, key)
@@ -84,7 +84,7 @@ func (p *Postgres) ListObjectsV2(ctx context.Context, params *db.ListObjectsPara
 	}
 
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = $1
 		  AND object_key LIKE $2
@@ -168,7 +168,7 @@ func (p *Postgres) ListObjectsV2(ctx context.Context, params *db.ListObjectsPara
 
 func (p *Postgres) ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE deleted_at > 0 AND deleted_at < $1
 		ORDER BY deleted_at
@@ -205,5 +205,27 @@ func (p *Postgres) MarkObjectDeleted(ctx context.Context, bucket, key string, de
 	if err != nil {
 		return fmt.Errorf("mark object deleted: %w", err)
 	}
+	return nil
+}
+
+// UpdateObjectTransition updates an object's storage class and transition metadata.
+func (p *Postgres) UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error {
+	result, err := p.db.ExecContext(ctx, `
+		UPDATE objects
+		SET storage_class = $1, transitioned_at = $2, transitioned_ref = $3
+		WHERE id = $4
+	`, storageClass, transitionedAt, transitionedRef, objectID)
+	if err != nil {
+		return fmt.Errorf("update object transition: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return db.ErrObjectNotFound
+	}
+
 	return nil
 }

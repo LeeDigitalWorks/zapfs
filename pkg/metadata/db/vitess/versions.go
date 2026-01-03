@@ -20,7 +20,7 @@ import (
 
 func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMarker, versionIDMarker, delimiter string, maxKeys int) ([]*types.ObjectVersion, bool, string, string, error) {
 	query := `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, profile_id, is_latest
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, profile_id, storage_class, is_latest
 		FROM objects
 		WHERE bucket = ?
 	`
@@ -61,12 +61,17 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 		var size int64
 		var version uint64
 		var createdAt, deletedAt int64
-		var profileID sql.NullString
+		var profileID, storageClass sql.NullString
 		var isLatest int
 
-		err := rows.Scan(&idStr, &bucketName, &key, &size, &version, &etag, &createdAt, &deletedAt, &profileID, &isLatest)
+		err := rows.Scan(&idStr, &bucketName, &key, &size, &version, &etag, &createdAt, &deletedAt, &profileID, &storageClass, &isLatest)
 		if err != nil {
 			return nil, false, "", "", fmt.Errorf("scan object version: %w", err)
+		}
+
+		sc := "STANDARD"
+		if storageClass.Valid && storageClass.String != "" {
+			sc = storageClass.String
 		}
 
 		versions = append(versions, &types.ObjectVersion{
@@ -77,7 +82,7 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 			LastModified:   createdAt,
 			ETag:           etag,
 			Size:           size,
-			StorageClass:   "STANDARD",
+			StorageClass:   sc,
 		})
 	}
 
@@ -98,7 +103,7 @@ func (v *Vitess) ListObjectVersions(ctx context.Context, bucket, prefix, keyMark
 
 func (v *Vitess) GetObjectVersion(ctx context.Context, bucket, key, versionID string) (*types.ObjectRef, error) {
 	row := v.db.QueryRowContext(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT id, bucket, object_key, size, version, etag, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
 		FROM objects
 		WHERE bucket = ? AND object_key = ? AND id = ?
 	`, bucket, key, versionID)

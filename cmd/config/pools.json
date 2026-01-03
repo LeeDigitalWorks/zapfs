@@ -36,6 +36,7 @@
       "weight": 100.0,
       "endpoint": "https://s3.amazonaws.com",
       "region": "us-east-1",
+      "bucket": "my-archive-bucket",
       "storage_class": "GLACIER",
       "credentials_ref": "aws-prod"
     }

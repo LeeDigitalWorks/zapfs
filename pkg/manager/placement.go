@@ -23,7 +23,7 @@ type backendCandidate struct {
 }
 
 // selectReplicationTargets selects file services for storing replicas
-// This is called with ms.mu.RLock() held
+// This is called with ms.state.RLock() held
 func (ms *ManagerServer) selectReplicationTargets(fileSize uint64, numReplicas uint32, tier string) []*manager_pb.ReplicationTarget {
 	// Collect all suitable candidates
 	var candidates []backendCandidate
@@ -34,7 +34,7 @@ func (ms *ManagerServer) selectReplicationTargets(fileSize uint64, numReplicas u
 	// - Datacenter-aware placement
 	// - Tier-based placement (SSD vs HDD)
 
-	for _, reg := range ms.fileServices {
+	for _, reg := range ms.state.FileServices {
 		if reg.Status != ServiceActive {
 			continue
 		}

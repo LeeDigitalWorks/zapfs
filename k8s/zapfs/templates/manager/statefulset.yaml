@@ -158,8 +158,17 @@ spec:
       {{- end }}
       {{- if not .Values.manager.affinity }}
       affinity:
-        # Anti-affinity: spread managers across nodes for HA
+        # Anti-affinity: spread managers across nodes for Raft HA
+        # Ensures Raft quorum survives single node failure
         podAntiAffinity:
+          {{- if .Values.manager.antiAffinityStrict }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "zapfs.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: manager
+            topologyKey: kubernetes.io/hostname
+          {{- else }}
           preferredDuringSchedulingIgnoredDuringExecution:
           - weight: 100
             podAffinityTerm:
@@ -168,6 +177,11 @@ spec:
                   {{- include "zapfs.selectorLabels" . | nindent 18 }}
                   app.kubernetes.io/component: manager
               topologyKey: kubernetes.io/hostname
+          {{- end }}
+      {{- end }}
+      {{- with .Values.manager.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.manager.tolerations }}
       tolerations:

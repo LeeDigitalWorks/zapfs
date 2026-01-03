@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	enterpriseLifecycle "github.com/LeeDigitalWorks/zapfs/enterprise/lifecycle"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
@@ -19,8 +20,9 @@ import (
 
 // LifecycleHandler handles lifecycle task execution
 type LifecycleHandler struct {
-	db         db.DB
-	fileClient client.File
+	db             db.DB
+	fileClient     client.File
+	transitionDeps *enterpriseLifecycle.TransitionDeps
 }
 
 // NewLifecycleHandler creates a new lifecycle handler
@@ -29,6 +31,12 @@ func NewLifecycleHandler(database db.DB, fileClient client.File) *LifecycleHandl
 		db:         database,
 		fileClient: fileClient,
 	}
+}
+
+// SetTransitionDeps sets the transition dependencies for enterprise transitions.
+// If not set, transitions will log a warning and be skipped.
+func (h *LifecycleHandler) SetTransitionDeps(deps *enterpriseLifecycle.TransitionDeps) {
+	h.transitionDeps = deps
 }
 
 // Type returns the task type this handler processes
@@ -251,14 +259,32 @@ func (h *LifecycleHandler) handleAbortMultipart(ctx context.Context, payload tas
 	return nil
 }
 
-// handleTransition transitions an object to a different storage class
-// This is a stub in community edition - enterprise edition provides the full implementation
-func (h *LifecycleHandler) handleTransition(_ context.Context, payload taskqueue.LifecyclePayload) error {
-	// Community edition: log warning and skip
-	logger.Warn().
-		Str("bucket", payload.Bucket).
-		Str("key", payload.Key).
-		Str("storage_class", payload.StorageClass).
-		Msg("Storage transitions require enterprise edition, skipping")
+// handleTransition transitions an object to a different storage class.
+// Uses enterprise lifecycle package if transition dependencies are configured.
+func (h *LifecycleHandler) handleTransition(ctx context.Context, payload taskqueue.LifecyclePayload) error {
+	// Check if transition deps are configured
+	if h.transitionDeps == nil {
+		logger.Warn().
+			Str("bucket", payload.Bucket).
+			Str("key", payload.Key).
+			Str("storage_class", payload.StorageClass).
+			Msg("Storage transitions require enterprise edition, skipping")
+		return nil
+	}
+
+	// Execute transition using enterprise package
+	if err := enterpriseLifecycle.ExecuteTransition(ctx, h.transitionDeps, payload); err != nil {
+		// Check if this is an enterprise-required error
+		if errors.Is(err, enterpriseLifecycle.ErrLicenseRequired) {
+			logger.Warn().
+				Str("bucket", payload.Bucket).
+				Str("key", payload.Key).
+				Str("storage_class", payload.StorageClass).
+				Msg("Storage transitions require valid enterprise license, skipping")
+			return nil
+		}
+		return fmt.Errorf("execute transition: %w", err)
+	}
+
 	return nil
 }

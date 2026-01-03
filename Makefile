@@ -30,11 +30,11 @@ test:
 	go test -tags enterprise ./...
 
 test-race:
-	go test -tags enterprise -race ./...
-
-test-cover:
 	go test -tags enterprise -race -coverprofile=coverage.out ./...
+
+test-cover: test-race
 	go tool cover -html=coverage.out -o coverage.html
+	@go tool cover -func=coverage.out | tail -1
 
 # =============================================================================
 # Integration Tests
@@ -59,6 +59,20 @@ integration-manager:
 
 integration-resiliency:
 	DB_DSN="$(DB_DSN)" go test -race -cover -v -tags=integration,enterprise -count=1 ./integration/resiliency/...
+
+# Run all integration tests in one go (for CI or comprehensive local testing)
+# Uses minimal cluster which is sufficient for most tests
+integration-all: minimal-up
+	@echo "=== Running S3 integration tests ==="
+	$(MAKE) integration-s3
+	@echo "=== Running File server tests ==="
+	$(MAKE) integration-file
+	@echo "=== Running Resiliency tests (with DB validation) ==="
+	$(MAKE) integration-resiliency
+	@echo "=== Running Metadata tests ==="
+	$(MAKE) integration-metadata
+	@echo "=== All integration tests passed ==="
+	$(MAKE) minimal-down
 
 # =============================================================================
 # Minimal Cluster (Benchmarks & Resiliency Tests)

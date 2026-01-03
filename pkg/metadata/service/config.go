@@ -14,6 +14,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
@@ -40,6 +41,8 @@ type Config struct {
 
 	// Storage configuration
 	Profiles       *types.ProfileSet
+	Pools          *types.PoolSet
+	BackendManager *backend.Manager
 	DefaultProfile string
 
 	// Enterprise features (may be nil)

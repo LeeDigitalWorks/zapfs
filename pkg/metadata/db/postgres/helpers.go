@@ -23,6 +23,7 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 	var idStr string
 	var profileID sql.NullString
 	var storageClassDB sql.NullString
+	var transitionedRef sql.NullString
 	var chunkRefsJSON, ecGroupIDsJSON []byte
 	var sseAlgorithm, sseCustomerKeyMD5, sseKMSKeyID, sseKMSContext sql.NullString
 
@@ -38,6 +39,8 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 		&obj.TTL,
 		&profileID,
 		&storageClassDB,
+		&obj.TransitionedAt,
+		&transitionedRef,
 		&chunkRefsJSON,
 		&ecGroupIDsJSON,
 		&obj.IsLatest,
@@ -59,6 +62,9 @@ func scanObject(s scanner) (*types.ObjectRef, error) {
 	}
 	if storageClassDB.Valid {
 		obj.StorageClass = storageClassDB.String
+	}
+	if transitionedRef.Valid {
+		obj.TransitionedRef = transitionedRef.String
 	}
 
 	if len(chunkRefsJSON) > 0 && string(chunkRefsJSON) != "null" {

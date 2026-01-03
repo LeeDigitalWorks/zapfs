@@ -349,7 +349,7 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 	// Check if we have enough successful writes
 	minRequired := 1 // At least one must succeed
 	if len(successfulResults) < minRequired {
-		return nil, fmt.Errorf("failed to write to enough targets: %d/%d succeeded", len(successfulResults), numTargets)
+		return nil, fmt.Errorf("failed to write to enough targets: %d/%d succeeded, failed: %v", len(successfulResults), numTargets, failedTargets)
 	}
 
 	// Build chunk refs from successful targets using actual chunk IDs from file servers

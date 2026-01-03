@@ -15,6 +15,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/placer"
@@ -105,6 +106,7 @@ type ServerConfig struct {
 	FileClientPool    client.File
 	CRRHook           *CRRHook        // Enterprise: cross-region replication hook
 	IAMService        *iam.Service    // IAM service for KMS operations (enterprise feature)
+	KMSProvider       encryption.KMSProvider // External KMS provider (enterprise: AWS KMS, Vault)
 	TaskQueue          taskqueue.Queue      // Optional: for GC decrement retry and background tasks
 
 	// Cross-region replication configuration (enterprise: FeatureMultiRegion)
@@ -148,6 +150,7 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		Profiles:          cfg.Profiles,
 		DefaultProfile:    defaultProfile,
 		IAMService:        cfg.IAMService,
+		KMSProvider:       cfg.KMSProvider,
 		CRRHook:           adaptCRRHook(cfg.CRRHook),
 		TaskQueue:         cfg.TaskQueue,
 		Emitter:           cfg.Emitter,
@@ -160,6 +163,9 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		LifecycleScanConcurrency: cfg.LifecycleScanConcurrency,
 		LifecycleScanBatchSize:   cfg.LifecycleScanBatchSize,
 		LifecycleMaxTasksPerScan: cfg.LifecycleMaxTasksPerScan,
+		// Storage tier configuration - uses pools/profiles for transitions
+		BackendManager: cfg.BackendManager,
+		Pools:          cfg.Pools,
 	}
 
 	svc, err := service.NewService(svcCfg)

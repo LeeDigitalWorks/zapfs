@@ -106,6 +106,46 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if not .Values.file.affinity }}
+      affinity:
+        # Anti-affinity: spread file servers across nodes for data redundancy
+        # This ensures chunk replicas are on different physical nodes
+        podAntiAffinity:
+          {{- if .Values.file.antiAffinityStrict }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                {{- include "zapfs.selectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: file
+            topologyKey: kubernetes.io/hostname
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "zapfs.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: file
+              topologyKey: kubernetes.io/hostname
+          {{- end }}
+        {{- if .Values.file.colocateWithManager }}
+        # Optional: prefer scheduling file servers on same nodes as managers
+        # Useful for bare metal / high-performance networking (UCX, RDMA)
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "zapfs.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: manager
+              topologyKey: kubernetes.io/hostname
+        {{- end }}
+      {{- end }}
+      {{- with .Values.file.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.file.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}

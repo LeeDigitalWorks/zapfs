@@ -78,15 +78,15 @@ func (ms *ManagerServer) CreateBackup(ctx context.Context, req *manager_pb.Creat
 // GetBackupStatus returns current FSM state info.
 // Useful for monitoring and backup verification.
 func (ms *ManagerServer) GetBackupStatus(ctx context.Context, req *manager_pb.GetBackupStatusRequest) (*manager_pb.GetBackupStatusResponse, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	return &manager_pb.GetBackupStatusResponse{
-		TopologyVersion:       ms.topologyVersion,
-		CollectionsVersion:    ms.collectionsVersion,
-		FileServicesCount:     int32(len(ms.fileServices)),
-		MetadataServicesCount: int32(len(ms.metadataServices)),
-		CollectionsCount:      int32(len(ms.collections)),
+		TopologyVersion:       ms.state.TopologyVersion,
+		CollectionsVersion:    ms.state.CollectionsVersion,
+		FileServicesCount:     int32(len(ms.state.FileServices)),
+		MetadataServicesCount: int32(len(ms.state.MetadataServices)),
+		CollectionsCount:      int32(len(ms.state.Collections)),
 		IsLeader:              ms.raftNode.IsLeader(),
 	}, nil
 }

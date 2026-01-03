@@ -24,6 +24,12 @@ type ObjectRef struct {
 	// StorageClass is the S3 storage class (STANDARD, GLACIER, DEEP_ARCHIVE, etc.)
 	StorageClass string `json:"storage_class,omitempty"`
 
+	// Transition metadata (enterprise feature)
+	// TransitionedAt is when the object was transitioned to a different storage class (0 = not transitioned)
+	TransitionedAt int64 `json:"transitioned_at,omitempty"`
+	// TransitionedRef is the remote object key in the tier backend (e.g., "ab/cd/uuid" for S3 Glacier)
+	TransitionedRef string `json:"transitioned_ref,omitempty"`
+
 	// Storage location - one of these is set depending on storage mode
 	ChunkRefs  []ChunkRef  `json:"chunk_refs,omitempty"`   // For simple/replicated storage
 	ECGroupIDs []uuid.UUID `json:"ec_group_ids,omitempty"` // For erasure-coded storage

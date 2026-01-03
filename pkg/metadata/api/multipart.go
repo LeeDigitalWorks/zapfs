@@ -95,12 +95,6 @@ func (s *MetadataServer) CreateMultipartUploadHandler(d *data.Data, w http.Respo
 
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)
-
-	logger.Info().
-		Str("bucket", bucket).
-		Str("key", key).
-		Str("upload_id", result.UploadID).
-		Msg("multipart upload initiated")
 }
 
 // UploadPartHandler uploads a part of a multipart upload.
@@ -248,12 +242,6 @@ func (s *MetadataServer) CompleteMultipartUploadHandler(d *data.Data, w http.Res
 
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)
-
-	logger.Info().
-		Str("bucket", bucket).
-		Str("key", key).
-		Str("upload_id", uploadID).
-		Msg("multipart upload completed")
 }
 
 // AbortMultipartUploadHandler aborts a multipart upload.
@@ -309,12 +297,6 @@ func (s *MetadataServer) AbortMultipartUploadHandler(d *data.Data, w http.Respon
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
-
-	logger.Info().
-		Str("bucket", bucket).
-		Str("key", key).
-		Str("upload_id", uploadID).
-		Msg("multipart upload aborted")
 }
 
 // ListPartsHandler lists the parts of a multipart upload.

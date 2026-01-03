@@ -33,15 +33,15 @@ var fileClientPool = pool.NewPool(func(cc grpc.ClientConnInterface) file_pb.File
 
 // GetClusterStatus returns the current status of all file servers in the cluster.
 func (ms *ManagerServer) GetClusterStatus(ctx context.Context, req *manager_pb.GetClusterStatusRequest) (*manager_pb.GetClusterStatusResponse, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	var servers []*manager_pb.FileServerStatus
 	var totalBytes, usedBytes int64
 	var minUsage, maxUsage float64 = 100, 0
 	onlineCount := 0
 
-	for id, svc := range ms.fileServices {
+	for id, svc := range ms.state.FileServices {
 		var svcTotal, svcUsed int64
 		var chunkCount int64
 

@@ -27,6 +27,7 @@ import (
 	"context"
 	"os"
 
+	entlifecycle "github.com/LeeDigitalWorks/zapfs/enterprise/lifecycle"
 	enttaskqueue "github.com/LeeDigitalWorks/zapfs/enterprise/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
@@ -174,7 +175,22 @@ func NewService(cfg Config) (*Service, error) {
 		// Register community handlers
 		// Note: GC RefCount decrements are now handled by the centralized chunk_registry
 		// in the metadata database, not by the task queue.
-		worker.RegisterHandler(handlers.NewLifecycleHandler(cfg.DB, cfg.FileClientPool))
+		lifecycleHandler := handlers.NewLifecycleHandler(cfg.DB, cfg.FileClientPool)
+
+		// Configure enterprise transition deps if backend manager and profiles are available
+		// Transitions use the standard pools/profiles - a profile named after the target
+		// storage class (e.g., "GLACIER") determines which backend to use.
+		if cfg.BackendManager != nil && cfg.Profiles != nil {
+			lifecycleHandler.SetTransitionDeps(&entlifecycle.TransitionDeps{
+				DB:             cfg.DB,
+				FileClient:     cfg.FileClientPool,
+				BackendManager: cfg.BackendManager,
+				Profiles:       cfg.Profiles,
+				Pools:          cfg.Pools,
+			})
+		}
+
+		worker.RegisterHandler(lifecycleHandler)
 
 		// Register enterprise handlers (returns nil in community edition)
 		// Pass dependencies for replication and other enterprise features

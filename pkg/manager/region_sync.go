@@ -224,77 +224,77 @@ func (rs *RegionSyncer) handleFullSync(event *manager_pb.CollectionEvent) {
 	}
 
 	// Now atomically swap all state under lock
-	rs.ms.mu.Lock()
-	defer rs.ms.mu.Unlock()
+	rs.ms.state.Lock()
+	defer rs.ms.state.Unlock()
 
 	// Atomic swap - either all state is updated or none
-	rs.ms.collections = newCollections
-	rs.ms.collectionsByOwner = newByOwner
-	rs.ms.ownerCollectionCount = newOwnerCount
-	rs.ms.collectionsByTier = newByTier
-	rs.ms.collectionsVersion = event.Version
+	rs.ms.state.Collections = newCollections
+	rs.ms.state.CollectionsByOwner = newByOwner
+	rs.ms.state.OwnerCollectionCount = newOwnerCount
+	rs.ms.state.CollectionsByTier = newByTier
+	rs.ms.state.CollectionsVersion = event.Version
 
 	// Rebuild time index (BTree doesn't support bulk replacement, but this is fast)
 	// Note: The time index rebuild happens under lock, but collections/indexes
 	// are already atomically swapped above, so partial crash here only affects
 	// time-ordered queries (less critical than owner/tier lookups).
-	rs.ms.collectionsByTime.Clear(false)
-	for _, col := range rs.ms.collections {
-		rs.ms.collectionsByTime.ReplaceOrInsert(&collectionTimeItem{
+	rs.ms.state.CollectionsByTime.Clear(false)
+	for _, col := range rs.ms.state.Collections {
+		rs.ms.state.CollectionsByTime.ReplaceOrInsert(&collectionTimeItem{
 			createdAt:  col.CreatedAt.AsTime(),
 			name:       col.Name,
 			collection: col,
 		})
 	}
 
-	regionCacheSyncBuckets.Set(float64(len(rs.ms.collections)))
+	regionCacheSyncBuckets.Set(float64(len(rs.ms.state.Collections)))
 }
 
 // handleCreated adds a new collection to the cache.
 func (rs *RegionSyncer) handleCreated(event *manager_pb.CollectionEvent) {
-	rs.ms.mu.Lock()
-	defer rs.ms.mu.Unlock()
+	rs.ms.state.Lock()
+	defer rs.ms.state.Unlock()
 
 	for _, col := range event.Collections {
 		// Clone to avoid sharing protobuf memory
 		colCopy := proto.Clone(col).(*manager_pb.Collection)
-		rs.ms.collections[col.Name] = colCopy
+		rs.ms.state.Collections[col.Name] = colCopy
 		rs.ms.addCollectionToIndexes(colCopy)
 
 		logger.Debug().Str("collection", col.Name).Msg("Added collection from primary")
 	}
 
-	rs.ms.collectionsVersion = event.Version
-	regionCacheSyncBuckets.Set(float64(len(rs.ms.collections)))
+	rs.ms.state.CollectionsVersion = event.Version
+	regionCacheSyncBuckets.Set(float64(len(rs.ms.state.Collections)))
 }
 
 // handleDeleted removes a collection from the cache.
 func (rs *RegionSyncer) handleDeleted(event *manager_pb.CollectionEvent) {
-	rs.ms.mu.Lock()
-	defer rs.ms.mu.Unlock()
+	rs.ms.state.Lock()
+	defer rs.ms.state.Unlock()
 
 	for _, col := range event.Collections {
-		if existing, exists := rs.ms.collections[col.Name]; exists {
+		if existing, exists := rs.ms.state.Collections[col.Name]; exists {
 			rs.ms.removeCollectionFromIndexes(existing)
-			delete(rs.ms.collections, col.Name)
+			delete(rs.ms.state.Collections, col.Name)
 			logger.Debug().Str("collection", col.Name).Msg("Removed collection from cache (deleted in primary)")
 		}
 	}
 
-	rs.ms.collectionsVersion = event.Version
-	regionCacheSyncBuckets.Set(float64(len(rs.ms.collections)))
+	rs.ms.state.CollectionsVersion = event.Version
+	regionCacheSyncBuckets.Set(float64(len(rs.ms.state.Collections)))
 }
 
 // handleUpdated updates an existing collection in the cache.
 func (rs *RegionSyncer) handleUpdated(event *manager_pb.CollectionEvent) {
-	rs.ms.mu.Lock()
-	defer rs.ms.mu.Unlock()
+	rs.ms.state.Lock()
+	defer rs.ms.state.Unlock()
 
 	for _, col := range event.Collections {
 		// Clone to avoid sharing protobuf memory
 		colCopy := proto.Clone(col).(*manager_pb.Collection)
 
-		if existing, exists := rs.ms.collections[col.Name]; exists {
+		if existing, exists := rs.ms.state.Collections[col.Name]; exists {
 			// Remove from old indexes if owner or tier changed
 			if existing.Owner != col.Owner || existing.Tier != col.Tier {
 				rs.ms.removeCollectionFromIndexes(existing)
@@ -305,9 +305,9 @@ func (rs *RegionSyncer) handleUpdated(event *manager_pb.CollectionEvent) {
 			rs.ms.addCollectionToIndexes(colCopy)
 		}
 
-		rs.ms.collections[col.Name] = colCopy
+		rs.ms.state.Collections[col.Name] = colCopy
 		logger.Debug().Str("collection", col.Name).Msg("Updated collection from primary")
 	}
 
-	rs.ms.collectionsVersion = event.Version
+	rs.ms.state.CollectionsVersion = event.Version
 }

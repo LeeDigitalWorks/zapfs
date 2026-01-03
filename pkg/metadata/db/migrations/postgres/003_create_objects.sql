@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS objects (
     ttl INT DEFAULT 0,
     profile_id VARCHAR(36),
     storage_class VARCHAR(32) DEFAULT 'STANDARD',
+    transitioned_at BIGINT NOT NULL DEFAULT 0,
+    transitioned_ref VARCHAR(512) NOT NULL DEFAULT '',
     chunk_refs JSONB,
     ec_group_ids JSONB,
     is_latest BOOLEAN NOT NULL DEFAULT TRUE,
@@ -32,3 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_objects_bucket_key_latest ON objects(bucket, obje
 CREATE INDEX IF NOT EXISTS idx_objects_bucket_key_id ON objects(bucket, object_key, id);
 CREATE INDEX IF NOT EXISTS idx_objects_deleted ON objects(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket);
+CREATE INDEX IF NOT EXISTS idx_objects_storage_class ON objects(storage_class);
+
+COMMENT ON COLUMN objects.transitioned_at IS 'Unix nano when object was transitioned, 0 if not transitioned';
+COMMENT ON COLUMN objects.transitioned_ref IS 'Remote object key in tier backend (e.g., ab/cd/uuid for S3)';

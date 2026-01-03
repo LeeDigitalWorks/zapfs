@@ -64,14 +64,8 @@ func (ms *ManagerServer) RegisterService(ctx context.Context, req *manager_pb.Re
 	}
 
 	// Get updated state after Raft apply
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-
-	serviceID := deriveServiceID(req.ServiceType, req.Location)
-	logger.Info().
-		Str("service_id", serviceID).
-		Str("type", req.ServiceType.String()).
-		Msg("Service registered")
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	// Return peer services
 	peers := ms.getPeerServices(req.ServiceType)
@@ -79,8 +73,8 @@ func (ms *ManagerServer) RegisterService(ctx context.Context, req *manager_pb.Re
 	return &manager_pb.RegisterServiceResponse{
 		Success:         true,
 		Message:         "Service registered successfully",
-		Version:         ms.topologyVersion,
-		PlacementPolicy: ms.placementPolicy,
+		Version:         ms.state.TopologyVersion,
+		PlacementPolicy: ms.state.PlacementPolicy,
 		PeerServices:    peers,
 	}, nil
 }
@@ -103,9 +97,6 @@ func (ms *ManagerServer) UnregisterService(ctx context.Context, req *manager_pb.
 		}, err
 	}
 
-	serviceID := deriveServiceID(req.ServiceType, req.Location)
-	logger.Info().Str("service_id", serviceID).Msg("Service unregistered")
-
 	return &manager_pb.UnregisterServiceResponse{
 		Success: true,
 		Message: "Service unregistered successfully",
@@ -115,18 +106,18 @@ func (ms *ManagerServer) UnregisterService(ctx context.Context, req *manager_pb.
 func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.HeartbeatRequest) (*manager_pb.HeartbeatResponse, error) {
 	serviceID := deriveServiceID(req.ServiceType, req.Location)
 
-	ms.mu.Lock()
+	ms.state.Lock()
 	registry := ms.getRegistry(req.ServiceType)
 
 	reg, exists := registry[serviceID]
 	if !exists {
-		ms.mu.Unlock()
+		ms.state.Unlock()
 		logger.Warn().
 			Str("service_id", serviceID).
 			Msg("Received heartbeat from unregistered service")
 		return &manager_pb.HeartbeatResponse{
 			TopologyChanged: false,
-			TopologyVersion: ms.topologyVersion,
+			TopologyVersion: ms.state.TopologyVersion,
 		}, nil
 	}
 
@@ -134,7 +125,7 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 
 	// Check if status change is needed (Offline → Active)
 	needsStatusUpdate := reg.Status == ServiceOffline
-	ms.mu.Unlock()
+	ms.state.Unlock()
 
 	// Route status change through Raft for atomicity
 	if needsStatusUpdate {
@@ -167,15 +158,15 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 	}
 
 	// Re-acquire lock for the rest of the updates
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
+	ms.state.Lock()
+	defer ms.state.Unlock()
 
 	// Re-fetch reg in case it was modified
 	reg, exists = registry[serviceID]
 	if !exists {
 		return &manager_pb.HeartbeatResponse{
 			TopologyChanged: false,
-			TopologyVersion: ms.topologyVersion,
+			TopologyVersion: ms.state.TopologyVersion,
 		}, nil
 	}
 
@@ -203,22 +194,22 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 		ms.updateClusterCapacity()
 	}
 
-	topologyChanged := reg.LastKnownTopologyVersion < ms.topologyVersion
+	topologyChanged := reg.LastKnownTopologyVersion < ms.state.TopologyVersion
 	if topologyChanged {
-		reg.LastKnownTopologyVersion = ms.topologyVersion
+		reg.LastKnownTopologyVersion = ms.state.TopologyVersion
 	}
 
 	logger.Debug().
 		Str("service_id", serviceID).
 		Uint64("client_version", req.Version).
-		Uint64("current_version", ms.topologyVersion).
+		Uint64("current_version", ms.state.TopologyVersion).
 		Bool("topology_changed", topologyChanged).
 		Msg("Heartbeat received")
 
 	return &manager_pb.HeartbeatResponse{
 		TopologyChanged: topologyChanged,
-		TopologyVersion: ms.topologyVersion,
-		PlacementPolicy: ms.placementPolicy,
+		TopologyVersion: ms.state.TopologyVersion,
+		PlacementPolicy: ms.state.PlacementPolicy,
 	}, nil
 }
 
@@ -241,7 +232,7 @@ func (ms *ManagerServer) WatchTopology(req *manager_pb.WatchTopologyRequest, str
 		logger.Debug().Uint64("sub_id", subID).Msg("Topology subscriber disconnected")
 	}()
 
-	logger.Info().
+	logger.Debug().
 		Uint64("sub_id", subID).
 		Uint64("client_version", req.CurrentVersion).
 		Msg("New topology subscriber")
@@ -270,14 +261,14 @@ func (ms *ManagerServer) WatchTopology(req *manager_pb.WatchTopologyRequest, str
 
 // sendFullTopology sends a FULL_SYNC event with all active services
 func (ms *ManagerServer) sendFullTopology(stream manager_pb.ManagerService_WatchTopologyServer, clientVersion uint64) error {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	// If client already has latest, send empty full sync
-	if clientVersion == ms.topologyVersion {
+	if clientVersion == ms.state.TopologyVersion {
 		return stream.Send(&manager_pb.TopologyEvent{
 			Type:     manager_pb.TopologyEvent_FULL_SYNC,
-			Version:  ms.topologyVersion,
+			Version:  ms.state.TopologyVersion,
 			Services: nil,
 		})
 	}
@@ -285,7 +276,7 @@ func (ms *ManagerServer) sendFullTopology(stream manager_pb.ManagerService_Watch
 	// Collect all active services
 	var services []*manager_pb.ServiceInfo
 
-	for _, reg := range ms.fileServices {
+	for _, reg := range ms.state.FileServices {
 		if reg.Status == ServiceActive {
 			services = append(services, &manager_pb.ServiceInfo{
 				ServiceType:   reg.ServiceType,
@@ -295,7 +286,7 @@ func (ms *ManagerServer) sendFullTopology(stream manager_pb.ManagerService_Watch
 		}
 	}
 
-	for _, reg := range ms.metadataServices {
+	for _, reg := range ms.state.MetadataServices {
 		if reg.Status == ServiceActive {
 			services = append(services, &manager_pb.ServiceInfo{
 				ServiceType:   reg.ServiceType,
@@ -307,13 +298,13 @@ func (ms *ManagerServer) sendFullTopology(stream manager_pb.ManagerService_Watch
 
 	logger.Debug().
 		Uint64("client_version", clientVersion).
-		Uint64("current_version", ms.topologyVersion).
+		Uint64("current_version", ms.state.TopologyVersion).
 		Int("num_services", len(services)).
 		Msg("Sending full topology sync")
 
 	return stream.Send(&manager_pb.TopologyEvent{
 		Type:     manager_pb.TopologyEvent_FULL_SYNC,
-		Version:  ms.topologyVersion,
+		Version:  ms.state.TopologyVersion,
 		Services: services,
 	})
 }
@@ -330,7 +321,7 @@ func (ms *ManagerServer) notifyTopologySubscribers(eventType manager_pb.Topology
 
 	event := &manager_pb.TopologyEvent{
 		Type:     eventType,
-		Version:  ms.topologyVersion,
+		Version:  ms.state.TopologyVersion,
 		Services: services,
 	}
 
@@ -370,7 +361,7 @@ func (ms *ManagerServer) WatchCollections(req *manager_pb.WatchCollectionsReques
 		sinceTime = req.GetSinceTime().AsTime()
 	}
 
-	logger.Info().
+	logger.Debug().
 		Uint64("sub_id", subID).
 		Time("since_time", sinceTime).
 		Msg("New collection subscriber")
@@ -399,8 +390,8 @@ func (ms *ManagerServer) WatchCollections(req *manager_pb.WatchCollectionsReques
 
 // sendCollectionSync sends a FULL_SYNC event with collections since the given time.
 func (ms *ManagerServer) sendCollectionSync(stream manager_pb.ManagerService_WatchCollectionsServer, sinceTime time.Time, includeTombstoned bool) error {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	var collections []*manager_pb.Collection
 
@@ -416,7 +407,7 @@ func (ms *ManagerServer) sendCollectionSync(stream manager_pb.ManagerService_Wat
 	return stream.Send(&manager_pb.CollectionEvent{
 		Type:        manager_pb.CollectionEvent_FULL_SYNC,
 		Collections: collections,
-		Version:     ms.collectionsVersion,
+		Version:     ms.state.CollectionsVersion,
 		Timestamp:   timestamppb.Now(),
 	})
 }
@@ -434,7 +425,7 @@ func (ms *ManagerServer) notifyCollectionSubscribers(eventType manager_pb.Collec
 	event := &manager_pb.CollectionEvent{
 		Type:        eventType,
 		Collections: collections,
-		Version:     ms.collectionsVersion,
+		Version:     ms.state.CollectionsVersion,
 		Timestamp:   timestamppb.Now(),
 	}
 
@@ -449,12 +440,12 @@ func (ms *ManagerServer) notifyCollectionSubscribers(eventType manager_pb.Collec
 }
 
 func (ms *ManagerServer) GetReplicationTargets(ctx context.Context, req *manager_pb.GetReplicationTargetsRequest) (*manager_pb.GetReplicationTargetsResponse, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	numReplicas := req.NumReplicas
 	if numReplicas == 0 {
-		numReplicas = ms.placementPolicy.NumReplicas
+		numReplicas = ms.state.PlacementPolicy.NumReplicas
 	}
 
 	// Use placement algorithm
@@ -608,29 +599,29 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 	}
 
 	// Check if bucket creates are frozen due to data loss detection
-	ms.mu.RLock()
-	if ms.collectionsRecoveryRequired {
-		ms.mu.RUnlock()
+	ms.collectionsRecoveryRequiredMu.RLock()
+	recoveryRequired := ms.collectionsRecoveryRequired
+	ms.collectionsRecoveryRequiredMu.RUnlock()
+	if recoveryRequired {
 		logger.Warn().Str("bucket", req.Name).Msg("CreateCollection rejected: manager in recovery mode")
 		return &manager_pb.CreateCollectionResponse{
 			Success: false,
 			Message: "manager in recovery mode - bucket creates frozen until data reconciliation",
 		}, status.Error(codes.FailedPrecondition, "manager in recovery mode - bucket creates frozen until data reconciliation")
 	}
-	ms.mu.RUnlock()
 
 	// We are the local leader. Check if we need to forward to primary region.
 	// First do a fast local cache check - if bucket exists locally, reject immediately.
-	ms.mu.RLock()
-	if col, exists := ms.collections[req.Name]; exists {
-		ms.mu.RUnlock()
+	ms.state.RLock()
+	if col, exists := ms.state.Collections[req.Name]; exists {
+		ms.state.RUnlock()
 		return &manager_pb.CreateCollectionResponse{
 			Success:    false,
 			Message:    "collection already exists",
 			Collection: col,
 		}, status.Errorf(codes.AlreadyExists, "collection %s already exists", req.Name)
 	}
-	ms.mu.RUnlock()
+	ms.state.RUnlock()
 
 	// If not primary region, forward to primary region
 	if ms.regionClient != nil && !ms.IsPrimaryRegion() {
@@ -639,11 +630,11 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 		if resp != nil || err != nil {
 			// If primary returned a response (success or failure), update local cache on success
 			if resp != nil && resp.Success && resp.Collection != nil {
-				ms.mu.Lock()
-				ms.collections[req.Name] = resp.Collection
+				ms.state.Lock()
+				ms.state.Collections[req.Name] = resp.Collection
 				ms.addCollectionToIndexes(resp.Collection)
-				ms.collectionsVersion++
-				ms.mu.Unlock()
+				ms.state.CollectionsVersion++
+				ms.state.Unlock()
 			}
 			return resp, err
 		}
@@ -680,11 +671,6 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 		}, err
 	}
 
-	logger.Info().
-		Str("collection", req.Name).
-		Str("owner", req.Owner).
-		Msg("Collection created")
-
 	return &manager_pb.CreateCollectionResponse{
 		Success:    true,
 		Message:    "Collection created successfully",
@@ -695,8 +681,8 @@ func (ms *ManagerServer) CreateCollection(ctx context.Context, req *manager_pb.C
 // ListCollections lists all collections, optionally filtered by owner
 // This is a read operation and can be served by any node (leader or follower)
 func (ms *ManagerServer) ListCollections(req *manager_pb.ListCollectionsRequest, stream manager_pb.ManagerService_ListCollectionsServer) error {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	sinceTime := time.Time{}
 	if req.GetSinceTime() != nil {
@@ -723,34 +709,17 @@ func (ms *ManagerServer) ListCollections(req *manager_pb.ListCollectionsRequest,
 	return nil
 }
 
-// collectionTimeItem implements btree.Item for time-ordered indexing
-type collectionTimeItem struct {
-	createdAt  time.Time
-	name       string // for uniqueness when timestamps collide
-	collection *manager_pb.Collection
-}
-
-// Less implements btree.Item interface
-// Orders by created_at first, then by name for deterministic ordering
-func (a *collectionTimeItem) Less(b btree.Item) bool {
-	other := b.(*collectionTimeItem)
-	if a.createdAt.Equal(other.createdAt) {
-		return a.name < other.name
-	}
-	return a.createdAt.Before(other.createdAt)
-}
-
 // StreamCollectionsSince streams collections created since a given timestamp
 // Used for gRPC streaming API
 func (ms *ManagerServer) StreamCollectionsSince(since time.Time, callback func(*manager_pb.Collection) bool) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
 	// Create pivot item for range scan
 	pivot := &collectionTimeItem{createdAt: since}
 
 	// Ascend from pivot - visits items >= pivot in sorted order
-	ms.collectionsByTime.AscendGreaterOrEqual(pivot, func(item btree.Item) bool {
+	ms.state.CollectionsByTime.AscendGreaterOrEqual(pivot, func(item btree.Item) bool {
 		ci := item.(*collectionTimeItem)
 		return callback(ci.collection) // false stops iteration
 	})
@@ -758,10 +727,10 @@ func (ms *ManagerServer) StreamCollectionsSince(since time.Time, callback func(*
 
 // StreamAllCollections streams all collections in time order
 func (ms *ManagerServer) StreamAllCollections(callback func(*manager_pb.Collection) bool) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
-	ms.collectionsByTime.Ascend(func(item btree.Item) bool {
+	ms.state.CollectionsByTime.Ascend(func(item btree.Item) bool {
 		ci := item.(*collectionTimeItem)
 		return callback(ci.collection) // false stops iteration
 	})
@@ -770,10 +739,10 @@ func (ms *ManagerServer) StreamAllCollections(callback func(*manager_pb.Collecti
 // GetCollection retrieves a specific collection by name
 // This is a read operation and can be served by any node
 func (ms *ManagerServer) GetCollection(ctx context.Context, req *manager_pb.GetCollectionRequest) (*manager_pb.GetCollectionResponse, error) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
+	ms.state.RLock()
+	defer ms.state.RUnlock()
 
-	col, exists := ms.collections[req.Name]
+	col, exists := ms.state.Collections[req.Name]
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "collection %s not found", req.Name)
 	}
@@ -804,13 +773,13 @@ func (ms *ManagerServer) DeleteCollection(ctx context.Context, req *manager_pb.D
 		if resp != nil || err != nil {
 			// If primary returned a response (success or failure), update local cache on success
 			if resp != nil && resp.Success {
-				ms.mu.Lock()
-				if col, exists := ms.collections[req.Name]; exists {
+				ms.state.Lock()
+				if col, exists := ms.state.Collections[req.Name]; exists {
 					ms.removeCollectionFromIndexes(col)
-					delete(ms.collections, req.Name)
-					ms.collectionsVersion++
+					delete(ms.state.Collections, req.Name)
+					ms.state.CollectionsVersion++
 				}
-				ms.mu.Unlock()
+				ms.state.Unlock()
 			}
 			return resp, err
 		}
@@ -819,19 +788,19 @@ func (ms *ManagerServer) DeleteCollection(ctx context.Context, req *manager_pb.D
 	}
 
 	// Check if exists
-	ms.mu.RLock()
-	col, exists := ms.collections[req.Name]
+	ms.state.RLock()
+	col, exists := ms.state.Collections[req.Name]
 	if !exists {
-		ms.mu.RUnlock()
+		ms.state.RUnlock()
 		return nil, status.Errorf(codes.NotFound, "collection %s not found", req.Name)
 	}
 
 	// Optional: Check ownership
 	if req.Owner != "" && col.Owner != req.Owner {
-		ms.mu.RUnlock()
+		ms.state.RUnlock()
 		return nil, status.Errorf(codes.PermissionDenied, "not the owner of collection %s", req.Name)
 	}
-	ms.mu.RUnlock()
+	ms.state.RUnlock()
 
 	// Apply delete through Raft
 	deleteReq := struct {
@@ -844,10 +813,6 @@ func (ms *ManagerServer) DeleteCollection(ctx context.Context, req *manager_pb.D
 			Message: err.Error(),
 		}, err
 	}
-
-	logger.Info().
-		Str("collection", req.Name).
-		Msg("Collection deleted")
 
 	return &manager_pb.DeleteCollectionResponse{
 		Success: true,

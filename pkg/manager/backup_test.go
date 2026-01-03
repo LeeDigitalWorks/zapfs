@@ -16,9 +16,7 @@ func TestCreateBackupRequiresLicense(t *testing.T) {
 	// Create a minimal manager server with nil raftNode
 	// The license check happens before raft access, so this is safe
 	ms := &ManagerServer{
-		fileServices:     make(map[string]*ServiceRegistration),
-		metadataServices: make(map[string]*ServiceRegistration),
-		collections:      make(map[string]*manager_pb.Collection),
+		state: NewFSMState("test-region", 3),
 	}
 
 	// Without license, CreateBackup should fail with permission denied

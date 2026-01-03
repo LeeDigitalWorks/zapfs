@@ -78,3 +78,18 @@ lifecycle_max_tasks_per_scan = 10000  # Max tasks to enqueue per scan run
 #
 # replication_access_key_id = ""
 # replication_secret_access_key = ""
+
+# =============================================================================
+# Event Notifications Configuration (Enterprise Feature)
+# =============================================================================
+# Requires FeatureEvents license. Events are published when objects are
+# created, deleted, or modified in buckets with notification configurations.
+#
+# Redis Pub/Sub Publisher
+# Events are published to channels: {channel_prefix}:{bucket_name}
+#
+# [events]
+# redis_addr = "localhost:6379"
+# redis_password = ""
+# redis_db = 0
+# redis_channel = "s3:events"

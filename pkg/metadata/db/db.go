@@ -174,6 +174,15 @@ type ObjectStore interface {
 
 	// ListDeletedObjects returns soft-deleted objects for GC
 	ListDeletedObjects(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error)
+
+	// UpdateObjectTransition updates an object's storage class and transition metadata.
+	// Used by lifecycle transitions to record that an object has been moved to tier storage.
+	// Parameters:
+	//   - objectID: the UUID of the object to update
+	//   - storageClass: the new storage class (e.g., "GLACIER", "DEEP_ARCHIVE")
+	//   - transitionedAt: Unix timestamp (nanos) when the transition occurred
+	//   - transitionedRef: the key in the tier backend where the object data is stored
+	UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error
 }
 
 // ListObjectsParams contains parameters for ListObjectsV2

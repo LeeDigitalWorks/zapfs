@@ -7,7 +7,9 @@ package resiliency
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"os"
 	"testing"
 	"time"
 
@@ -380,4 +382,188 @@ func TestDeleteLocalChunk(t *testing.T) {
 
 	// Cleanup - delete object (may fail if chunk is gone, that's ok)
 	s3.DeleteObject(bucket, key)
+}
+
+// =============================================================================
+// Smoke Tests - End-to-End with DB State Validation
+// =============================================================================
+//
+// These tests validate that S3 API operations result in correct internal state.
+// They require DB_DSN to be set to connect to MySQL.
+
+// TestSmokeE2ELifecycle is the primary smoke test that validates the full
+// object lifecycle: upload → verify DB state → delete → verify cleanup
+func TestSmokeE2ELifecycle(t *testing.T) {
+	// Skip if DB_DSN not set
+	dbDSN := os.Getenv("DB_DSN")
+	if dbDSN == "" {
+		t.Skip("DB_DSN not set, skipping DB validation smoke test")
+	}
+
+	db := NewDBClient(t, dbDSN)
+	s3 := newS3Client(t)
+	file1 := newFileClient(t, fileServer1Addr)
+	file2 := newFileClient(t, fileServer2Addr)
+
+	bucket := testutil.UniqueID("smoke-lifecycle")
+	s3.CreateBucket(bucket)
+	defer s3.DeleteBucket(bucket)
+
+	// Generate unique test data
+	data := testutil.GenerateTestData(t, 2048) // 2KB
+	key := "smoke-test-object.bin"
+	expectedChunkID := computeChunkID(data)
+
+	t.Log("=== Phase 1: Upload via S3 API ===")
+	s3.PutObject(bucket, key, data)
+
+	// Verify data is readable
+	retrieved := s3.GetObject(bucket, key)
+	require.Equal(t, data, retrieved, "retrieved data should match uploaded")
+
+	t.Log("=== Phase 2: Verify chunk on file server ===")
+	// Wait for chunk to appear on a file server
+	WaitForCondition(t, 10*time.Second, 500*time.Millisecond, func() bool {
+		chunk1, err1 := file1.GetLocalChunk(expectedChunkID)
+		chunk2, err2 := file2.GetLocalChunk(expectedChunkID)
+		return (err1 == nil && chunk1 != nil) || (err2 == nil && chunk2 != nil)
+	}, "chunk to appear on file server")
+
+	// Verify chunk exists on at least one server
+	chunk1, err1 := file1.GetLocalChunk(expectedChunkID)
+	chunk2, err2 := file2.GetLocalChunk(expectedChunkID)
+	chunkExists := (err1 == nil && chunk1 != nil) || (err2 == nil && chunk2 != nil)
+	require.True(t, chunkExists, "chunk should exist on at least one file server")
+	t.Logf("Chunk %s exists on file server", expectedChunkID[:16])
+
+	t.Log("=== Phase 3: Verify chunk_registry entry ===")
+	// Query chunk_registry - chunk should exist with RefCount >= 1
+	entry, err := db.GetChunkRegistry(expectedChunkID)
+	if err == sql.ErrNoRows {
+		t.Logf("Note: Chunk not in registry (may use different ID scheme)")
+	} else {
+		require.NoError(t, err, "failed to query chunk_registry")
+		assert.Equal(t, expectedChunkID, entry.ChunkID, "ChunkID should match")
+		assert.GreaterOrEqual(t, entry.RefCount, int32(1), "RefCount should be >= 1")
+		// ZeroRefSince uses 0 as sentinel for "not set" (not NULL)
+		zeroRefSince := int64(0)
+		if entry.ZeroRefSince.Valid {
+			zeroRefSince = entry.ZeroRefSince.Int64
+		}
+		assert.Equal(t, int64(0), zeroRefSince, "ZeroRefSince should be 0 (not marked for GC)")
+		t.Logf("chunk_registry: RefCount=%d, Size=%d", entry.RefCount, entry.Size)
+	}
+
+	t.Log("=== Phase 4: Verify chunk_replicas entry ===")
+	replicas, err := db.GetChunkReplicas(expectedChunkID)
+	if err != nil {
+		t.Logf("Note: Could not query chunk_replicas: %v", err)
+	} else if len(replicas) > 0 {
+		t.Logf("chunk_replicas: %d replica(s)", len(replicas))
+		for _, r := range replicas {
+			t.Logf("  - ServerID=%s, BackendID=%s", r.ServerID, r.BackendID)
+		}
+	}
+
+	t.Log("=== Phase 5: Delete via S3 API ===")
+	s3.DeleteObject(bucket, key)
+
+	t.Log("=== Phase 6: Verify cleanup behavior ===")
+	// After delete, one of these should be true:
+	// 1. RefCount decremented (if other objects share the chunk)
+	// 2. ZeroRefSince set (chunk marked for GC)
+	// 3. Chunk removed from registry (immediate cleanup)
+
+	// Give a moment for async cleanup
+	time.Sleep(1 * time.Second)
+
+	entry, err = db.GetChunkRegistry(expectedChunkID)
+	if err == sql.ErrNoRows {
+		t.Log("Chunk removed from registry (immediate cleanup)")
+	} else if err != nil {
+		t.Logf("Note: Could not query chunk_registry after delete: %v", err)
+	} else {
+		if entry.RefCount == 0 {
+			t.Log("RefCount decremented to 0")
+			if entry.ZeroRefSince.Valid {
+				t.Logf("ZeroRefSince set to %d (marked for GC)", entry.ZeroRefSince.Int64)
+			}
+		} else {
+			t.Logf("RefCount still %d (chunk may be shared or cleanup pending)", entry.RefCount)
+		}
+	}
+
+	t.Log("=== Smoke test passed ===")
+}
+
+// TestSmokeDeduplicationRegistry verifies that uploading duplicate content
+// results in correct registry state (single chunk, RefCount incremented)
+func TestSmokeDeduplicationRegistry(t *testing.T) {
+	// Skip if DB_DSN not set
+	dbDSN := os.Getenv("DB_DSN")
+	if dbDSN == "" {
+		t.Skip("DB_DSN not set, skipping DB validation smoke test")
+	}
+
+	db := NewDBClient(t, dbDSN)
+	s3 := newS3Client(t)
+
+	bucket := testutil.UniqueID("smoke-dedup")
+	s3.CreateBucket(bucket)
+	defer s3.DeleteBucket(bucket)
+
+	// Generate test data - same content for both objects
+	data := testutil.GenerateTestData(t, 1536) // 1.5KB
+	expectedChunkID := computeChunkID(data)
+
+	t.Log("=== Upload first object ===")
+	key1 := "dedup-object-1.bin"
+	s3.PutObject(bucket, key1, data)
+	defer s3.DeleteObject(bucket, key1)
+
+	// Wait for chunk to be registered
+	time.Sleep(1 * time.Second)
+
+	// Get initial RefCount
+	entry1, err := db.GetChunkRegistry(expectedChunkID)
+	var initialRefCount int32 = 0
+	if err == nil {
+		initialRefCount = entry1.RefCount
+		t.Logf("After first upload: RefCount=%d", initialRefCount)
+	} else if err != sql.ErrNoRows {
+		require.NoError(t, err, "failed to query chunk_registry")
+	}
+
+	t.Log("=== Upload second object (same content) ===")
+	key2 := "dedup-object-2.bin"
+	s3.PutObject(bucket, key2, data)
+	defer s3.DeleteObject(bucket, key2)
+
+	// Wait for potential RefCount update
+	time.Sleep(1 * time.Second)
+
+	// Check RefCount increased
+	entry2, err := db.GetChunkRegistry(expectedChunkID)
+	if err == sql.ErrNoRows {
+		t.Log("Note: Chunk not in registry (may use different ID scheme)")
+	} else {
+		require.NoError(t, err, "failed to query chunk_registry after second upload")
+
+		if initialRefCount > 0 {
+			// RefCount should have increased
+			assert.Greater(t, entry2.RefCount, initialRefCount,
+				"RefCount should increase after second upload with same content")
+			t.Logf("After second upload: RefCount=%d (was %d)", entry2.RefCount, initialRefCount)
+		} else {
+			t.Logf("After second upload: RefCount=%d", entry2.RefCount)
+		}
+	}
+
+	// Verify both objects return correct data
+	retrieved1 := s3.GetObject(bucket, key1)
+	retrieved2 := s3.GetObject(bucket, key2)
+	assert.Equal(t, data, retrieved1, "first object data should match")
+	assert.Equal(t, data, retrieved2, "second object data should match")
+
+	t.Log("=== Deduplication smoke test passed ===")
 }

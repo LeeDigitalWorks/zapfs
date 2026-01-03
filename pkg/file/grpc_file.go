@@ -28,6 +28,13 @@ var objectIDNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 // streamBufferSize is the size of buffers used for streaming data (64KB)
 const streamBufferSize = 64 * 1024
 
+// Delete operation status codes for DeleteObjectResponse
+const (
+	DeleteStatusSuccess  = 0 // Operation completed successfully
+	DeleteStatusNotFound = 1 // Object was not found
+	DeleteStatusError    = 2 // Operation failed with error
+)
+
 // streamBufferPool provides pooled 64KB buffers for streaming operations.
 // Avoids allocation on every GetObject/GetObjectRange call.
 var streamBufferPool = sync.Pool{
@@ -334,7 +341,7 @@ func (fs *FileServer) DeleteObject(ctx context.Context, req *file_pb.DeleteObjec
 	if err := fs.store.DeleteObject(ctx, objUUID); err != nil {
 		return &file_pb.DeleteObjectResponse{
 			ObjectId: objectID,
-			Status:   1, // Not found
+			Status:   DeleteStatusNotFound,
 			Error:    "object not found",
 		}, nil
 	}
@@ -343,7 +350,7 @@ func (fs *FileServer) DeleteObject(ctx context.Context, req *file_pb.DeleteObjec
 
 	return &file_pb.DeleteObjectResponse{
 		ObjectId:  objectID,
-		Status:    0, // Success
+		Status:    DeleteStatusSuccess,
 		DeletedAt: timestamppb.Now(),
 	}, nil
 }
@@ -359,7 +366,7 @@ func (fs *FileServer) BatchDeleteObjects(ctx context.Context, req *file_pb.Batch
 		if err != nil {
 			results = append(results, &file_pb.DeleteObjectResponse{
 				ObjectId: objectID,
-				Status:   2, // Error
+				Status:   DeleteStatusError,
 				Error:    err.Error(),
 			})
 		} else {

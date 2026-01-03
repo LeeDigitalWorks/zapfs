@@ -37,6 +37,15 @@ func (w *wrappedResponseRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// writeXMLResponse writes an XML response with proper headers.
+// Used by GET handlers to return bucket/object configuration.
+func writeXMLResponse(w http.ResponseWriter, d *data.Data, v any) {
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+	xml.NewEncoder(w).Encode(v)
+}
+
 func writeXMLErrorResponse(w http.ResponseWriter, d *data.Data, s3code s3err.ErrorCode) {
 	w.Header().Set("Content-Type", "application/xml")
 	var bytesBuffer bytes.Buffer

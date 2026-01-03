@@ -1,0 +1,32 @@
+# Codecov configuration
+# https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  precision: 2
+  round: down
+  range: "60...90"
+
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%  # Allow 2% drop from baseline
+        informational: false
+    patch:
+      default:
+        target: 70%   # New code should have 70% coverage
+        threshold: 5%
+        informational: false
+
+# Ignore generated code and test files
+ignore:
+  - "proto/**/*_pb/**"
+  - "mocks/**"
+  - "**/*_test.go"
+  - "integration/**"
+  - "cmd/config/**"
+
+comment:
+  layout: "reach,diff,files"
+  behavior: default
+  require_changes: true

@@ -103,8 +103,6 @@ func (s *MetadataServer) PutBucketAclHandler(d *data.Data, w http.ResponseWriter
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
-
-	logger.Info().Str("bucket", bucket).Msg("bucket ACL updated")
 }
 
 // GetObjectAclHandler returns the ACL of an object.
@@ -188,8 +186,6 @@ func (s *MetadataServer) PutObjectAclHandler(d *data.Data, w http.ResponseWriter
 
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
-
-	logger.Info().Str("bucket", bucket).Str("key", key).Msg("object ACL updated")
 }
 
 // Helper functions

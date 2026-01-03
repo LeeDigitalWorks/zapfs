@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS objects (
     ttl INT UNSIGNED DEFAULT 0,
     profile_id VARCHAR(36),
     storage_class VARCHAR(32) DEFAULT 'STANDARD' COMMENT 'S3 storage class: STANDARD, GLACIER, DEEP_ARCHIVE, etc.',
+    transitioned_at BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix nano when object was transitioned, 0 if not transitioned',
+    transitioned_ref VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Remote object key in tier backend (e.g., ab/cd/uuid for S3)',
     chunk_refs JSON,
     ec_group_ids JSON,
     is_latest TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'True for the current version of the object',
@@ -29,6 +31,7 @@ CREATE TABLE IF NOT EXISTS objects (
     INDEX idx_objects_bucket_key_id (bucket, object_key(255), id),
     INDEX idx_objects_deleted (deleted_at),
     INDEX idx_objects_bucket (bucket),
+    INDEX idx_objects_storage_class (storage_class),
 
     CONSTRAINT fk_objects_bucket FOREIGN KEY (bucket)
         REFERENCES buckets(name) ON DELETE CASCADE

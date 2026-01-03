@@ -5777,6 +5777,81 @@ func (_c *MockDB_UpdateBucketVersioning_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
+// UpdateObjectTransition provides a mock function for the type MockDB
+func (_mock *MockDB) UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error {
+	ret := _mock.Called(ctx, objectID, storageClass, transitionedAt, transitionedRef)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateObjectTransition")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int64, string) error); ok {
+		r0 = returnFunc(ctx, objectID, storageClass, transitionedAt, transitionedRef)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_UpdateObjectTransition_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateObjectTransition'
+type MockDB_UpdateObjectTransition_Call struct {
+	*mock.Call
+}
+
+// UpdateObjectTransition is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - storageClass string
+//   - transitionedAt int64
+//   - transitionedRef string
+func (_e *MockDB_Expecter) UpdateObjectTransition(ctx interface{}, objectID interface{}, storageClass interface{}, transitionedAt interface{}, transitionedRef interface{}) *MockDB_UpdateObjectTransition_Call {
+	return &MockDB_UpdateObjectTransition_Call{Call: _e.mock.On("UpdateObjectTransition", ctx, objectID, storageClass, transitionedAt, transitionedRef)}
+}
+
+func (_c *MockDB_UpdateObjectTransition_Call) Run(run func(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string)) *MockDB_UpdateObjectTransition_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_UpdateObjectTransition_Call) Return(err error) *MockDB_UpdateObjectTransition_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_UpdateObjectTransition_Call) RunAndReturn(run func(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error) *MockDB_UpdateObjectTransition_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateScanState provides a mock function for the type MockDB
 func (_mock *MockDB) UpdateScanState(ctx context.Context, state *db.LifecycleScanState) error {
 	ret := _mock.Called(ctx, state)

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/enterprise/events"
 	"github.com/LeeDigitalWorks/zapfs/enterprise/license"
 	enttaskqueue "github.com/LeeDigitalWorks/zapfs/enterprise/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/debug"
@@ -34,6 +35,10 @@ type TaskWorkerConfig struct {
 	ObjectService object.Service         // For reading objects from local storage
 	RegionConfig  *manager.RegionConfig  // For getting S3 endpoints per region
 	Credentials   ReplicationCredentials // For authenticating to remote regions
+
+	// Dependencies for event notification handler
+	NotificationStore events.NotificationStore // For reading bucket notification configs
+	EventPublishers   EventPublisherConfig     // Publisher configuration
 }
 
 // ReplicationCredentials provides credentials for cross-region replication.
@@ -42,10 +47,27 @@ type ReplicationCredentials struct {
 	SecretAccessKey string
 }
 
+// EventPublisherConfig configures event notification publishers.
+type EventPublisherConfig struct {
+	// Redis publisher configuration
+	RedisAddr     string // Redis address (e.g., "localhost:6379")
+	RedisPassword string
+	RedisDB       int
+	RedisChannel  string // Channel prefix (default: "s3:events")
+
+	// Kafka publisher configuration
+	KafkaEnabled      bool
+	KafkaBrokers      []string // Kafka broker addresses
+	KafkaTopic        string   // Topic name (default: "s3-events")
+	KafkaRequiredAcks int      // 0=none, 1=leader, -1=all (default: 1)
+	KafkaCompression  string   // "none", "gzip", "snappy", "lz4", "zstd" (default: "snappy")
+}
+
 // TaskWorkerManager wraps the task queue and worker for enterprise features.
 type TaskWorkerManager struct {
-	queue  *taskqueue.DBQueue
-	worker *taskqueue.Worker
+	queue      *taskqueue.DBQueue
+	worker     *taskqueue.Worker
+	publishers []events.Publisher
 }
 
 // InitializeTaskWorker creates and starts the task worker if licensed.
@@ -111,11 +133,67 @@ func InitializeTaskWorker(ctx context.Context, cfg TaskWorkerConfig) (*TaskWorke
 		}
 	}
 
-	// Register handlers
+	// Register replication handlers
 	handlers := enttaskqueue.EnterpriseHandlers(deps)
 	for _, h := range handlers {
 		worker.RegisterHandler(h)
 		logger.Debug().Str("type", string(h.Type())).Msg("registered task handler")
+	}
+
+	// Initialize event publishers and handlers (requires FeatureEvents license)
+	var publishers []events.Publisher
+	if license.GetManager().CheckFeature(license.FeatureEvents) == nil {
+		// Initialize Redis publisher if configured
+		if cfg.EventPublishers.RedisAddr != "" {
+			redisCfg := events.RedisConfig{
+				Addr:     cfg.EventPublishers.RedisAddr,
+				Password: cfg.EventPublishers.RedisPassword,
+				DB:       cfg.EventPublishers.RedisDB,
+				Channel:  cfg.EventPublishers.RedisChannel,
+			}
+			redisPub, err := events.NewRedisPublisher(redisCfg)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to initialize Redis event publisher")
+			} else {
+				publishers = append(publishers, redisPub)
+			}
+		}
+
+		// Initialize Kafka publisher if configured
+		if cfg.EventPublishers.KafkaEnabled && len(cfg.EventPublishers.KafkaBrokers) > 0 {
+			kafkaCfg := events.KafkaConfig{
+				Brokers:      cfg.EventPublishers.KafkaBrokers,
+				Topic:        cfg.EventPublishers.KafkaTopic,
+				RequiredAcks: cfg.EventPublishers.KafkaRequiredAcks,
+				Compression:  cfg.EventPublishers.KafkaCompression,
+			}
+			kafkaPub, err := events.NewKafkaPublisher(kafkaCfg)
+			if err != nil {
+				logger.Warn().Err(err).Msg("failed to initialize Kafka event publisher")
+			} else {
+				publishers = append(publishers, kafkaPub)
+			}
+		}
+
+		// Create config store adapter if notification store is available
+		var configStore events.ConfigStore
+		if cfg.NotificationStore != nil {
+			configStore = events.NewDBConfigStore(cfg.NotificationStore)
+		}
+
+		// Register event handlers
+		eventHandlers := events.EnterpriseEventHandlers(publishers, configStore, cfg.LocalRegion)
+		for _, h := range eventHandlers {
+			worker.RegisterHandler(h)
+			handlers = append(handlers, h)
+			logger.Debug().Str("type", string(h.Type())).Msg("registered event handler")
+		}
+
+		if len(publishers) > 0 {
+			logger.Info().
+				Int("publishers", len(publishers)).
+				Msg("event notification publishers initialized")
+		}
 	}
 
 	// Start worker
@@ -158,8 +236,9 @@ func InitializeTaskWorker(ctx context.Context, cfg TaskWorkerConfig) (*TaskWorke
 		Msg("enterprise task worker started")
 
 	return &TaskWorkerManager{
-		queue:  queue,
-		worker: worker,
+		queue:      queue,
+		worker:     worker,
+		publishers: publishers,
 	}, nil
 }
 
@@ -175,6 +254,12 @@ func (m *TaskWorkerManager) Stop() {
 	}
 	if m.queue != nil {
 		m.queue.Close()
+	}
+	// Close event publishers
+	for _, pub := range m.publishers {
+		if err := pub.Close(); err != nil {
+			logger.Warn().Err(err).Str("publisher", pub.Name()).Msg("failed to close event publisher")
+		}
 	}
 	logger.Info().Msg("enterprise task worker stopped")
 }

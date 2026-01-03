@@ -1,55 +1,66 @@
 # ZapFS
 
+[![Go Version](https://img.shields.io/github/go-mod/go-version/LeeDigitalWorks/zapfs)](https://go.dev/)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/LeeDigitalWorks/zapfs/ci.yml?branch=main)](https://github.com/LeeDigitalWorks/zapfs/actions)
+[![Coverage](https://img.shields.io/codecov/c/github/LeeDigitalWorks/zapfs)](https://codecov.io/gh/LeeDigitalWorks/zapfs)
+[![Go Report Card](https://goreportcard.com/badge/github.com/LeeDigitalWorks/zapfs)](https://goreportcard.com/report/github.com/LeeDigitalWorks/zapfs)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/LeeDigitalWorks/zapfs?style=social)](https://github.com/LeeDigitalWorks/zapfs/stargazers)
+
 A distributed object storage system with an S3-compatible API, written in Go.
 
 ## Architecture
 
-```
-                            ┌──────────────────────────────────┐
-                            │  S3 Clients (AWS SDK, s3cmd...)  │
-                            └──────────────────────────────────┘
-                                            │
-                                           HTTP
-                                            ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                            Metadata Service                                  │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │ S3 API Gateway                                                         │  │
-│  │  • AWS Signature authentication (SigV4/V2/Presigned/POST)              │  │
-│  │  • Bucket & object operations, multipart uploads, versioning           │  │
-│  │  • ACLs, policies, CORS, encryption, tagging                           │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                     │                                   │                    │
-│                    gRPC                                gRPC                  │
-│                     ▼                                   ▼                    │
-│  ┌───────────────────────────┐         ┌───────────────────────────────┐     │
-│  │  Manager Client           │         │  File Client                  │     │
-│  │  • IAM credential sync    │         │  • Chunk read/write           │     │
-│  │  • Bucket registration    │         │  • Streaming uploads          │     │
-│  │  • Placement decisions    │         │  • Replication coordination   │     │
-│  └───────────────────────────┘         └───────────────────────────────┘     │
-└──────────────────────────────────────────────────────────────────────────────┘
-           │                                                  │
-          gRPC                                               gRPC
-           ▼                                                  ▼
-┌───────────────────────────────┐       ┌───────────────────────────────┐
-│   Manager Cluster (Raft)      │←─────-│        File Servers           │
-│                               │ gRPC  │                               │
-│  • Raft consensus (3+ nodes)  │       │  • Chunk storage (local/S3)   │
-│  • IAM authority              │       │  • Content-hash deduplication │
-│  • Service registry           │       │  • Erasure coding (RS)        │
-│  • Collection management      │       │  • RefCount-based GC          │
-│  • Leader forwarding          │       │  • Replication (2+ copies)    │
-└───────────────────────────────┘       └───────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Clients["S3 Clients"]
+        C1["AWS SDK"]
+        C2["s3cmd"]
+        C3["mc"]
+    end
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              MySQL / Vitess                                  │
-│  ┌─────────────────────────┐  ┌─────────────────────┐  ┌──────────────────┐  │
-│  │ buckets, objects        │  │ usage_events        │  │ tasks            │  │
-│  │ multipart_uploads       │  │ (partitioned/month) │  │ (task queue)     │  │
-│  │ ACLs, policies, configs │  │ usage_daily         │  │                  │  │
-│  └─────────────────────────┘  └─────────────────────┘  └──────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────┘
+    subgraph MetadataLayer["Metadata Service (:8082 HTTP, :8083 gRPC)"]
+        direction TB
+        API["S3 API Gateway<br/>• AWS Signature (SigV4/V2/Presigned/POST)<br/>• Bucket & object operations<br/>• Multipart, versioning, ACLs"]
+
+        subgraph InternalClients["Internal Clients"]
+            MC["Manager Client<br/>• IAM sync<br/>• Bucket registration<br/>• Placement"]
+            FC["File Client<br/>• Chunk read/write<br/>• Streaming uploads<br/>• Replication"]
+        end
+
+        API --> MC & FC
+    end
+
+    subgraph ControlPlane["Manager Cluster (:8050 gRPC, :8051 Raft)"]
+        MG1["Manager 1<br/>(Leader)"]
+        MG2["Manager 2"]
+        MG3["Manager 3"]
+
+        MG1 <-->|Raft| MG2 & MG3
+    end
+
+    subgraph DataPlane["File Servers (:8081 gRPC)"]
+        F1["File Server 1"]
+        F2["File Server 2"]
+        F3["File Server N"]
+    end
+
+    subgraph Storage["Storage Layer"]
+        FS["Local/S3 Storage<br/>• Content-hash dedup<br/>• Erasure coding (RS)<br/>• RefCount GC<br/>• Replication (2+ copies)"]
+    end
+
+    subgraph Database["MySQL / Vitess"]
+        DB1[("buckets, objects<br/>multipart_uploads<br/>ACLs, policies")]
+        DB2[("usage_events<br/>usage_daily")]
+        DB3[("tasks<br/>(task queue)")]
+    end
+
+    Clients -->|HTTP| API
+    MC -->|gRPC| ControlPlane
+    FC -->|gRPC| DataPlane
+    DataPlane -->|gRPC| ControlPlane
+    F1 & F2 & F3 --> FS
+    MetadataLayer -->|SQL| Database
 ```
 
 ### Components

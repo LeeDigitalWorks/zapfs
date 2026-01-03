@@ -97,6 +97,12 @@ type MetadataServerOpts struct {
 	// Cross-region replication (enterprise: FeatureMultiRegion)
 	ReplicationAccessKeyID     string
 	ReplicationSecretAccessKey string
+
+	// Event notifications (enterprise: FeatureEvents)
+	EventsRedisAddr     string
+	EventsRedisPassword string
+	EventsRedisDB       int
+	EventsRedisChannel  string
 }
 
 var metadataCmd = &cobra.Command{
@@ -166,6 +172,12 @@ func init() {
 	f.String("replication_access_key_id", "", "Access key for cross-region replication")
 	f.String("replication_secret_access_key", "", "Secret key for cross-region replication (use env var ZAPFS_REPLICATION_SECRET_ACCESS_KEY)")
 
+	// Event notifications (enterprise: FeatureEvents)
+	f.String("events.redis_addr", "", "Redis address for event notifications (e.g., localhost:6379)")
+	f.String("events.redis_password", "", "Redis password for event notifications")
+	f.Int("events.redis_db", 0, "Redis database number for event notifications")
+	f.String("events.redis_channel", "s3:events", "Redis channel prefix for event notifications")
+
 	viper.BindPFlags(f)
 }
 
@@ -200,6 +212,16 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		Bool("sts_enabled", iamService.STS() != nil).
 		Bool("kms_enabled", iamService.KMS() != nil).
 		Msg("IAM service initialized")
+
+	// External KMS initialization (enterprise: FeatureKMS)
+	// Returns nil in community edition or if not configured
+	externalKMS, err := initializeExternalKMS(cmd.Context())
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize external KMS")
+	}
+	if externalKMS != nil {
+		logger.Info().Msg("external KMS provider initialized")
+	}
 
 	// Register debug endpoint for IAM cache dump
 	debug.RegisterHandlerFunc("/debug/iam/cache", func(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +407,31 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		emitter = events.NoopEmitter()
 	}
 
+	// Task worker for enterprise features (replication, event notifications)
+	taskWorker, err := InitializeTaskWorker(cmd.Context(), TaskWorkerConfig{
+		DB:           sqlDBConn,
+		WorkerID:     opts.NodeID,
+		LocalRegion:  opts.RegionID,
+		Concurrency:  5,
+		NotificationStore: metadataDB,
+		EventPublishers: EventPublisherConfig{
+			RedisAddr:     opts.EventsRedisAddr,
+			RedisPassword: opts.EventsRedisPassword,
+			RedisDB:       opts.EventsRedisDB,
+			RedisChannel:  opts.EventsRedisChannel,
+		},
+		Credentials: ReplicationCredentials{
+			AccessKeyID:     opts.ReplicationAccessKeyID,
+			SecretAccessKey: opts.ReplicationSecretAccessKey,
+		},
+	})
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize task worker")
+	}
+	if taskWorker != nil {
+		defer taskWorker.Stop()
+	}
+
 	// Metadata server
 	serverCfg := api.ServerConfig{
 		ManagerClient:     managerClient,
@@ -397,7 +444,8 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		BackendManager:    backendManager,
 		DB:                metadataDB,
 		DefaultProfile:    "STANDARD",
-		IAMService:        iamService, // For KMS operations (enterprise feature)
+		IAMService:        iamService,  // For internal KMS operations (testing/dev)
+		KMSProvider:       externalKMS, // External KMS provider (enterprise: AWS KMS, Vault)
 		TaskQueue:         tq,
 		CRRHook:           crrHook, // Cross-region replication (enterprise feature)
 		Emitter:           emitter, // S3 event notifications (enterprise feature)
@@ -511,6 +559,11 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		// Cross-region replication
 		ReplicationAccessKeyID:     f.String("replication_access_key_id"),
 		ReplicationSecretAccessKey: f.String("replication_secret_access_key"),
+		// Event notifications
+		EventsRedisAddr:     f.String("events.redis_addr"),
+		EventsRedisPassword: f.String("events.redis_password"),
+		EventsRedisDB:       f.Int("events.redis_db"),
+		EventsRedisChannel:  f.String("events.redis_channel"),
 	}
 }
 
@@ -597,7 +650,18 @@ func initializeStorage(opts MetadataServerOpts) (*types.PoolSet, *types.ProfileS
 			os.MkdirAll(dataPath, 0755)
 			cfg = types.BackendConfig{Type: types.StorageTypeLocal, Path: dataPath}
 		case types.StorageTypeS3:
-			cfg = types.BackendConfig{Type: types.StorageTypeS3, Endpoint: pool.Endpoint, Region: pool.Region, Bucket: pool.Name}
+			bucket := pool.Bucket
+			if bucket == "" {
+				bucket = pool.Name // Fallback to pool name for backwards compatibility
+			}
+			cfg = types.BackendConfig{
+				Type:      types.StorageTypeS3,
+				Endpoint:  pool.Endpoint,
+				Region:    pool.Region,
+				Bucket:    bucket,
+				AccessKey: pool.AccessKey,
+				SecretKey: pool.SecretKey,
+			}
 		default:
 			logger.Warn().Str("pool", pool.Name).Str("type", string(pool.BackendType)).Msg("unsupported backend type")
 			continue

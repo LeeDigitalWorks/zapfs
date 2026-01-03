@@ -45,6 +45,7 @@ type IAMAdminConfig struct {
 // - Optionally enable basic auth with IAMAdminConfig
 type IAMAdminHandler struct {
 	iamService *iam.Service
+	raftStore  *RaftCredentialStore // Raft-backed store for mutations (Phase 2)
 	notifier   CredentialNotifier
 	config     IAMAdminConfig
 	mux        *http.ServeMux
@@ -79,6 +80,12 @@ func NewIAMAdminHandlerWithConfig(iamService *iam.Service, config IAMAdminConfig
 // SetNotifier sets the credential notifier for streaming updates
 func (h *IAMAdminHandler) SetNotifier(n CredentialNotifier) {
 	h.notifier = n
+}
+
+// SetRaftStore sets the Raft-backed credential store for mutations.
+// When set, all user/credential mutations go through Raft consensus.
+func (h *IAMAdminHandler) SetRaftStore(store *RaftCredentialStore) {
+	h.raftStore = store
 }
 
 func (h *IAMAdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -240,16 +247,38 @@ func (h *IAMAdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if err := h.iamService.CreateUser(ctx, identity); err != nil {
-		if err == iam.ErrUserAlreadyExists {
-			h.writeError(w, http.StatusConflict, "user_exists", "user already exists")
+
+	// Use Raft store if available (Phase 2), otherwise fall back to legacy iamService
+	if h.raftStore != nil {
+		// Encrypt the secret before storing in Raft
+		for _, cred := range identity.Credentials {
+			if err := iam.SecureCredential(cred); err != nil {
+				h.writeError(w, http.StatusInternalServerError, "encryption_error", "failed to encrypt credentials")
+				return
+			}
+		}
+
+		if err := h.raftStore.CreateUser(ctx, identity); err != nil {
+			if err == ErrUserExists {
+				h.writeError(w, http.StatusConflict, "user_exists", "user already exists")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
+	} else {
+		// Legacy path: use iamService
+		if err := h.iamService.CreateUser(ctx, identity); err != nil {
+			if err == iam.ErrUserAlreadyExists {
+				h.writeError(w, http.StatusConflict, "user_exists", "user already exists")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 
-	// Attach policies if specified
+	// Attach policies if specified (still uses iamService for now)
 	for _, policyName := range req.Policies {
 		// For now, attach predefined policies
 		switch policyName {
@@ -260,12 +289,12 @@ func (h *IAMAdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Add to groups
+	// Add to groups (still uses iamService for now)
 	for _, groupName := range req.Groups {
 		h.iamService.AddUserToGroup(req.Name, groupName)
 	}
 
-	logger.Info().Str("user", req.Name).Msg("IAM user created via admin API")
+	logger.Info().Str("user", req.Name).Bool("raft", h.raftStore != nil).Msg("IAM user created via admin API")
 
 	// Notify subscribers (metadata services) of new credential
 	if h.notifier != nil {
@@ -281,7 +310,17 @@ func (h *IAMAdminHandler) createUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IAMAdminHandler) listUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.iamService.ListUsers(r.Context())
+	ctx := r.Context()
+	var users []string
+	var err error
+
+	// Use Raft store if available, fall back to iamService
+	if h.raftStore != nil {
+		users, err = h.raftStore.ListUsers(ctx)
+	} else {
+		users, err = h.iamService.ListUsers(ctx)
+	}
+
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -297,12 +336,26 @@ func (h *IAMAdminHandler) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	identity, err := h.iamService.GetUser(r.Context(), name)
-	if err != nil {
+	ctx := r.Context()
+	var identity *iam.Identity
+	var err error
+
+	// Use Raft store if available, fall back to iamService
+	if h.raftStore != nil {
+		identity, err = h.raftStore.GetUser(ctx, name)
+		if err == ErrUserNotFound {
+			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+	} else {
+		identity, err = h.iamService.GetUser(ctx, name)
 		if err == iam.ErrUserNotFound {
 			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
+	}
+
+	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -335,16 +388,35 @@ func (h *IAMAdminHandler) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user first for notification
-	identity, _ := h.iamService.GetUser(r.Context(), name)
+	ctx := r.Context()
 
-	if err := h.iamService.DeleteUser(r.Context(), name); err != nil {
-		if err == iam.ErrUserNotFound {
-			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+	// Get user first for notification
+	var identity *iam.Identity
+	if h.raftStore != nil {
+		identity, _ = h.raftStore.GetUser(ctx, name)
+	} else {
+		identity, _ = h.iamService.GetUser(ctx, name)
+	}
+
+	// Use Raft store if available, otherwise fall back to legacy iamService
+	if h.raftStore != nil {
+		if err := h.raftStore.DeleteUser(ctx, name); err != nil {
+			if err == ErrUserNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
+	} else {
+		if err := h.iamService.DeleteUser(ctx, name); err != nil {
+			if err == iam.ErrUserNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 
 	// Notify subscribers of deletion
@@ -354,7 +426,7 @@ func (h *IAMAdminHandler) deleteUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	logger.Info().Str("user", name).Msg("IAM user deleted via admin API")
+	logger.Info().Str("user", name).Bool("raft", h.raftStore != nil).Msg("IAM user deleted via admin API")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -365,29 +437,67 @@ func (h *IAMAdminHandler) createAccessKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	cred, err := h.iamService.CreateAccessKey(r.Context(), name)
-	if err != nil {
-		if err == iam.ErrUserNotFound {
-			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
-			return
-		}
-		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
+	ctx := r.Context()
+
+	// Generate new credentials
+	accessKey := iam.GenerateAccessKey()
+	secretKey := iam.GenerateSecretKey()
+
+	cred := &iam.Credential{
+		AccessKey:   accessKey,
+		SecretKey:   secretKey,
+		Status:      "Active",
+		CreatedAt:   time.Now(),
+		Description: "Created via admin API",
 	}
 
-	logger.Info().Str("user", name).Str("access_key", cred.AccessKey).Msg("Access key created via admin API")
+	// Use Raft store if available, otherwise fall back to legacy iamService
+	if h.raftStore != nil {
+		// Encrypt the secret before storing in Raft
+		if err := iam.SecureCredential(cred); err != nil {
+			h.writeError(w, http.StatusInternalServerError, "encryption_error", "failed to encrypt credentials")
+			return
+		}
+
+		if err := h.raftStore.CreateAccessKey(ctx, name, cred); err != nil {
+			if err == ErrUserNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	} else {
+		var err error
+		cred, err = h.iamService.CreateAccessKey(ctx, name)
+		if err != nil {
+			if err == iam.ErrUserNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
+
+	logger.Info().Str("user", name).Str("access_key", accessKey).Bool("raft", h.raftStore != nil).Msg("Access key created via admin API")
 
 	// Notify subscribers of new credential
 	if h.notifier != nil {
-		identity, _ := h.iamService.GetUser(r.Context(), name)
+		var identity *iam.Identity
+		if h.raftStore != nil {
+			identity, _ = h.raftStore.GetUser(ctx, name)
+		} else {
+			identity, _ = h.iamService.GetUser(ctx, name)
+		}
 		if identity != nil {
 			h.notifier.NotifyCredentialChange(iam_pb.CredentialEvent_EVENT_TYPE_CREATED, identity, cred)
 		}
 	}
 
 	h.writeJSON(w, http.StatusCreated, createAccessKeyResponse{
-		AccessKey: cred.AccessKey,
-		SecretKey: cred.SecretKey,
+		AccessKey: accessKey,
+		SecretKey: secretKey,
 		Message:   "Access key created. Save the secret key - it will not be shown again.",
 	})
 }
@@ -399,12 +509,26 @@ func (h *IAMAdminHandler) listAccessKeys(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	identity, err := h.iamService.GetUser(r.Context(), name)
-	if err != nil {
+	ctx := r.Context()
+	var identity *iam.Identity
+	var err error
+
+	// Use Raft store if available, fall back to iamService
+	if h.raftStore != nil {
+		identity, err = h.raftStore.GetUser(ctx, name)
+		if err == ErrUserNotFound {
+			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+	} else {
+		identity, err = h.iamService.GetUser(ctx, name)
 		if err == iam.ErrUserNotFound {
 			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
+	}
+
+	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -431,20 +555,39 @@ func (h *IAMAdminHandler) deleteAccessKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get identity before deletion for notification
-	identity, _ := h.iamService.GetUser(r.Context(), name)
+	ctx := r.Context()
 
-	if err := h.iamService.DeleteAccessKey(r.Context(), name, keyID); err != nil {
-		if err == iam.ErrUserNotFound {
-			h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+	// Get identity before deletion for notification
+	var identity *iam.Identity
+	if h.raftStore != nil {
+		identity, _ = h.raftStore.GetUser(ctx, name)
+	} else {
+		identity, _ = h.iamService.GetUser(ctx, name)
+	}
+
+	// Use Raft store if available, otherwise fall back to legacy iamService
+	if h.raftStore != nil {
+		if err := h.raftStore.DeleteAccessKey(ctx, name, keyID); err != nil {
+			if err == ErrUserNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		if err == iam.ErrAccessKeyNotFound {
-			h.writeError(w, http.StatusNotFound, "not_found", "access key not found")
+	} else {
+		if err := h.iamService.DeleteAccessKey(ctx, name, keyID); err != nil {
+			if err == iam.ErrUserNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			if err == iam.ErrAccessKeyNotFound {
+				h.writeError(w, http.StatusNotFound, "not_found", "access key not found")
+				return
+			}
+			h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		h.writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
 	}
 
 	// Notify subscribers of deletion
@@ -453,7 +596,7 @@ func (h *IAMAdminHandler) deleteAccessKey(w http.ResponseWriter, r *http.Request
 		h.notifier.NotifyCredentialChange(iam_pb.CredentialEvent_EVENT_TYPE_DELETED, identity, deletedCred)
 	}
 
-	logger.Info().Str("user", name).Str("access_key", keyID).Msg("Access key deleted via admin API")
+	logger.Info().Str("user", name).Str("access_key", keyID).Bool("raft", h.raftStore != nil).Msg("Access key deleted via admin API")
 	w.WriteHeader(http.StatusNoContent)
 }
 

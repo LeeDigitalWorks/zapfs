@@ -8,73 +8,27 @@ import (
 )
 
 // ===== COLLECTION INDEX MANAGEMENT =====
-// These methods manage secondary indexes for efficient collection lookups.
+// These methods delegate to RaftState for secondary index management.
 
-// addCollectionToIndexes adds collection to secondary indexes (must hold lock)
+// addCollectionToIndexes adds collection to secondary indexes (must hold state lock)
 func (ms *ManagerServer) addCollectionToIndexes(col *manager_pb.Collection) {
-	// Add to owner index (sorted)
-	ownerColls := ms.collectionsByOwner[col.Owner]
-	ownerColls = append(ownerColls, col.Name)
-	// Keep sorted for efficient prefix scans
-	insertSorted(&ownerColls, col.Name)
-	ms.collectionsByOwner[col.Owner] = ownerColls
-
-	// Increment owner count
-	ms.ownerCollectionCount[col.Owner]++
-
-	// Add to tier index
-	tierColls := ms.collectionsByTier[col.Tier]
-	tierColls = append(tierColls, col.Name)
-	ms.collectionsByTier[col.Tier] = tierColls
-
-	// Add to time-ordered index
-	ms.collectionsByTime.ReplaceOrInsert(&collectionTimeItem{
-		createdAt:  col.CreatedAt.AsTime(),
-		name:       col.Name,
-		collection: col,
-	})
+	ms.state.AddCollectionToIndexes(col)
 }
 
-// removeCollectionFromIndexes removes collection from secondary indexes (must hold lock)
+// removeCollectionFromIndexes removes collection from secondary indexes (must hold state lock)
 func (ms *ManagerServer) removeCollectionFromIndexes(col *manager_pb.Collection) {
-	// Remove from owner index
-	if ownerColls, ok := ms.collectionsByOwner[col.Owner]; ok {
-		ms.collectionsByOwner[col.Owner] = removeFromSlice(ownerColls, col.Name)
-		if len(ms.collectionsByOwner[col.Owner]) == 0 {
-			delete(ms.collectionsByOwner, col.Owner)
-		}
-	}
-
-	// Decrement owner count
-	ms.ownerCollectionCount[col.Owner]--
-	if ms.ownerCollectionCount[col.Owner] == 0 {
-		delete(ms.ownerCollectionCount, col.Owner)
-	}
-
-	// Remove from tier index
-	if tierColls, ok := ms.collectionsByTier[col.Tier]; ok {
-		ms.collectionsByTier[col.Tier] = removeFromSlice(tierColls, col.Name)
-		if len(ms.collectionsByTier[col.Tier]) == 0 {
-			delete(ms.collectionsByTier, col.Tier)
-		}
-	}
-
-	// Remove from time-ordered index
-	ms.collectionsByTime.Delete(&collectionTimeItem{
-		createdAt: col.CreatedAt.AsTime(),
-		name:      col.Name,
-	})
+	ms.state.RemoveCollectionFromIndexes(col)
 }
 
-// GetOwnerCollectionCount returns number of collections owned by an owner (must hold lock)
+// GetOwnerCollectionCount returns number of collections owned by an owner (must hold state lock)
 func (ms *ManagerServer) GetOwnerCollectionCount(owner string) int {
-	return ms.ownerCollectionCount[owner]
+	return ms.state.GetOwnerCollectionCount(owner)
 }
 
-// GetCollectionsByOwner returns collection names for an owner (must hold lock)
+// GetCollectionsByOwner returns collection names for an owner (must hold state lock)
 // Results are already sorted
 func (ms *ManagerServer) GetCollectionsByOwner(owner string) []string {
-	return ms.collectionsByOwner[owner]
+	return ms.state.GetCollectionsByOwner(owner)
 }
 
 // Helper: insert into sorted slice (maintains sort order)
