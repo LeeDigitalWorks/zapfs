@@ -769,6 +769,46 @@ func initializeDatabase(opts MetadataServerOpts) (db.DB, error) {
 	driver := db.Driver(opts.DBDriver)
 	logger.Info().Str("driver", string(driver)).Str("dsn", maskDSN(opts.DBDSN)).Msg("initializing database")
 
+	// Retry with exponential backoff for container startup race conditions
+	const maxRetries = 30
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		database, err := createDatabase(driver, opts)
+		if err == nil {
+			if attempt > 1 {
+				logger.Info().Int("attempts", attempt).Msg("database connection established")
+			}
+			return database, nil
+		}
+
+		lastErr = err
+
+		// Don't retry for configuration errors
+		if opts.DBDSN == "" {
+			return nil, err
+		}
+
+		// Calculate backoff: 1s, 2s, 3s, 4s, 5s, 5s, 5s...
+		backoff := time.Duration(attempt) * time.Second
+		if backoff > 5*time.Second {
+			backoff = 5 * time.Second
+		}
+
+		logger.Warn().
+			Err(err).
+			Int("attempt", attempt).
+			Int("max_retries", maxRetries).
+			Dur("retry_in", backoff).
+			Msg("database connection failed, retrying")
+
+		time.Sleep(backoff)
+	}
+
+	return nil, fmt.Errorf("database connection failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+func createDatabase(driver db.Driver, opts MetadataServerOpts) (db.DB, error) {
 	switch driver {
 	case db.DriverVitess, db.DriverMySQL:
 		if opts.DBDSN == "" {
