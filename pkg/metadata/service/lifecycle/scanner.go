@@ -22,6 +22,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"net/url"
 	"sync"
 	"time"
 
@@ -29,9 +30,25 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
 	"github.com/google/uuid"
+)
+
+// Intelligent Tiering thresholds (per AWS spec)
+const (
+	// IntelligentTieringFrequentThreshold is the number of days before moving
+	// from Frequent Access to Infrequent Access tier (30 days).
+	IntelligentTieringFrequentThreshold = 30 * 24 * time.Hour
+
+	// IntelligentTieringInfrequentThreshold is the number of days before moving
+	// from Infrequent Access to Archive Instant Access tier (90 days).
+	IntelligentTieringInfrequentThreshold = 90 * 24 * time.Hour
+
+	// IntelligentTieringMinSize is the minimum object size for intelligent tiering.
+	// AWS uses 128KB - objects smaller than this are always in Frequent Access.
+	IntelligentTieringMinSize = 128 * 1024 // 128KB
 )
 
 // Config configures the lifecycle scanner
@@ -54,17 +71,21 @@ type Config struct {
 
 	// Enabled flag
 	Enabled bool
+
+	// IntelligentTieringEnabled enables automatic demotion of INTELLIGENT_TIERING objects
+	IntelligentTieringEnabled bool
 }
 
 // DefaultConfig returns the default scanner configuration
 func DefaultConfig() Config {
 	return Config{
-		ScanInterval:    time.Hour,
-		BatchSize:       1000,
-		Concurrency:     5,
-		MaxTasksPerScan: 10000,
-		MinScanAge:      30 * time.Minute,
-		Enabled:         true,
+		ScanInterval:              time.Hour,
+		BatchSize:                 1000,
+		Concurrency:               5,
+		MaxTasksPerScan:           10000,
+		MinScanAge:                30 * time.Minute,
+		Enabled:                   true,
+		IntelligentTieringEnabled: true,
 	}
 }
 
@@ -208,6 +229,95 @@ func (s *Scanner) runScan() {
 
 	wg.Wait()
 	logger.Info().Int("enqueued", totalEnqueued).Msg("Completed lifecycle scan")
+
+	// Also scan for intelligent tiering demotions
+	if s.config.IntelligentTieringEnabled {
+		itEnqueued, err := s.scanIntelligentTiering()
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to scan intelligent tiering objects")
+		} else if itEnqueued > 0 {
+			logger.Info().Int("enqueued", itEnqueued).Msg("Completed intelligent tiering scan")
+		}
+	}
+}
+
+// scanIntelligentTiering scans for cold INTELLIGENT_TIERING objects and enqueues
+// transition tasks to move them to lower-cost tiers.
+func (s *Scanner) scanIntelligentTiering() (int, error) {
+	now := time.Now()
+	var totalEnqueued int
+
+	// Scan for objects that haven't been accessed in 30 days (-> Infrequent Access)
+	threshold30 := now.Add(-IntelligentTieringFrequentThreshold).UnixNano()
+	objects30, err := s.db.GetColdIntelligentTieringObjects(s.ctx, threshold30, IntelligentTieringMinSize, s.config.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, obj := range objects30 {
+		// Skip if already in a lower tier (we track this via profile_id or separate field)
+		// For now, we transition to STANDARD_IA as the first tier transition
+		if err := s.enqueueIntelligentTieringTransition(obj, "STANDARD_IA"); err != nil {
+			logger.Warn().Err(err).
+				Str("bucket", obj.Bucket).
+				Str("key", obj.Key).
+				Msg("Failed to enqueue intelligent tiering transition")
+			continue
+		}
+		totalEnqueued++
+	}
+
+	// Scan for objects that haven't been accessed in 90 days (-> Archive Instant Access)
+	// These should have already been transitioned to STANDARD_IA, but if not, catch them here
+	threshold90 := now.Add(-IntelligentTieringInfrequentThreshold).UnixNano()
+	objects90, err := s.db.GetColdIntelligentTieringObjects(s.ctx, threshold90, IntelligentTieringMinSize, s.config.BatchSize)
+	if err != nil {
+		return totalEnqueued, err
+	}
+
+	for _, obj := range objects90 {
+		// For 90+ day cold objects, transition to GLACIER_IR (Glacier Instant Retrieval)
+		if err := s.enqueueIntelligentTieringTransition(obj, "GLACIER_IR"); err != nil {
+			logger.Warn().Err(err).
+				Str("bucket", obj.Bucket).
+				Str("key", obj.Key).
+				Msg("Failed to enqueue intelligent tiering transition")
+			continue
+		}
+		totalEnqueued++
+	}
+
+	return totalEnqueued, nil
+}
+
+// enqueueIntelligentTieringTransition creates a transition task for intelligent tiering
+func (s *Scanner) enqueueIntelligentTieringTransition(obj *types.ObjectRef, targetClass string) error {
+	payload := taskqueue.LifecyclePayload{
+		Bucket:          obj.Bucket,
+		Key:             obj.Key,
+		VersionID:       obj.ID.String(), // Use object ID as version identifier
+		Action:          taskqueue.LifecycleActionTransition,
+		StorageClass:    targetClass,
+		RuleID:          "intelligent-tiering-auto",
+		EvaluatedAt:     time.Now().UnixNano(),
+		ExpectedModTime: obj.CreatedAt,
+	}
+
+	payloadBytes, err := taskqueue.MarshalPayload(payload)
+	if err != nil {
+		return err
+	}
+
+	task := &taskqueue.Task{
+		ID:         uuid.New().String(),
+		Type:       taskqueue.TaskTypeLifecycle,
+		Status:     taskqueue.StatusPending,
+		Priority:   taskqueue.PriorityLow, // Lower priority than explicit lifecycle rules
+		Payload:    payloadBytes,
+		MaxRetries: 3,
+	}
+
+	return s.queue.Enqueue(s.ctx, task)
 }
 
 // scanBucket scans a single bucket for lifecycle actions
@@ -216,6 +326,23 @@ func (s *Scanner) scanBucket(bucket string) (int, error) {
 	defer func() {
 		scanDuration.Observe(time.Since(startTime).Seconds())
 	}()
+
+	// Skip federated buckets - delegate lifecycle to upstream external S3
+	// Check if bucket has a federation config (indicates bucket is in passthrough/migrating mode)
+	_, fedErr := s.db.GetFederationConfig(s.ctx, bucket)
+	if fedErr == nil {
+		// Federation config exists - bucket is federated, skip lifecycle processing
+		logger.Debug().
+			Str("bucket", bucket).
+			Msg("Skipping federated bucket for lifecycle scan - defer to external S3")
+		return 0, nil
+	}
+	// If error is "not found", bucket is not federated - continue with scan
+	// For other errors, log and continue (don't block lifecycle on federation lookup failures)
+	if fedErr != nil && !errors.Is(fedErr, db.ErrFederationNotFound) {
+		logger.Warn().Err(fedErr).Str("bucket", bucket).
+			Msg("Failed to check federation config, proceeding with lifecycle scan")
+	}
 
 	// Get lifecycle configuration
 	lifecycle, err := s.db.GetBucketLifecycle(s.ctx, bucket)
@@ -231,6 +358,9 @@ func (s *Scanner) scanBucket(bucket string) (int, error) {
 	// Create evaluator
 	evaluator := s3types.NewEvaluator(lifecycle)
 	now := time.Now().UTC()
+
+	// Check if we need to load tags for tag-based rules
+	needsTags := lifecycleHasTagFilter(lifecycle)
 
 	// Get or create scan state
 	state, err := s.db.GetScanState(s.ctx, bucket)
@@ -273,17 +403,27 @@ func (s *Scanner) scanBucket(bucket string) (int, error) {
 		}
 
 		// Evaluate each object
-		for _, obj := range objects {
+		for i := range objects {
+			obj := &objects[i]
 			objectsEvaluated.Inc()
 			state.ObjectsScanned++
 
-			event := evaluator.Eval(obj, now)
+			// Load tags if needed for tag-based rules
+			if needsTags && obj.UserTags == "" {
+				tagSet, err := s.db.GetObjectTagging(s.ctx, bucket, obj.Name)
+				if err == nil && tagSet != nil {
+					obj.UserTags = tagSetToQueryString(tagSet)
+				}
+				// Ignore tag loading errors - object may not have tags
+			}
+
+			event := evaluator.Eval(*obj, now)
 			if event.Action == s3types.NoneAction {
 				continue
 			}
 
 			// Enqueue task
-			if err := s.enqueueAction(bucket, event, obj); err != nil {
+			if err := s.enqueueAction(bucket, event, *obj); err != nil {
 				logger.Warn().Err(err).
 					Str("bucket", bucket).
 					Str("key", obj.Name).
@@ -328,32 +468,41 @@ func (s *Scanner) scanBucket(bucket string) (int, error) {
 }
 
 // listObjects lists objects from the bucket with pagination
+// Uses ListObjectVersions to properly handle versioned buckets and get
+// accurate IsLatest and DeleteMarker information.
 func (s *Scanner) listObjects(bucket, marker string, limit int) ([]s3types.ObjectState, string, error) {
-	// List objects from database
-	objects, err := s.db.ListObjects(s.ctx, bucket, marker, limit)
+	// Use ListObjectVersions to get proper version information including IsLatest
+	// This works correctly for both versioned and non-versioned buckets.
+	// For non-versioned buckets, each object has a single version with IsLatest=true.
+	versions, _, nextKeyMarker, _, err := s.db.ListObjectVersions(
+		s.ctx,
+		bucket,
+		"",     // prefix - scan all objects
+		marker, // keyMarker
+		"",     // versionIDMarker - not used for lifecycle scanning
+		"",     // delimiter - no hierarchical listing needed
+		limit,
+	)
 	if err != nil {
 		return nil, "", err
 	}
 
 	// Convert to ObjectState for evaluation
-	states := make([]s3types.ObjectState, 0, len(objects))
-	for _, obj := range objects {
+	// Note: Tags are loaded lazily in scanBucket when needed for tag-based rules
+	states := make([]s3types.ObjectState, 0, len(versions))
+	for _, v := range versions {
 		state := s3types.ObjectState{
-			Name:     obj.Key,
-			Size:     int64(obj.Size),
-			ModTime:  time.Unix(0, obj.CreatedAt),
-			IsLatest: true, // TODO: Handle versioning
-			// TODO: Load tags for tag-based rules
+			Name:         v.Key,
+			Size:         v.Size,
+			ModTime:      time.Unix(0, v.LastModified),
+			IsLatest:     v.IsLatest,
+			DeleteMarker: v.IsDeleteMarker,
+			VersionID:    v.VersionID,
 		}
 		states = append(states, state)
 	}
 
-	var nextMarker string
-	if len(objects) == limit && len(objects) > 0 {
-		nextMarker = objects[len(objects)-1].Key
-	}
-
-	return states, nextMarker, nil
+	return states, nextKeyMarker, nil
 }
 
 // enqueueAction creates a task for the lifecycle action
@@ -402,4 +551,39 @@ func actionFromEvent(action s3types.Action) string {
 	default:
 		return ""
 	}
+}
+
+// lifecycleHasTagFilter checks if any rule in the lifecycle has a tag filter.
+// This is used to optimize scanning - we only load tags when needed.
+func lifecycleHasTagFilter(lc *s3types.Lifecycle) bool {
+	if lc == nil {
+		return false
+	}
+	for _, rule := range lc.Rules {
+		if rule.Status != s3types.LifecycleStatusEnabled {
+			continue
+		}
+		if rule.Filter != nil {
+			if rule.Filter.Tag != nil {
+				return true
+			}
+			if rule.Filter.And != nil && len(rule.Filter.And.Tags) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tagSetToQueryString converts a TagSet to URL query string format.
+// e.g., []Tag{{Key:"env", Value:"prod"}, {Key:"team", Value:"eng"}} -> "env=prod&team=eng"
+func tagSetToQueryString(tagSet *s3types.TagSet) string {
+	if tagSet == nil || len(tagSet.Tags) == 0 {
+		return ""
+	}
+	values := url.Values{}
+	for _, tag := range tagSet.Tags {
+		values.Set(tag.Key, tag.Value)
+	}
+	return values.Encode()
 }

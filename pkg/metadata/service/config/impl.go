@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
@@ -309,6 +310,8 @@ func (s *serviceImpl) SetBucketPolicy(ctx context.Context, bucket string, policy
 
 	// Store in DB
 	if err := s.db.SetBucketPolicy(ctx, bucket, policy); err != nil {
+		// Log the underlying error for debugging
+		logger.Error().Err(err).Str("bucket", bucket).Msg("SetBucketPolicy DB error")
 		return &Error{Code: ErrCodeInternalError, Message: "failed to set policy", Err: err}
 	}
 

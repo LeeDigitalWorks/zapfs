@@ -32,8 +32,8 @@ go.work.sum
 .vscode/
 
 workspace/
-zapfs
-zapfs-enterprise
+/zapfs
+/zapfs-enterprise
 
 # Air hot reload temp directory
 tmp/

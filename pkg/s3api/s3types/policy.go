@@ -245,8 +245,8 @@ type PolicyEvaluationContext struct {
 
 // EvaluationResult represents the outcome of policy evaluation
 type EvaluationResult struct {
-	Effect      Effect
-	Matched     bool // True if any statement matched (explicit allow/deny)
+	Effect       Effect
+	Matched      bool // True if any statement matched (explicit allow/deny)
 	ExplicitDeny bool // True if there was an explicit Deny statement
 }
 

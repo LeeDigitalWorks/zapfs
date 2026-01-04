@@ -17,9 +17,10 @@ import (
 
 // Match represents a successful S3 operation match.
 type Match struct {
-	Action s3action.Action
-	Bucket string
-	Key    string
+	Action           s3action.Action
+	Bucket           string
+	Key              string
+	IsWebsiteRequest bool // True if request came through website endpoint
 }
 
 // Router represents an S3 request parser that can parse out the matching
@@ -29,10 +30,17 @@ type Router struct {
 }
 
 // NewRouter returns a new router using the provided hosts.
-func NewRouter(hosts ...string) *Router {
+// websiteHosts are domains that serve static website content.
+func NewRouter(hosts []string, websiteHosts []string) *Router {
 	pr := newPathRouter()
 	sr := newServiceRouter()
 	ar := newAnyHostRouter()
+
+	// Build set of website hosts for O(1) lookup
+	websiteHostSet := make(map[string]bool, len(websiteHosts))
+	for _, h := range websiteHosts {
+		websiteHostSet[h] = true
+	}
 
 	// Router order matters - more specific routers should come first
 	routers := []router{
@@ -42,11 +50,14 @@ func NewRouter(hosts ...string) *Router {
 
 	// Service router - matches exact host at root path for ListBuckets
 	// Bucket-specific routers (virtual-hosted and path-style)
-	for _, host := range hosts {
+	// Add routers for all hosts (both API and website)
+	allHosts := append(hosts, websiteHosts...)
+	for _, host := range allHosts {
+		isWebsite := websiteHostSet[host]
 		routers = append(routers,
 			serviceRouter{host: host, r: sr},
-			newBucketHost(host, pr),
-			newLegacyHost(host, pr),
+			newBucketHost(host, pr, isWebsite),
+			newLegacyHost(host, pr, isWebsite),
 		)
 	}
 
@@ -88,14 +99,16 @@ type router interface {
 
 // legacyHost represents a request with the bucket in the path (path-style).
 type legacyHost struct {
-	host string
-	pr   pathRouter
+	host              string
+	isWebsiteEndpoint bool
+	pr                pathRouter
 }
 
-func newLegacyHost(host string, pr pathRouter) legacyHost {
+func newLegacyHost(host string, pr pathRouter, isWebsite bool) legacyHost {
 	return legacyHost{
-		host: host,
-		pr:   pr,
+		host:              host,
+		isWebsiteEndpoint: isWebsite,
+		pr:                pr,
 	}
 }
 
@@ -112,6 +125,11 @@ func (h legacyHost) matchReq(host string, req *http.Request, v url.Values) (Matc
 		return match, false
 	}
 
+	// Website endpoints use simplified routing
+	if h.isWebsiteEndpoint {
+		return matchWebsiteRequest(req.Method, bucket, key)
+	}
+
 	match.Bucket = bucket
 	match.Key = key
 
@@ -122,14 +140,16 @@ func (h legacyHost) matchReq(host string, req *http.Request, v url.Values) (Matc
 
 // bucketHost represents a request with the bucket in the host (virtual-hosted-style).
 type bucketHost struct {
-	suffix string
-	pr     pathRouter
+	suffix            string
+	isWebsiteEndpoint bool
+	pr                pathRouter
 }
 
-func newBucketHost(host string, pr pathRouter) bucketHost {
+func newBucketHost(host string, pr pathRouter, isWebsite bool) bucketHost {
 	return bucketHost{
-		suffix: "." + host,
-		pr:     pr,
+		suffix:            "." + host,
+		isWebsiteEndpoint: isWebsite,
+		pr:                pr,
 	}
 }
 
@@ -143,6 +163,11 @@ func (h bucketHost) matchReq(host string, req *http.Request, v url.Values) (Matc
 		return Match{}, false
 	}
 	key := strings.TrimPrefix(req.URL.Path, "/")
+
+	// Website endpoints use simplified routing
+	if h.isWebsiteEndpoint {
+		return matchWebsiteRequest(req.Method, bucket, key)
+	}
 
 	match := Match{Bucket: bucket, Key: key}
 	match.Action, ok = h.pr.match(req, v, match.Key)
@@ -342,6 +367,35 @@ func getUTF8String(s string) (string, error) {
 		return s, nil
 	}
 	return charmap.ISO8859_1.NewDecoder().String(s)
+}
+
+// matchWebsiteRequest handles requests to website endpoints.
+// Website requests only support GET and HEAD requests.
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteEndpoints.html#WebsiteRestEndpointDiff
+func matchWebsiteRequest(method, bucket, key string) (Match, bool) {
+	var action s3action.Action
+	switch method {
+	case http.MethodGet:
+		action = s3action.GetObject
+	case http.MethodHead:
+		action = s3action.HeadObject
+	default:
+		// Return a match with Unknown action to prevent fallthrough to virtualHost.
+		// The handler will respond with MethodNotAllowed.
+		return Match{
+			Action:           s3action.Unknown,
+			Bucket:           bucket,
+			Key:              key,
+			IsWebsiteRequest: true,
+		}, true
+	}
+
+	return Match{
+		Action:           action,
+		Bucket:           bucket,
+		Key:              key,
+		IsWebsiteRequest: true,
+	}, true
 }
 
 // routeDef defines a single route with its conditions

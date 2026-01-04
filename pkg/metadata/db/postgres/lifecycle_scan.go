@@ -21,7 +21,7 @@ func (p *Postgres) GetScanState(ctx context.Context, bucket string) (*db.Lifecyc
 	var scanStartedAt, scanCompletedAt int64
 	var lastError sql.NullString
 
-	err := p.db.QueryRowContext(ctx, `
+	err := p.Store.DB().QueryRowContext(ctx, `
 		SELECT bucket, last_key, last_version_id, scan_started_at, scan_completed_at,
 		       objects_scanned, actions_enqueued, last_error, consecutive_errors
 		FROM lifecycle_scan_state WHERE bucket = $1
@@ -57,7 +57,7 @@ func (p *Postgres) UpdateScanState(ctx context.Context, state *db.LifecycleScanS
 		lastError = sql.NullString{String: state.LastError, Valid: true}
 	}
 
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		INSERT INTO lifecycle_scan_state
 			(bucket, last_key, last_version_id, scan_started_at, scan_completed_at,
 			 objects_scanned, actions_enqueued, last_error, consecutive_errors)
@@ -83,7 +83,7 @@ func (p *Postgres) UpdateScanState(ctx context.Context, state *db.LifecycleScanS
 }
 
 func (p *Postgres) ListBucketsWithLifecycle(ctx context.Context) ([]string, error) {
-	rows, err := p.db.QueryContext(ctx, `
+	rows, err := p.Store.DB().QueryContext(ctx, `
 		SELECT bucket FROM bucket_lifecycle
 	`)
 	if err != nil {
@@ -108,7 +108,7 @@ func (p *Postgres) GetBucketsNeedingScan(ctx context.Context, minAge time.Durati
 	// 2. Were last scanned more than minAge ago
 	cutoff := time.Now().Add(-minAge).UnixNano()
 
-	rows, err := p.db.QueryContext(ctx, `
+	rows, err := p.Store.DB().QueryContext(ctx, `
 		SELECT bl.bucket
 		FROM bucket_lifecycle bl
 		LEFT JOIN lifecycle_scan_state lss ON bl.bucket = lss.bucket
@@ -135,7 +135,7 @@ func (p *Postgres) GetBucketsNeedingScan(ctx context.Context, minAge time.Durati
 }
 
 func (p *Postgres) ResetScanState(ctx context.Context, bucket string) error {
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM lifecycle_scan_state WHERE bucket = $1
 	`, bucket)
 	if err != nil {

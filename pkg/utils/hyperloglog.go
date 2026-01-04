@@ -211,7 +211,6 @@ func getAlpha(m uint32) float64 {
 	}
 }
 
-
 // HyperLogLogSet manages multiple HyperLogLogs for different keys.
 // Useful for tracking cardinality per bucket, user, etc.
 type HyperLogLogSet struct {

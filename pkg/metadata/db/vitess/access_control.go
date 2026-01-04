@@ -19,7 +19,7 @@ import (
 
 func (v *Vitess) GetPublicAccessBlock(ctx context.Context, bucket string) (*s3types.PublicAccessBlockConfig, error) {
 	var blockPublicAcls, ignorePublicAcls, blockPublicPolicy, restrictPublicBuckets bool
-	err := v.db.QueryRowContext(ctx, `
+	err := v.Store.DB().QueryRowContext(ctx, `
 		SELECT block_public_acls, ignore_public_acls, block_public_policy, restrict_public_buckets
 		FROM bucket_public_access_block WHERE bucket = ?
 	`, bucket).Scan(&blockPublicAcls, &ignorePublicAcls, &blockPublicPolicy, &restrictPublicBuckets)
@@ -41,7 +41,7 @@ func (v *Vitess) GetPublicAccessBlock(ctx context.Context, bucket string) (*s3ty
 
 func (v *Vitess) SetPublicAccessBlock(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig) error {
 	now := time.Now().UnixNano()
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		INSERT INTO bucket_public_access_block (bucket, block_public_acls, ignore_public_acls, block_public_policy, restrict_public_buckets, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
@@ -58,7 +58,7 @@ func (v *Vitess) SetPublicAccessBlock(ctx context.Context, bucket string, config
 }
 
 func (v *Vitess) DeletePublicAccessBlock(ctx context.Context, bucket string) error {
-	result, err := v.db.ExecContext(ctx, `
+	result, err := v.Store.DB().ExecContext(ctx, `
 		DELETE FROM bucket_public_access_block WHERE bucket = ?
 	`, bucket)
 	if err != nil {
@@ -78,7 +78,7 @@ func (v *Vitess) DeletePublicAccessBlock(ctx context.Context, bucket string) err
 
 func (v *Vitess) GetOwnershipControls(ctx context.Context, bucket string) (*s3types.OwnershipControls, error) {
 	var objectOwnership string
-	err := v.db.QueryRowContext(ctx, `
+	err := v.Store.DB().QueryRowContext(ctx, `
 		SELECT object_ownership FROM bucket_ownership_controls WHERE bucket = ?
 	`, bucket).Scan(&objectOwnership)
 
@@ -103,7 +103,7 @@ func (v *Vitess) SetOwnershipControls(ctx context.Context, bucket string, contro
 
 	objectOwnership := controls.Rules[0].ObjectOwnership
 	now := time.Now().UnixNano()
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		INSERT INTO bucket_ownership_controls (bucket, object_ownership, created_at, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE object_ownership = VALUES(object_ownership), updated_at = VALUES(updated_at)
@@ -115,7 +115,7 @@ func (v *Vitess) SetOwnershipControls(ctx context.Context, bucket string, contro
 }
 
 func (v *Vitess) DeleteOwnershipControls(ctx context.Context, bucket string) error {
-	result, err := v.db.ExecContext(ctx, `
+	result, err := v.Store.DB().ExecContext(ctx, `
 		DELETE FROM bucket_ownership_controls WHERE bucket = ?
 	`, bucket)
 	if err != nil {

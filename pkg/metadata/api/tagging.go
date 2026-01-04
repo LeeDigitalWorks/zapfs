@@ -4,15 +4,9 @@
 package api
 
 import (
-	"encoding/xml"
-	"errors"
-	"io"
 	"net/http"
 
-	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
-	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/config"
-	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
@@ -26,21 +20,11 @@ func (s *MetadataServer) GetBucketTaggingHandler(d *data.Data, w http.ResponseWr
 	}
 
 	tagSet, err := s.svc.Config().GetBucketTagging(d.Ctx, d.S3Info.Bucket)
-	if err != nil {
-		var cfgErr *config.Error
-		if errors.As(err, &cfgErr) {
-			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
-			return
-		}
-		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to get bucket tagging")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	if handleServiceError(w, d, err) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/xml")
-	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
-	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(tagSet)
+	writeXMLResponse(w, d, http.StatusOK, tagSet)
 }
 
 // PutBucketTaggingHandler sets the tag set for a bucket.
@@ -51,34 +35,17 @@ func (s *MetadataServer) PutBucketTaggingHandler(d *data.Data, w http.ResponseWr
 		return
 	}
 
-	// Parse request body
-	body, err := io.ReadAll(d.Req.Body)
-	if err != nil || len(body) == 0 {
-		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
-		return
-	}
-
 	var tagSet s3types.TagSet
-	if err := xml.Unmarshal(body, &tagSet); err != nil {
-		logger.Warn().Err(err).Str("bucket", d.S3Info.Bucket).Msg("invalid tagging XML")
-		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+	if errCode := parseXMLBody(d, &tagSet); errCode != s3err.ErrNone {
+		writeXMLErrorResponse(w, d, errCode)
 		return
 	}
 
-	// Call service
-	if err := s.svc.Config().SetBucketTagging(d.Ctx, d.S3Info.Bucket, &tagSet); err != nil {
-		var cfgErr *config.Error
-		if errors.As(err, &cfgErr) {
-			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
-			return
-		}
-		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to set bucket tagging")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	if err := s.svc.Config().SetBucketTagging(d.Ctx, d.S3Info.Bucket, &tagSet); handleServiceError(w, d, err) {
 		return
 	}
 
-	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
-	w.WriteHeader(http.StatusNoContent)
+	writeNoContent(w, d)
 }
 
 // DeleteBucketTaggingHandler removes the tag set for a bucket.
@@ -89,19 +56,11 @@ func (s *MetadataServer) DeleteBucketTaggingHandler(d *data.Data, w http.Respons
 		return
 	}
 
-	if err := s.svc.Config().DeleteBucketTagging(d.Ctx, d.S3Info.Bucket); err != nil {
-		var cfgErr *config.Error
-		if errors.As(err, &cfgErr) {
-			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
-			return
-		}
-		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Msg("failed to delete bucket tagging")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	if err := s.svc.Config().DeleteBucketTagging(d.Ctx, d.S3Info.Bucket); handleServiceError(w, d, err) {
 		return
 	}
 
-	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
-	w.WriteHeader(http.StatusNoContent)
+	writeNoContent(w, d)
 }
 
 // GetObjectTaggingHandler returns the tag set for an object.
@@ -113,24 +72,14 @@ func (s *MetadataServer) GetObjectTaggingHandler(d *data.Data, w http.ResponseWr
 	}
 
 	result, err := s.svc.Config().GetObjectTagging(d.Ctx, d.S3Info.Bucket, d.S3Info.Key)
-	if err != nil {
-		var cfgErr *config.Error
-		if errors.As(err, &cfgErr) {
-			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
-			return
-		}
-		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("failed to get object tagging")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	if handleServiceError(w, d, err) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/xml")
-	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	if result.VersionID != "" {
 		w.Header().Set("x-amz-version-id", result.VersionID)
 	}
-	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(result.Tags)
+	writeXMLResponse(w, d, http.StatusOK, result.Tags)
 }
 
 // PutObjectTaggingHandler sets the tag set for an object.
@@ -141,38 +90,21 @@ func (s *MetadataServer) PutObjectTaggingHandler(d *data.Data, w http.ResponseWr
 		return
 	}
 
-	// Parse request body
-	body, err := io.ReadAll(d.Req.Body)
-	if err != nil || len(body) == 0 {
-		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
-		return
-	}
-
 	var tagSet s3types.TagSet
-	if err := xml.Unmarshal(body, &tagSet); err != nil {
-		logger.Warn().Err(err).Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("invalid tagging XML")
-		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+	if errCode := parseXMLBody(d, &tagSet); errCode != s3err.ErrNone {
+		writeXMLErrorResponse(w, d, errCode)
 		return
 	}
 
-	// Call service
 	result, err := s.svc.Config().SetObjectTagging(d.Ctx, d.S3Info.Bucket, d.S3Info.Key, &tagSet)
-	if err != nil {
-		var cfgErr *config.Error
-		if errors.As(err, &cfgErr) {
-			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
-			return
-		}
-		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("failed to set object tagging")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	if handleServiceError(w, d, err) {
 		return
 	}
 
-	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	if result.VersionID != "" {
 		w.Header().Set("x-amz-version-id", result.VersionID)
 	}
-	w.WriteHeader(http.StatusOK)
+	writeXMLResponse(w, d, http.StatusOK, nil)
 }
 
 // DeleteObjectTaggingHandler removes the tag set for an object.
@@ -184,20 +116,12 @@ func (s *MetadataServer) DeleteObjectTaggingHandler(d *data.Data, w http.Respons
 	}
 
 	result, err := s.svc.Config().DeleteObjectTagging(d.Ctx, d.S3Info.Bucket, d.S3Info.Key)
-	if err != nil {
-		var cfgErr *config.Error
-		if errors.As(err, &cfgErr) {
-			writeXMLErrorResponse(w, d, cfgErr.ToS3Error())
-			return
-		}
-		logger.Error().Err(err).Str("bucket", d.S3Info.Bucket).Str("key", d.S3Info.Key).Msg("failed to delete object tagging")
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	if handleServiceError(w, d, err) {
 		return
 	}
 
-	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	if result.VersionID != "" {
 		w.Header().Set("x-amz-version-id", result.VersionID)
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeNoContent(w, d)
 }

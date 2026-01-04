@@ -155,6 +155,69 @@ func (_c *MockDB_Close_Call) RunAndReturn(run func() error) *MockDB_Close_Call {
 	return _c
 }
 
+// CompleteRestore provides a mock function for the type MockDB
+func (_mock *MockDB) CompleteRestore(ctx context.Context, objectID string, expiryDate int64) error {
+	ret := _mock.Called(ctx, objectID, expiryDate)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteRestore")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, expiryDate)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_CompleteRestore_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteRestore'
+type MockDB_CompleteRestore_Call struct {
+	*mock.Call
+}
+
+// CompleteRestore is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - expiryDate int64
+func (_e *MockDB_Expecter) CompleteRestore(ctx interface{}, objectID interface{}, expiryDate interface{}) *MockDB_CompleteRestore_Call {
+	return &MockDB_CompleteRestore_Call{Call: _e.mock.On("CompleteRestore", ctx, objectID, expiryDate)}
+}
+
+func (_c *MockDB_CompleteRestore_Call) Run(run func(ctx context.Context, objectID string, expiryDate int64)) *MockDB_CompleteRestore_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_CompleteRestore_Call) Return(err error) *MockDB_CompleteRestore_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_CompleteRestore_Call) RunAndReturn(run func(ctx context.Context, objectID string, expiryDate int64) error) *MockDB_CompleteRestore_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CountBuckets provides a mock function for the type MockDB
 func (_mock *MockDB) CountBuckets(ctx context.Context) (int64, error) {
 	ret := _mock.Called(ctx)
@@ -956,6 +1019,126 @@ func (_c *MockDB_DeleteChunkRegistry_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// DeleteFederationConfig provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteFederationConfig(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteFederationConfig")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteFederationConfig_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteFederationConfig'
+type MockDB_DeleteFederationConfig_Call struct {
+	*mock.Call
+}
+
+// DeleteFederationConfig is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) DeleteFederationConfig(ctx interface{}, bucket interface{}) *MockDB_DeleteFederationConfig_Call {
+	return &MockDB_DeleteFederationConfig_Call{Call: _e.mock.On("DeleteFederationConfig", ctx, bucket)}
+}
+
+func (_c *MockDB_DeleteFederationConfig_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_DeleteFederationConfig_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteFederationConfig_Call) Return(err error) *MockDB_DeleteFederationConfig_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteFederationConfig_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteFederationConfig_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteIntelligentTieringConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteIntelligentTieringConfiguration(ctx context.Context, bucket string, configID string) error {
+	ret := _mock.Called(ctx, bucket, configID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteIntelligentTieringConfiguration")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, bucket, configID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteIntelligentTieringConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteIntelligentTieringConfiguration'
+type MockDB_DeleteIntelligentTieringConfiguration_Call struct {
+	*mock.Call
+}
+
+// DeleteIntelligentTieringConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - configID string
+func (_e *MockDB_Expecter) DeleteIntelligentTieringConfiguration(ctx interface{}, bucket interface{}, configID interface{}) *MockDB_DeleteIntelligentTieringConfiguration_Call {
+	return &MockDB_DeleteIntelligentTieringConfiguration_Call{Call: _e.mock.On("DeleteIntelligentTieringConfiguration", ctx, bucket, configID)}
+}
+
+func (_c *MockDB_DeleteIntelligentTieringConfiguration_Call) Run(run func(ctx context.Context, bucket string, configID string)) *MockDB_DeleteIntelligentTieringConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteIntelligentTieringConfiguration_Call) Return(err error) *MockDB_DeleteIntelligentTieringConfiguration_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteIntelligentTieringConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string, configID string) error) *MockDB_DeleteIntelligentTieringConfiguration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteMultipartUpload provides a mock function for the type MockDB
 func (_mock *MockDB) DeleteMultipartUpload(ctx context.Context, bucket string, key string, uploadID string) error {
 	ret := _mock.Called(ctx, bucket, key, uploadID)
@@ -1444,6 +1627,63 @@ func (_c *MockDB_DeletePublicAccessBlock_Call) Return(err error) *MockDB_DeleteP
 }
 
 func (_c *MockDB_DeletePublicAccessBlock_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeletePublicAccessBlock_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteReplicationConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) DeleteReplicationConfiguration(ctx context.Context, bucket string) error {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteReplicationConfiguration")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_DeleteReplicationConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteReplicationConfiguration'
+type MockDB_DeleteReplicationConfiguration_Call struct {
+	*mock.Call
+}
+
+// DeleteReplicationConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) DeleteReplicationConfiguration(ctx interface{}, bucket interface{}) *MockDB_DeleteReplicationConfiguration_Call {
+	return &MockDB_DeleteReplicationConfiguration_Call{Call: _e.mock.On("DeleteReplicationConfiguration", ctx, bucket)}
+}
+
+func (_c *MockDB_DeleteReplicationConfiguration_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_DeleteReplicationConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_DeleteReplicationConfiguration_Call) Return(err error) *MockDB_DeleteReplicationConfiguration_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_DeleteReplicationConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string) error) *MockDB_DeleteReplicationConfiguration_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2332,6 +2572,370 @@ func (_c *MockDB_GetChunksByServer_Call) Return(strings []string, err error) *Mo
 }
 
 func (_c *MockDB_GetChunksByServer_Call) RunAndReturn(run func(ctx context.Context, serverID string) ([]string, error)) *MockDB_GetChunksByServer_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetColdIntelligentTieringObjects provides a mock function for the type MockDB
+func (_mock *MockDB) GetColdIntelligentTieringObjects(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error) {
+	ret := _mock.Called(ctx, threshold, minSize, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetColdIntelligentTieringObjects")
+	}
+
+	var r0 []*types.ObjectRef
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int64, int) ([]*types.ObjectRef, error)); ok {
+		return returnFunc(ctx, threshold, minSize, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int64, int) []*types.ObjectRef); ok {
+		r0 = returnFunc(ctx, threshold, minSize, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*types.ObjectRef)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, int64, int) error); ok {
+		r1 = returnFunc(ctx, threshold, minSize, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetColdIntelligentTieringObjects_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetColdIntelligentTieringObjects'
+type MockDB_GetColdIntelligentTieringObjects_Call struct {
+	*mock.Call
+}
+
+// GetColdIntelligentTieringObjects is a helper method to define mock.On call
+//   - ctx context.Context
+//   - threshold int64
+//   - minSize int64
+//   - limit int
+func (_e *MockDB_Expecter) GetColdIntelligentTieringObjects(ctx interface{}, threshold interface{}, minSize interface{}, limit interface{}) *MockDB_GetColdIntelligentTieringObjects_Call {
+	return &MockDB_GetColdIntelligentTieringObjects_Call{Call: _e.mock.On("GetColdIntelligentTieringObjects", ctx, threshold, minSize, limit)}
+}
+
+func (_c *MockDB_GetColdIntelligentTieringObjects_Call) Run(run func(ctx context.Context, threshold int64, minSize int64, limit int)) *MockDB_GetColdIntelligentTieringObjects_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetColdIntelligentTieringObjects_Call) Return(objectRefs []*types.ObjectRef, err error) *MockDB_GetColdIntelligentTieringObjects_Call {
+	_c.Call.Return(objectRefs, err)
+	return _c
+}
+
+func (_c *MockDB_GetColdIntelligentTieringObjects_Call) RunAndReturn(run func(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error)) *MockDB_GetColdIntelligentTieringObjects_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetExpiredRestores provides a mock function for the type MockDB
+func (_mock *MockDB) GetExpiredRestores(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error) {
+	ret := _mock.Called(ctx, now, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExpiredRestores")
+	}
+
+	var r0 []*types.ObjectRef
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int) ([]*types.ObjectRef, error)); ok {
+		return returnFunc(ctx, now, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int) []*types.ObjectRef); ok {
+		r0 = returnFunc(ctx, now, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*types.ObjectRef)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, int) error); ok {
+		r1 = returnFunc(ctx, now, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetExpiredRestores_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExpiredRestores'
+type MockDB_GetExpiredRestores_Call struct {
+	*mock.Call
+}
+
+// GetExpiredRestores is a helper method to define mock.On call
+//   - ctx context.Context
+//   - now int64
+//   - limit int
+func (_e *MockDB_Expecter) GetExpiredRestores(ctx interface{}, now interface{}, limit interface{}) *MockDB_GetExpiredRestores_Call {
+	return &MockDB_GetExpiredRestores_Call{Call: _e.mock.On("GetExpiredRestores", ctx, now, limit)}
+}
+
+func (_c *MockDB_GetExpiredRestores_Call) Run(run func(ctx context.Context, now int64, limit int)) *MockDB_GetExpiredRestores_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetExpiredRestores_Call) Return(objectRefs []*types.ObjectRef, err error) *MockDB_GetExpiredRestores_Call {
+	_c.Call.Return(objectRefs, err)
+	return _c
+}
+
+func (_c *MockDB_GetExpiredRestores_Call) RunAndReturn(run func(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error)) *MockDB_GetExpiredRestores_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetFederatedBucketsNeedingSync provides a mock function for the type MockDB
+func (_mock *MockDB) GetFederatedBucketsNeedingSync(ctx context.Context, limit int) ([]*s3types.FederationConfig, error) {
+	ret := _mock.Called(ctx, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFederatedBucketsNeedingSync")
+	}
+
+	var r0 []*s3types.FederationConfig
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*s3types.FederationConfig, error)); ok {
+		return returnFunc(ctx, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*s3types.FederationConfig); ok {
+		r0 = returnFunc(ctx, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*s3types.FederationConfig)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
+		r1 = returnFunc(ctx, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetFederatedBucketsNeedingSync_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetFederatedBucketsNeedingSync'
+type MockDB_GetFederatedBucketsNeedingSync_Call struct {
+	*mock.Call
+}
+
+// GetFederatedBucketsNeedingSync is a helper method to define mock.On call
+//   - ctx context.Context
+//   - limit int
+func (_e *MockDB_Expecter) GetFederatedBucketsNeedingSync(ctx interface{}, limit interface{}) *MockDB_GetFederatedBucketsNeedingSync_Call {
+	return &MockDB_GetFederatedBucketsNeedingSync_Call{Call: _e.mock.On("GetFederatedBucketsNeedingSync", ctx, limit)}
+}
+
+func (_c *MockDB_GetFederatedBucketsNeedingSync_Call) Run(run func(ctx context.Context, limit int)) *MockDB_GetFederatedBucketsNeedingSync_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetFederatedBucketsNeedingSync_Call) Return(federationConfigs []*s3types.FederationConfig, err error) *MockDB_GetFederatedBucketsNeedingSync_Call {
+	_c.Call.Return(federationConfigs, err)
+	return _c
+}
+
+func (_c *MockDB_GetFederatedBucketsNeedingSync_Call) RunAndReturn(run func(ctx context.Context, limit int) ([]*s3types.FederationConfig, error)) *MockDB_GetFederatedBucketsNeedingSync_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetFederationConfig provides a mock function for the type MockDB
+func (_mock *MockDB) GetFederationConfig(ctx context.Context, bucket string) (*s3types.FederationConfig, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFederationConfig")
+	}
+
+	var r0 *s3types.FederationConfig
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*s3types.FederationConfig, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *s3types.FederationConfig); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*s3types.FederationConfig)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetFederationConfig_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetFederationConfig'
+type MockDB_GetFederationConfig_Call struct {
+	*mock.Call
+}
+
+// GetFederationConfig is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetFederationConfig(ctx interface{}, bucket interface{}) *MockDB_GetFederationConfig_Call {
+	return &MockDB_GetFederationConfig_Call{Call: _e.mock.On("GetFederationConfig", ctx, bucket)}
+}
+
+func (_c *MockDB_GetFederationConfig_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetFederationConfig_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetFederationConfig_Call) Return(federationConfig *s3types.FederationConfig, err error) *MockDB_GetFederationConfig_Call {
+	_c.Call.Return(federationConfig, err)
+	return _c
+}
+
+func (_c *MockDB_GetFederationConfig_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*s3types.FederationConfig, error)) *MockDB_GetFederationConfig_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetIntelligentTieringConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) GetIntelligentTieringConfiguration(ctx context.Context, bucket string, configID string) (*s3types.IntelligentTieringConfiguration, error) {
+	ret := _mock.Called(ctx, bucket, configID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetIntelligentTieringConfiguration")
+	}
+
+	var r0 *s3types.IntelligentTieringConfiguration
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (*s3types.IntelligentTieringConfiguration, error)); ok {
+		return returnFunc(ctx, bucket, configID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) *s3types.IntelligentTieringConfiguration); ok {
+		r0 = returnFunc(ctx, bucket, configID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*s3types.IntelligentTieringConfiguration)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, bucket, configID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetIntelligentTieringConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetIntelligentTieringConfiguration'
+type MockDB_GetIntelligentTieringConfiguration_Call struct {
+	*mock.Call
+}
+
+// GetIntelligentTieringConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - configID string
+func (_e *MockDB_Expecter) GetIntelligentTieringConfiguration(ctx interface{}, bucket interface{}, configID interface{}) *MockDB_GetIntelligentTieringConfiguration_Call {
+	return &MockDB_GetIntelligentTieringConfiguration_Call{Call: _e.mock.On("GetIntelligentTieringConfiguration", ctx, bucket, configID)}
+}
+
+func (_c *MockDB_GetIntelligentTieringConfiguration_Call) Run(run func(ctx context.Context, bucket string, configID string)) *MockDB_GetIntelligentTieringConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetIntelligentTieringConfiguration_Call) Return(intelligentTieringConfiguration *s3types.IntelligentTieringConfiguration, err error) *MockDB_GetIntelligentTieringConfiguration_Call {
+	_c.Call.Return(intelligentTieringConfiguration, err)
+	return _c
+}
+
+func (_c *MockDB_GetIntelligentTieringConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string, configID string) (*s3types.IntelligentTieringConfiguration, error)) *MockDB_GetIntelligentTieringConfiguration_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -3280,6 +3884,74 @@ func (_c *MockDB_GetPublicAccessBlock_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// GetReplicationConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) GetReplicationConfiguration(ctx context.Context, bucket string) (*s3types.ReplicationConfiguration, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetReplicationConfiguration")
+	}
+
+	var r0 *s3types.ReplicationConfiguration
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*s3types.ReplicationConfiguration, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *s3types.ReplicationConfiguration); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*s3types.ReplicationConfiguration)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_GetReplicationConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetReplicationConfiguration'
+type MockDB_GetReplicationConfiguration_Call struct {
+	*mock.Call
+}
+
+// GetReplicationConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) GetReplicationConfiguration(ctx interface{}, bucket interface{}) *MockDB_GetReplicationConfiguration_Call {
+	return &MockDB_GetReplicationConfiguration_Call{Call: _e.mock.On("GetReplicationConfiguration", ctx, bucket)}
+}
+
+func (_c *MockDB_GetReplicationConfiguration_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_GetReplicationConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_GetReplicationConfiguration_Call) Return(replicationConfiguration *s3types.ReplicationConfiguration, err error) *MockDB_GetReplicationConfiguration_Call {
+	_c.Call.Return(replicationConfiguration, err)
+	return _c
+}
+
+func (_c *MockDB_GetReplicationConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string) (*s3types.ReplicationConfiguration, error)) *MockDB_GetReplicationConfiguration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetScanState provides a mock function for the type MockDB
 func (_mock *MockDB) GetScanState(ctx context.Context, bucket string) (*db.LifecycleScanState, error) {
 	ret := _mock.Called(ctx, bucket)
@@ -3742,6 +4414,136 @@ func (_c *MockDB_ListDeletedObjects_Call) Return(objectRefs []*types.ObjectRef, 
 }
 
 func (_c *MockDB_ListDeletedObjects_Call) RunAndReturn(run func(ctx context.Context, olderThan int64, limit int) ([]*types.ObjectRef, error)) *MockDB_ListDeletedObjects_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListFederatedBuckets provides a mock function for the type MockDB
+func (_mock *MockDB) ListFederatedBuckets(ctx context.Context) ([]*s3types.FederationConfig, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListFederatedBuckets")
+	}
+
+	var r0 []*s3types.FederationConfig
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]*s3types.FederationConfig, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []*s3types.FederationConfig); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*s3types.FederationConfig)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_ListFederatedBuckets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFederatedBuckets'
+type MockDB_ListFederatedBuckets_Call struct {
+	*mock.Call
+}
+
+// ListFederatedBuckets is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockDB_Expecter) ListFederatedBuckets(ctx interface{}) *MockDB_ListFederatedBuckets_Call {
+	return &MockDB_ListFederatedBuckets_Call{Call: _e.mock.On("ListFederatedBuckets", ctx)}
+}
+
+func (_c *MockDB_ListFederatedBuckets_Call) Run(run func(ctx context.Context)) *MockDB_ListFederatedBuckets_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_ListFederatedBuckets_Call) Return(federationConfigs []*s3types.FederationConfig, err error) *MockDB_ListFederatedBuckets_Call {
+	_c.Call.Return(federationConfigs, err)
+	return _c
+}
+
+func (_c *MockDB_ListFederatedBuckets_Call) RunAndReturn(run func(ctx context.Context) ([]*s3types.FederationConfig, error)) *MockDB_ListFederatedBuckets_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListIntelligentTieringConfigurations provides a mock function for the type MockDB
+func (_mock *MockDB) ListIntelligentTieringConfigurations(ctx context.Context, bucket string) ([]*s3types.IntelligentTieringConfiguration, error) {
+	ret := _mock.Called(ctx, bucket)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListIntelligentTieringConfigurations")
+	}
+
+	var r0 []*s3types.IntelligentTieringConfiguration
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]*s3types.IntelligentTieringConfiguration, error)); ok {
+		return returnFunc(ctx, bucket)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []*s3types.IntelligentTieringConfiguration); ok {
+		r0 = returnFunc(ctx, bucket)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*s3types.IntelligentTieringConfiguration)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, bucket)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDB_ListIntelligentTieringConfigurations_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListIntelligentTieringConfigurations'
+type MockDB_ListIntelligentTieringConfigurations_Call struct {
+	*mock.Call
+}
+
+// ListIntelligentTieringConfigurations is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+func (_e *MockDB_Expecter) ListIntelligentTieringConfigurations(ctx interface{}, bucket interface{}) *MockDB_ListIntelligentTieringConfigurations_Call {
+	return &MockDB_ListIntelligentTieringConfigurations_Call{Call: _e.mock.On("ListIntelligentTieringConfigurations", ctx, bucket)}
+}
+
+func (_c *MockDB_ListIntelligentTieringConfigurations_Call) Run(run func(ctx context.Context, bucket string)) *MockDB_ListIntelligentTieringConfigurations_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_ListIntelligentTieringConfigurations_Call) Return(intelligentTieringConfigurations []*s3types.IntelligentTieringConfiguration, err error) *MockDB_ListIntelligentTieringConfigurations_Call {
+	_c.Call.Return(intelligentTieringConfigurations, err)
+	return _c
+}
+
+func (_c *MockDB_ListIntelligentTieringConfigurations_Call) RunAndReturn(run func(ctx context.Context, bucket string) ([]*s3types.IntelligentTieringConfiguration, error)) *MockDB_ListIntelligentTieringConfigurations_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -4454,6 +5256,69 @@ func (_c *MockDB_PutDeleteMarker_Call) RunAndReturn(run func(ctx context.Context
 	return _c
 }
 
+// PutIntelligentTieringConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) PutIntelligentTieringConfiguration(ctx context.Context, bucket string, config *s3types.IntelligentTieringConfiguration) error {
+	ret := _mock.Called(ctx, bucket, config)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PutIntelligentTieringConfiguration")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *s3types.IntelligentTieringConfiguration) error); ok {
+		r0 = returnFunc(ctx, bucket, config)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_PutIntelligentTieringConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PutIntelligentTieringConfiguration'
+type MockDB_PutIntelligentTieringConfiguration_Call struct {
+	*mock.Call
+}
+
+// PutIntelligentTieringConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - config *s3types.IntelligentTieringConfiguration
+func (_e *MockDB_Expecter) PutIntelligentTieringConfiguration(ctx interface{}, bucket interface{}, config interface{}) *MockDB_PutIntelligentTieringConfiguration_Call {
+	return &MockDB_PutIntelligentTieringConfiguration_Call{Call: _e.mock.On("PutIntelligentTieringConfiguration", ctx, bucket, config)}
+}
+
+func (_c *MockDB_PutIntelligentTieringConfiguration_Call) Run(run func(ctx context.Context, bucket string, config *s3types.IntelligentTieringConfiguration)) *MockDB_PutIntelligentTieringConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *s3types.IntelligentTieringConfiguration
+		if args[2] != nil {
+			arg2 = args[2].(*s3types.IntelligentTieringConfiguration)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_PutIntelligentTieringConfiguration_Call) Return(err error) *MockDB_PutIntelligentTieringConfiguration_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_PutIntelligentTieringConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string, config *s3types.IntelligentTieringConfiguration) error) *MockDB_PutIntelligentTieringConfiguration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // PutObject provides a mock function for the type MockDB
 func (_mock *MockDB) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 	ret := _mock.Called(ctx, obj)
@@ -4627,6 +5492,63 @@ func (_c *MockDB_RemoveChunkReplica_Call) Return(err error) *MockDB_RemoveChunkR
 }
 
 func (_c *MockDB_RemoveChunkReplica_Call) RunAndReturn(run func(ctx context.Context, chunkID string, serverID string) error) *MockDB_RemoveChunkReplica_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ResetRestoreStatus provides a mock function for the type MockDB
+func (_mock *MockDB) ResetRestoreStatus(ctx context.Context, objectID string) error {
+	ret := _mock.Called(ctx, objectID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResetRestoreStatus")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, objectID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_ResetRestoreStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResetRestoreStatus'
+type MockDB_ResetRestoreStatus_Call struct {
+	*mock.Call
+}
+
+// ResetRestoreStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+func (_e *MockDB_Expecter) ResetRestoreStatus(ctx interface{}, objectID interface{}) *MockDB_ResetRestoreStatus_Call {
+	return &MockDB_ResetRestoreStatus_Call{Call: _e.mock.On("ResetRestoreStatus", ctx, objectID)}
+}
+
+func (_c *MockDB_ResetRestoreStatus_Call) Run(run func(ctx context.Context, objectID string)) *MockDB_ResetRestoreStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_ResetRestoreStatus_Call) Return(err error) *MockDB_ResetRestoreStatus_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_ResetRestoreStatus_Call) RunAndReturn(run func(ctx context.Context, objectID string) error) *MockDB_ResetRestoreStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -5186,6 +6108,189 @@ func (_c *MockDB_SetBucketWebsite_Call) RunAndReturn(run func(ctx context.Contex
 	return _c
 }
 
+// SetDualWriteEnabled provides a mock function for the type MockDB
+func (_mock *MockDB) SetDualWriteEnabled(ctx context.Context, bucket string, enabled bool) error {
+	ret := _mock.Called(ctx, bucket, enabled)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetDualWriteEnabled")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) error); ok {
+		r0 = returnFunc(ctx, bucket, enabled)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetDualWriteEnabled_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetDualWriteEnabled'
+type MockDB_SetDualWriteEnabled_Call struct {
+	*mock.Call
+}
+
+// SetDualWriteEnabled is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - enabled bool
+func (_e *MockDB_Expecter) SetDualWriteEnabled(ctx interface{}, bucket interface{}, enabled interface{}) *MockDB_SetDualWriteEnabled_Call {
+	return &MockDB_SetDualWriteEnabled_Call{Call: _e.mock.On("SetDualWriteEnabled", ctx, bucket, enabled)}
+}
+
+func (_c *MockDB_SetDualWriteEnabled_Call) Run(run func(ctx context.Context, bucket string, enabled bool)) *MockDB_SetDualWriteEnabled_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 bool
+		if args[2] != nil {
+			arg2 = args[2].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetDualWriteEnabled_Call) Return(err error) *MockDB_SetDualWriteEnabled_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetDualWriteEnabled_Call) RunAndReturn(run func(ctx context.Context, bucket string, enabled bool) error) *MockDB_SetDualWriteEnabled_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetFederationConfig provides a mock function for the type MockDB
+func (_mock *MockDB) SetFederationConfig(ctx context.Context, config *s3types.FederationConfig) error {
+	ret := _mock.Called(ctx, config)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetFederationConfig")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *s3types.FederationConfig) error); ok {
+		r0 = returnFunc(ctx, config)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetFederationConfig_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetFederationConfig'
+type MockDB_SetFederationConfig_Call struct {
+	*mock.Call
+}
+
+// SetFederationConfig is a helper method to define mock.On call
+//   - ctx context.Context
+//   - config *s3types.FederationConfig
+func (_e *MockDB_Expecter) SetFederationConfig(ctx interface{}, config interface{}) *MockDB_SetFederationConfig_Call {
+	return &MockDB_SetFederationConfig_Call{Call: _e.mock.On("SetFederationConfig", ctx, config)}
+}
+
+func (_c *MockDB_SetFederationConfig_Call) Run(run func(ctx context.Context, config *s3types.FederationConfig)) *MockDB_SetFederationConfig_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *s3types.FederationConfig
+		if args[1] != nil {
+			arg1 = args[1].(*s3types.FederationConfig)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetFederationConfig_Call) Return(err error) *MockDB_SetFederationConfig_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetFederationConfig_Call) RunAndReturn(run func(ctx context.Context, config *s3types.FederationConfig) error) *MockDB_SetFederationConfig_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetMigrationPaused provides a mock function for the type MockDB
+func (_mock *MockDB) SetMigrationPaused(ctx context.Context, bucket string, paused bool) error {
+	ret := _mock.Called(ctx, bucket, paused)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetMigrationPaused")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) error); ok {
+		r0 = returnFunc(ctx, bucket, paused)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetMigrationPaused_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetMigrationPaused'
+type MockDB_SetMigrationPaused_Call struct {
+	*mock.Call
+}
+
+// SetMigrationPaused is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - paused bool
+func (_e *MockDB_Expecter) SetMigrationPaused(ctx interface{}, bucket interface{}, paused interface{}) *MockDB_SetMigrationPaused_Call {
+	return &MockDB_SetMigrationPaused_Call{Call: _e.mock.On("SetMigrationPaused", ctx, bucket, paused)}
+}
+
+func (_c *MockDB_SetMigrationPaused_Call) Run(run func(ctx context.Context, bucket string, paused bool)) *MockDB_SetMigrationPaused_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 bool
+		if args[2] != nil {
+			arg2 = args[2].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetMigrationPaused_Call) Return(err error) *MockDB_SetMigrationPaused_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetMigrationPaused_Call) RunAndReturn(run func(ctx context.Context, bucket string, paused bool) error) *MockDB_SetMigrationPaused_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SetNotificationConfiguration provides a mock function for the type MockDB
 func (_mock *MockDB) SetNotificationConfiguration(ctx context.Context, bucket string, config *s3types.NotificationConfiguration) error {
 	ret := _mock.Called(ctx, bucket, config)
@@ -5714,6 +6819,69 @@ func (_c *MockDB_SetPublicAccessBlock_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// SetReplicationConfiguration provides a mock function for the type MockDB
+func (_mock *MockDB) SetReplicationConfiguration(ctx context.Context, bucket string, config *s3types.ReplicationConfiguration) error {
+	ret := _mock.Called(ctx, bucket, config)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetReplicationConfiguration")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, *s3types.ReplicationConfiguration) error); ok {
+		r0 = returnFunc(ctx, bucket, config)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_SetReplicationConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetReplicationConfiguration'
+type MockDB_SetReplicationConfiguration_Call struct {
+	*mock.Call
+}
+
+// SetReplicationConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - config *s3types.ReplicationConfiguration
+func (_e *MockDB_Expecter) SetReplicationConfiguration(ctx interface{}, bucket interface{}, config interface{}) *MockDB_SetReplicationConfiguration_Call {
+	return &MockDB_SetReplicationConfiguration_Call{Call: _e.mock.On("SetReplicationConfiguration", ctx, bucket, config)}
+}
+
+func (_c *MockDB_SetReplicationConfiguration_Call) Run(run func(ctx context.Context, bucket string, config *s3types.ReplicationConfiguration)) *MockDB_SetReplicationConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 *s3types.ReplicationConfiguration
+		if args[2] != nil {
+			arg2 = args[2].(*s3types.ReplicationConfiguration)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_SetReplicationConfiguration_Call) Return(err error) *MockDB_SetReplicationConfiguration_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_SetReplicationConfiguration_Call) RunAndReturn(run func(ctx context.Context, bucket string, config *s3types.ReplicationConfiguration) error) *MockDB_SetReplicationConfiguration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateBucketVersioning provides a mock function for the type MockDB
 func (_mock *MockDB) UpdateBucketVersioning(ctx context.Context, bucket string, versioning string) error {
 	ret := _mock.Called(ctx, bucket, versioning)
@@ -5773,6 +6941,144 @@ func (_c *MockDB_UpdateBucketVersioning_Call) Return(err error) *MockDB_UpdateBu
 }
 
 func (_c *MockDB_UpdateBucketVersioning_Call) RunAndReturn(run func(ctx context.Context, bucket string, versioning string) error) *MockDB_UpdateBucketVersioning_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateLastAccessedAt provides a mock function for the type MockDB
+func (_mock *MockDB) UpdateLastAccessedAt(ctx context.Context, objectID string, accessedAt int64) error {
+	ret := _mock.Called(ctx, objectID, accessedAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateLastAccessedAt")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, accessedAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_UpdateLastAccessedAt_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateLastAccessedAt'
+type MockDB_UpdateLastAccessedAt_Call struct {
+	*mock.Call
+}
+
+// UpdateLastAccessedAt is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - accessedAt int64
+func (_e *MockDB_Expecter) UpdateLastAccessedAt(ctx interface{}, objectID interface{}, accessedAt interface{}) *MockDB_UpdateLastAccessedAt_Call {
+	return &MockDB_UpdateLastAccessedAt_Call{Call: _e.mock.On("UpdateLastAccessedAt", ctx, objectID, accessedAt)}
+}
+
+func (_c *MockDB_UpdateLastAccessedAt_Call) Run(run func(ctx context.Context, objectID string, accessedAt int64)) *MockDB_UpdateLastAccessedAt_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_UpdateLastAccessedAt_Call) Return(err error) *MockDB_UpdateLastAccessedAt_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_UpdateLastAccessedAt_Call) RunAndReturn(run func(ctx context.Context, objectID string, accessedAt int64) error) *MockDB_UpdateLastAccessedAt_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateMigrationProgress provides a mock function for the type MockDB
+func (_mock *MockDB) UpdateMigrationProgress(ctx context.Context, bucket string, objectsSynced int64, bytesSynced int64, lastSyncKey string) error {
+	ret := _mock.Called(ctx, bucket, objectsSynced, bytesSynced, lastSyncKey)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateMigrationProgress")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, int64, string) error); ok {
+		r0 = returnFunc(ctx, bucket, objectsSynced, bytesSynced, lastSyncKey)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_UpdateMigrationProgress_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateMigrationProgress'
+type MockDB_UpdateMigrationProgress_Call struct {
+	*mock.Call
+}
+
+// UpdateMigrationProgress is a helper method to define mock.On call
+//   - ctx context.Context
+//   - bucket string
+//   - objectsSynced int64
+//   - bytesSynced int64
+//   - lastSyncKey string
+func (_e *MockDB_Expecter) UpdateMigrationProgress(ctx interface{}, bucket interface{}, objectsSynced interface{}, bytesSynced interface{}, lastSyncKey interface{}) *MockDB_UpdateMigrationProgress_Call {
+	return &MockDB_UpdateMigrationProgress_Call{Call: _e.mock.On("UpdateMigrationProgress", ctx, bucket, objectsSynced, bytesSynced, lastSyncKey)}
+}
+
+func (_c *MockDB_UpdateMigrationProgress_Call) Run(run func(ctx context.Context, bucket string, objectsSynced int64, bytesSynced int64, lastSyncKey string)) *MockDB_UpdateMigrationProgress_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_UpdateMigrationProgress_Call) Return(err error) *MockDB_UpdateMigrationProgress_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_UpdateMigrationProgress_Call) RunAndReturn(run func(ctx context.Context, bucket string, objectsSynced int64, bytesSynced int64, lastSyncKey string) error) *MockDB_UpdateMigrationProgress_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -5848,6 +7154,144 @@ func (_c *MockDB_UpdateObjectTransition_Call) Return(err error) *MockDB_UpdateOb
 }
 
 func (_c *MockDB_UpdateObjectTransition_Call) RunAndReturn(run func(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error) *MockDB_UpdateObjectTransition_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateRestoreExpiry provides a mock function for the type MockDB
+func (_mock *MockDB) UpdateRestoreExpiry(ctx context.Context, objectID string, expiryDate int64) error {
+	ret := _mock.Called(ctx, objectID, expiryDate)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateRestoreExpiry")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, expiryDate)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_UpdateRestoreExpiry_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateRestoreExpiry'
+type MockDB_UpdateRestoreExpiry_Call struct {
+	*mock.Call
+}
+
+// UpdateRestoreExpiry is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - expiryDate int64
+func (_e *MockDB_Expecter) UpdateRestoreExpiry(ctx interface{}, objectID interface{}, expiryDate interface{}) *MockDB_UpdateRestoreExpiry_Call {
+	return &MockDB_UpdateRestoreExpiry_Call{Call: _e.mock.On("UpdateRestoreExpiry", ctx, objectID, expiryDate)}
+}
+
+func (_c *MockDB_UpdateRestoreExpiry_Call) Run(run func(ctx context.Context, objectID string, expiryDate int64)) *MockDB_UpdateRestoreExpiry_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_UpdateRestoreExpiry_Call) Return(err error) *MockDB_UpdateRestoreExpiry_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_UpdateRestoreExpiry_Call) RunAndReturn(run func(ctx context.Context, objectID string, expiryDate int64) error) *MockDB_UpdateRestoreExpiry_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateRestoreStatus provides a mock function for the type MockDB
+func (_mock *MockDB) UpdateRestoreStatus(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error {
+	ret := _mock.Called(ctx, objectID, status, tier, requestedAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateRestoreStatus")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, status, tier, requestedAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDB_UpdateRestoreStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateRestoreStatus'
+type MockDB_UpdateRestoreStatus_Call struct {
+	*mock.Call
+}
+
+// UpdateRestoreStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - status string
+//   - tier string
+//   - requestedAt int64
+func (_e *MockDB_Expecter) UpdateRestoreStatus(ctx interface{}, objectID interface{}, status interface{}, tier interface{}, requestedAt interface{}) *MockDB_UpdateRestoreStatus_Call {
+	return &MockDB_UpdateRestoreStatus_Call{Call: _e.mock.On("UpdateRestoreStatus", ctx, objectID, status, tier, requestedAt)}
+}
+
+func (_c *MockDB_UpdateRestoreStatus_Call) Run(run func(ctx context.Context, objectID string, status string, tier string, requestedAt int64)) *MockDB_UpdateRestoreStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 int64
+		if args[4] != nil {
+			arg4 = args[4].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDB_UpdateRestoreStatus_Call) Return(err error) *MockDB_UpdateRestoreStatus_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDB_UpdateRestoreStatus_Call) RunAndReturn(run func(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error) *MockDB_UpdateRestoreStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }

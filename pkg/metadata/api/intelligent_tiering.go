@@ -5,13 +5,18 @@
 package api
 
 import (
+	"encoding/xml"
+	"errors"
+	"io"
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // GetBucketIntelligentTieringConfigurationHandler returns intelligent tiering configuration.
@@ -23,15 +28,30 @@ func (s *MetadataServer) GetBucketIntelligentTieringConfigurationHandler(d *data
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-	// TODO: Implement intelligent tiering retrieval
-	// Implementation steps:
-	// 1. Get configuration ID from query parameter
-	// 2. Load configuration by ID from bucket metadata
-	// 3. Return IntelligentTieringConfiguration with AccessTier settings
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketIntelligentTieringConfiguration.html
 
-	// Not configured yet
-	writeXMLErrorResponse(w, d, s3err.ErrNoSuchConfiguration)
+	bucket := d.S3Info.Bucket
+	configID := d.Req.URL.Query().Get("id")
+	if configID == "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	config, err := s.db.GetIntelligentTieringConfiguration(d.Req.Context(), bucket, configID)
+	if err != nil {
+		if errors.Is(err, db.ErrIntelligentTieringNotFound) {
+			writeXMLErrorResponse(w, d, s3err.ErrNoSuchConfiguration)
+			return
+		}
+		logger.Error().Err(err).Str("bucket", bucket).Str("id", configID).Msg("failed to get intelligent tiering config")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Write response
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
+	xml.NewEncoder(w).Encode(config)
 }
 
 // PutBucketIntelligentTieringConfigurationHandler sets intelligent tiering configuration.
@@ -43,17 +63,51 @@ func (s *MetadataServer) PutBucketIntelligentTieringConfigurationHandler(d *data
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-	// TODO: Implement intelligent tiering configuration
-	// Implementation steps:
-	// 1. Parse IntelligentTieringConfiguration XML
-	// 2. Validate AccessTier settings (ARCHIVE_ACCESS, DEEP_ARCHIVE_ACCESS)
-	// 3. Store configuration in bucket metadata
-	// 4. Actual tiering based on access patterns requires FeatureLifecycle license
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketIntelligentTieringConfiguration.html
 
-	// Not implemented yet
-	logger.Warn().Str("bucket", d.S3Info.Bucket).Msg("intelligent tiering not yet implemented")
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	bucket := d.S3Info.Bucket
+	configID := d.Req.URL.Query().Get("id")
+	if configID == "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	// Parse request body
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, 1<<20)) // 1MB limit
+	if err != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrIncompleteBody)
+		return
+	}
+
+	var config s3types.IntelligentTieringConfiguration
+	if err := xml.Unmarshal(body, &config); err != nil {
+		logger.Debug().Err(err).Msg("failed to parse intelligent tiering config")
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Ensure ID matches query parameter
+	if config.ID != configID {
+		config.ID = configID
+	}
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		logger.Debug().Err(err).Msg("invalid intelligent tiering config")
+		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+
+	// Store configuration
+	if err := s.db.PutIntelligentTieringConfiguration(d.Req.Context(), bucket, &config); err != nil {
+		logger.Error().Err(err).Str("bucket", bucket).Str("id", configID).Msg("failed to put intelligent tiering config")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	logger.Info().Str("bucket", bucket).Str("id", configID).Msg("intelligent tiering configuration saved")
+
+	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+	w.WriteHeader(http.StatusOK)
 }
 
 // DeleteBucketIntelligentTieringConfigurationHandler removes intelligent tiering configuration.
@@ -65,13 +119,27 @@ func (s *MetadataServer) DeleteBucketIntelligentTieringConfigurationHandler(d *d
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-	// TODO: Implement intelligent tiering deletion
-	// Implementation steps:
-	// 1. Get configuration ID from query parameter
-	// 2. Remove configuration from bucket metadata
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketIntelligentTieringConfiguration.html
 
-	// No-op - nothing to delete
+	bucket := d.S3Info.Bucket
+	configID := d.Req.URL.Query().Get("id")
+	if configID == "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+		return
+	}
+
+	err := s.db.DeleteIntelligentTieringConfiguration(d.Req.Context(), bucket, configID)
+	if err != nil {
+		if errors.Is(err, db.ErrIntelligentTieringNotFound) {
+			writeXMLErrorResponse(w, d, s3err.ErrNoSuchConfiguration)
+			return
+		}
+		logger.Error().Err(err).Str("bucket", bucket).Str("id", configID).Msg("failed to delete intelligent tiering config")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	logger.Info().Str("bucket", bucket).Str("id", configID).Msg("intelligent tiering configuration deleted")
+
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -85,15 +153,27 @@ func (s *MetadataServer) ListBucketIntelligentTieringConfigurationsHandler(d *da
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
 	}
-	// TODO: Implement intelligent tiering listing
-	// Implementation steps:
-	// 1. Load all intelligent tiering configurations from bucket metadata
-	// 2. Return ListBucketIntelligentTieringConfigurationsResult
-	// See: https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListBucketIntelligentTieringConfigurations.html
 
-	// Return empty list
+	bucket := d.S3Info.Bucket
+
+	configs, err := s.db.ListIntelligentTieringConfigurations(d.Req.Context(), bucket)
+	if err != nil {
+		logger.Error().Err(err).Str("bucket", bucket).Msg("failed to list intelligent tiering configs")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	result := s3types.ListBucketIntelligentTieringConfigurationsResult{
+		XMLNS:       "http://s3.amazonaws.com/doc/2006-03-01/",
+		IsTruncated: false,
+	}
+	for _, c := range configs {
+		result.Configurations = append(result.Configurations, *c)
+	}
+
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ListBucketIntelligentTieringConfigurationsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated></ListBucketIntelligentTieringConfigurationsResult>`))
+	w.Write([]byte(xml.Header))
+	xml.NewEncoder(w).Encode(result)
 }

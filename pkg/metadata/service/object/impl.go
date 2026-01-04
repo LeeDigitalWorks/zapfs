@@ -20,6 +20,8 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
+	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
@@ -36,6 +38,8 @@ type serviceImpl struct {
 	profiles       *types.ProfileSet
 	crrHook        CRRHook
 	emitter        *events.Emitter
+	backendManager *backend.Manager // For reading transitioned objects from tier backends
+	taskQueue      taskqueue.Queue  // For queueing intelligent tiering promotions
 }
 
 // CRRHook defines callbacks for cross-region replication (enterprise feature).
@@ -53,8 +57,10 @@ type Config struct {
 	BucketStore    *cache.BucketStore
 	DefaultProfile string
 	Profiles       *types.ProfileSet
-	CRRHook        CRRHook         // Optional, enterprise feature
-	Emitter        *events.Emitter // Optional, for S3 event notifications
+	CRRHook        CRRHook          // Optional, enterprise feature
+	Emitter        *events.Emitter  // Optional, for S3 event notifications
+	BackendManager *backend.Manager // Optional, for reading transitioned objects
+	TaskQueue      taskqueue.Queue  // Optional, for intelligent tiering promotions
 }
 
 // NewService creates a new object service
@@ -82,7 +88,73 @@ func NewService(cfg Config) (Service, error) {
 		profiles:       cfg.Profiles,
 		crrHook:        cfg.CRRHook,
 		emitter:        cfg.Emitter,
+		backendManager: cfg.BackendManager,
+		taskQueue:      cfg.TaskQueue,
 	}, nil
+}
+
+// updateLastAccessAsync updates the last access timestamp for intelligent tiering.
+// This is called asynchronously to avoid blocking GET requests.
+func (s *serviceImpl) updateLastAccessAsync(objectID string) {
+	// Best-effort update, don't log errors to avoid noise in logs
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.db.UpdateLastAccessedAt(ctx, objectID, time.Now().UnixNano())
+}
+
+// queuePromotionAsync queues a promotion task for intelligent tiering.
+// When a cold INTELLIGENT_TIERING object is accessed, it should be promoted
+// back to the hot tier (STANDARD). This is done asynchronously.
+func (s *serviceImpl) queuePromotionAsync(obj *types.ObjectRef) {
+	if s.taskQueue == nil {
+		return // Task queue not configured
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		payload := taskqueue.LifecyclePayload{
+			Bucket:          obj.Bucket,
+			Key:             obj.Key,
+			VersionID:       obj.ID.String(),
+			Action:          taskqueue.LifecycleActionPromote,
+			StorageClass:    "STANDARD", // Promote back to hot tier
+			RuleID:          "intelligent-tiering-auto-promote",
+			EvaluatedAt:     time.Now().UnixNano(),
+			ExpectedModTime: obj.CreatedAt,
+		}
+
+		payloadBytes, err := taskqueue.MarshalPayload(payload)
+		if err != nil {
+			logger.Warn().Err(err).
+				Str("bucket", obj.Bucket).
+				Str("key", obj.Key).
+				Msg("Failed to marshal promotion payload")
+			return
+		}
+
+		task := &taskqueue.Task{
+			ID:         uuid.New().String(),
+			Type:       taskqueue.TaskTypeLifecycle,
+			Status:     taskqueue.StatusPending,
+			Priority:   taskqueue.PriorityHigh, // High priority - object is being accessed
+			Payload:    payloadBytes,
+			MaxRetries: 3,
+		}
+
+		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+			logger.Warn().Err(err).
+				Str("bucket", obj.Bucket).
+				Str("key", obj.Key).
+				Msg("Failed to queue intelligent tiering promotion")
+		} else {
+			logger.Debug().
+				Str("bucket", obj.Bucket).
+				Str("key", obj.Key).
+				Msg("Queued intelligent tiering promotion")
+		}
+	}()
 }
 
 // PutObject stores an object
@@ -241,17 +313,23 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 
 	// Build object reference
 	now := time.Now().Unix()
+	contentType := req.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
 	objRef := &types.ObjectRef{
-		ID:        objectID,
-		Bucket:    req.Bucket,
-		Key:       req.Key,
-		Size:      originalSize,
-		Version:   1,
-		ETag:      etag,
-		ProfileID: profileName,
-		CreatedAt: now,
-		ChunkRefs: writeResult.ChunkRefs,
-		IsLatest:  versioningEnabled, // Set IsLatest for versioned objects
+		ID:           objectID,
+		Bucket:       req.Bucket,
+		Key:          req.Key,
+		Size:         originalSize,
+		Version:      1,
+		ETag:         etag,
+		ContentType:  contentType,
+		ProfileID:    profileName,
+		StorageClass: profileName, // S3 storage class (same as profile for new objects)
+		CreatedAt:    now,
+		ChunkRefs:    writeResult.ChunkRefs,
+		IsLatest:     versioningEnabled, // Set IsLatest for versioned objects
 	}
 
 	// Set encryption metadata
@@ -348,6 +426,22 @@ func (s *serviceImpl) GetObject(ctx context.Context, req *GetObjectRequest) (*Ge
 		return nil, newNotFoundError("object")
 	}
 
+	// Check if object has been transitioned to tier storage
+	if objRef.TransitionedRef != "" {
+		// For INTELLIGENT_TIERING objects that have been demoted to cold storage,
+		// queue a promotion task to move them back to the hot tier on access.
+		if objRef.StorageClass == "INTELLIGENT_TIERING" {
+			go s.updateLastAccessAsync(objRef.ID.String())
+			s.queuePromotionAsync(objRef)
+		}
+		return s.getTransitionedObject(ctx, objRef, req)
+	}
+
+	// Update last access time for intelligent tiering (async, non-blocking)
+	if objRef.StorageClass == "INTELLIGENT_TIERING" {
+		go s.updateLastAccessAsync(objRef.ID.String())
+	}
+
 	// Check conditional headers
 	lastModified := time.Unix(0, objRef.CreatedAt).UTC()
 	condResult := s.checkConditionalHeaders(req, objRef.ETag, lastModified)
@@ -435,12 +529,27 @@ func (s *serviceImpl) GetObject(ctx context.Context, req *GetObjectRequest) (*Ge
 		pw.CloseWithError(readErr)
 	}()
 
+	// Use StorageClass if set, otherwise fall back to ProfileID for older objects
+	storageClass := objRef.StorageClass
+	if storageClass == "" {
+		storageClass = objRef.ProfileID
+	}
+	if storageClass == "" {
+		storageClass = "STANDARD"
+	}
+
+	// Use stored ContentType or default
+	ctValue := objRef.ContentType
+	if ctValue == "" {
+		ctValue = "application/octet-stream"
+	}
+
 	metadata := &ObjectMetadata{
 		ETag:         objRef.ETag,
 		LastModified: lastModified,
 		Size:         objRef.Size,
-		ContentType:  "application/octet-stream",
-		StorageClass: objRef.ProfileID,
+		ContentType:  ctValue,
+		StorageClass: storageClass,
 	}
 
 	result := &GetObjectResult{
@@ -530,12 +639,27 @@ func (s *serviceImpl) getEncryptedObject(
 		finalLength = objRef.Size
 	}
 
+	// Use StorageClass if set, otherwise fall back to ProfileID for older objects
+	storageClass := objRef.StorageClass
+	if storageClass == "" {
+		storageClass = objRef.ProfileID
+	}
+	if storageClass == "" {
+		storageClass = "STANDARD"
+	}
+
+	// Use stored ContentType or default
+	ctEncrypted := objRef.ContentType
+	if ctEncrypted == "" {
+		ctEncrypted = "application/octet-stream"
+	}
+
 	metadata := &ObjectMetadata{
 		ETag:              objRef.ETag,
 		LastModified:      lastModified,
 		Size:              objRef.Size,
-		ContentType:       "application/octet-stream",
-		StorageClass:      objRef.ProfileID,
+		ContentType:       ctEncrypted,
+		StorageClass:      storageClass,
 		SSEAlgorithm:      objRef.SSEAlgorithm,
 		SSECustomerKeyMD5: objRef.SSECustomerKeyMD5,
 		SSEKMSKeyID:       objRef.SSEKMSKeyID,
@@ -564,6 +688,187 @@ func (s *serviceImpl) getEncryptedObject(
 	return result, nil
 }
 
+// getTransitionedObject handles GetObject for objects that have been transitioned to tier storage
+func (s *serviceImpl) getTransitionedObject(
+	ctx context.Context,
+	objRef *types.ObjectRef,
+	req *GetObjectRequest,
+) (*GetObjectResult, error) {
+	// Check if object is in an archive tier that requires restore
+	if isArchiveTier(objRef.StorageClass) {
+		return nil, newInvalidObjectStateError("The operation is not valid for the object's storage class")
+	}
+
+	// Get the tier backend for this storage class
+	if s.backendManager == nil {
+		logger.Error().
+			Str("bucket", objRef.Bucket).
+			Str("key", objRef.Key).
+			Str("storage_class", objRef.StorageClass).
+			Msg("BackendManager not configured for transitioned object access")
+		return nil, newInternalError(errors.New("tier backend not configured"))
+	}
+
+	// Look up the profile to get the backend
+	profile, ok := s.profiles.Get(objRef.StorageClass)
+	if !ok {
+		logger.Error().
+			Str("storage_class", objRef.StorageClass).
+			Msg("Profile not found for storage class")
+		return nil, newInternalError(errors.New("profile not found for storage class"))
+	}
+
+	if len(profile.Pools) == 0 {
+		return nil, newInternalError(errors.New("profile has no pools configured"))
+	}
+
+	// Get the backend for the first pool (tier profiles typically have one pool)
+	tierBackend, ok := s.backendManager.Get(profile.Pools[0].PoolID.String())
+	if !ok {
+		logger.Error().
+			Str("pool_id", profile.Pools[0].PoolID.String()).
+			Msg("Backend not found for tier pool")
+		return nil, newInternalError(errors.New("tier backend not found"))
+	}
+
+	// Check conditional headers
+	lastModified := time.Unix(0, objRef.CreatedAt).UTC()
+	condResult := s.checkConditionalHeaders(req, objRef.ETag, lastModified)
+	if !condResult.ShouldProceed {
+		if condResult.NotModified {
+			return nil, &Error{
+				Code:    ErrCodeNotModified,
+				Message: "not modified",
+			}
+		}
+		return nil, &Error{
+			Code:    ErrCodePreconditionFailed,
+			Message: "precondition failed",
+		}
+	}
+
+	// Read object from tier backend
+	reader, err := tierBackend.Read(ctx, objRef.TransitionedRef)
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("bucket", objRef.Bucket).
+			Str("key", objRef.Key).
+			Str("transitioned_ref", objRef.TransitionedRef).
+			Msg("Failed to read from tier backend")
+		return nil, newInternalError(err)
+	}
+
+	// Handle range requests
+	var offset, length uint64
+	var isPartial bool
+	if req.Range != nil {
+		offset = req.Range.Start
+		length = req.Range.Length
+		isPartial = true
+
+		// For range requests, we need to skip to offset and limit the read
+		// The backend.Read returns the full object, so we wrap it
+		reader = newRangeReader(reader, offset, length)
+	} else {
+		length = objRef.Size
+	}
+
+	// Get storage class for metadata
+	storageClass := objRef.StorageClass
+	if storageClass == "" {
+		storageClass = objRef.ProfileID
+	}
+	if storageClass == "" {
+		storageClass = "STANDARD"
+	}
+
+	// Use stored ContentType or default
+	ctTransitioned := objRef.ContentType
+	if ctTransitioned == "" {
+		ctTransitioned = "application/octet-stream"
+	}
+
+	metadata := &ObjectMetadata{
+		ETag:         objRef.ETag,
+		LastModified: lastModified,
+		Size:         objRef.Size,
+		ContentType:  ctTransitioned,
+		StorageClass: storageClass,
+	}
+
+	result := &GetObjectResult{
+		Object:       objRef,
+		Body:         reader,
+		Metadata:     metadata,
+		IsPartial:    isPartial,
+		AcceptRanges: "bytes",
+	}
+
+	if isPartial {
+		result.Range = &ByteRange{
+			Start:  offset,
+			End:    offset + length - 1,
+			Length: length,
+		}
+	}
+
+	return result, nil
+}
+
+// isArchiveTier returns true if the storage class is an archive tier that requires restore
+func isArchiveTier(storageClass string) bool {
+	return storageClass == "GLACIER" || storageClass == "DEEP_ARCHIVE" ||
+		storageClass == "GLACIER_IR" || storageClass == "INTELLIGENT_TIERING"
+}
+
+// rangeReader wraps a reader to provide range support
+type rangeReader struct {
+	reader    io.ReadCloser
+	offset    uint64
+	remaining uint64
+	skipped   bool
+}
+
+func newRangeReader(reader io.ReadCloser, offset, length uint64) io.ReadCloser {
+	return &rangeReader{
+		reader:    reader,
+		offset:    offset,
+		remaining: length,
+		skipped:   false,
+	}
+}
+
+func (r *rangeReader) Read(p []byte) (int, error) {
+	// Skip to offset on first read
+	if !r.skipped {
+		if r.offset > 0 {
+			_, err := io.CopyN(io.Discard, r.reader, int64(r.offset))
+			if err != nil {
+				return 0, err
+			}
+		}
+		r.skipped = true
+	}
+
+	// Limit read to remaining bytes
+	if r.remaining == 0 {
+		return 0, io.EOF
+	}
+
+	if uint64(len(p)) > r.remaining {
+		p = p[:r.remaining]
+	}
+
+	n, err := r.reader.Read(p)
+	r.remaining -= uint64(n)
+	return n, err
+}
+
+func (r *rangeReader) Close() error {
+	return r.reader.Close()
+}
+
 // HeadObject retrieves object metadata
 func (s *serviceImpl) HeadObject(ctx context.Context, bucket, key string) (*HeadObjectResult, error) {
 	objRef, err := s.db.GetObject(ctx, bucket, key)
@@ -578,13 +883,28 @@ func (s *serviceImpl) HeadObject(ctx context.Context, bucket, key string) (*Head
 		return nil, newNotFoundError("object")
 	}
 
+	// Use StorageClass if set, otherwise fall back to ProfileID for older objects
+	storageClass := objRef.StorageClass
+	if storageClass == "" {
+		storageClass = objRef.ProfileID
+	}
+	if storageClass == "" {
+		storageClass = "STANDARD"
+	}
+
+	// Use stored ContentType or default
+	ctHead := objRef.ContentType
+	if ctHead == "" {
+		ctHead = "application/octet-stream"
+	}
+
 	lastModified := time.Unix(0, objRef.CreatedAt).UTC()
 	metadata := &ObjectMetadata{
 		ETag:              objRef.ETag,
 		LastModified:      lastModified,
 		Size:              objRef.Size,
-		ContentType:       "application/octet-stream",
-		StorageClass:      objRef.ProfileID,
+		ContentType:       ctHead,
+		StorageClass:      storageClass,
 		SSEAlgorithm:      objRef.SSEAlgorithm,
 		SSECustomerKeyMD5: objRef.SSECustomerKeyMD5,
 		SSEKMSKeyID:       objRef.SSEKMSKeyID,
@@ -785,14 +1105,15 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 	// Create new object reference pointing to same chunks
 	now := time.Now()
 	newObjRef := &types.ObjectRef{
-		ID:        uuid.New(),
-		Bucket:    req.DestBucket,
-		Key:       req.DestKey,
-		Size:      srcObj.Size,
-		ETag:      srcObj.ETag,
-		ChunkRefs: srcObj.ChunkRefs,
-		CreatedAt: now.UnixNano(),
-		ProfileID: srcObj.ProfileID,
+		ID:          uuid.New(),
+		Bucket:      req.DestBucket,
+		Key:         req.DestKey,
+		Size:        srcObj.Size,
+		ETag:        srcObj.ETag,
+		ContentType: srcObj.ContentType, // Preserve content type from source
+		ChunkRefs:   srcObj.ChunkRefs,
+		CreatedAt:   now.UnixNano(),
+		ProfileID:   srcObj.ProfileID,
 	}
 
 	result := &CopyObjectResult{
@@ -801,49 +1122,83 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 	}
 
 	// Handle encryption:
-	// 1. If explicit SSE-KMS requested, we would need to re-encrypt (not yet implemented)
+	// 1. If explicit SSE-KMS requested, re-encrypt the object data
 	// 2. If source is encrypted and no explicit dest encryption, copy the encryption metadata
 	// 3. If source is unencrypted and bucket has default encryption, would need to encrypt (not yet implemented)
-	//
-	// For now, copy the encryption metadata from source if no explicit encryption specified.
-	// Full re-encryption requires reading, decrypting, encrypting, and writing which is more complex.
+	var needsReencrypt bool
 	if req.SSEKMS != nil {
-		// Explicit SSE-KMS requested for destination
-		// TODO: Implement re-encryption - requires reading source, decrypting if needed,
-		// encrypting with new key, and writing to storage
-		logger.Warn().Msg("explicit SSE-KMS for CopyObject destination not yet implemented, copying source encryption")
+		needsReencrypt = true
 	}
 
-	// Copy encryption metadata from source
-	if srcObj.SSEAlgorithm != "" {
-		newObjRef.SSEAlgorithm = srcObj.SSEAlgorithm
-		newObjRef.SSECustomerKeyMD5 = srcObj.SSECustomerKeyMD5
-		newObjRef.SSEKMSKeyID = srcObj.SSEKMSKeyID
-		newObjRef.SSEKMSContext = srcObj.SSEKMSContext
-
-		// Set result fields
-		result.SSEAlgorithm = srcObj.SSEAlgorithm
-		result.SSECustomerKeyMD5 = srcObj.SSECustomerKeyMD5
-		result.SSEKMSKeyID = srcObj.SSEKMSKeyID
-		if srcObj.SSEKMSKeyID != "" {
-			result.SSEKMSContext, _ = encryption.ParseStoredKMSContext(srcObj.SSEKMSContext)
-		}
-	}
-
-	// Store in database and increment chunk ref counts atomically
-	err = s.db.WithTx(ctx, func(tx db.TxStore) error {
-		if err := tx.PutObject(ctx, newObjRef); err != nil {
-			return err
+	if needsReencrypt {
+		// Re-encryption path: read source, decrypt if needed, re-encrypt with new key, write new chunks
+		reencryptResult, reencryptErr := s.copyWithReencryption(ctx, srcObj, req)
+		if reencryptErr != nil {
+			return nil, reencryptErr
 		}
 
-		// Increment ref counts for shared chunks
-		for _, ref := range srcObj.ChunkRefs {
-			if err := tx.IncrementChunkRefCount(ctx, ref.ChunkID.String(), int64(ref.Size)); err != nil {
+		// Update result with new encryption info
+		result.SSEAlgorithm = reencryptResult.SSEAlgorithm
+		result.SSEKMSKeyID = reencryptResult.SSEKMSKeyID
+		result.SSEKMSContext = reencryptResult.SSEKMSContext
+
+		// Update object reference with new chunks and encryption metadata
+		newObjRef.ChunkRefs = reencryptResult.ChunkRefs
+		newObjRef.SSEAlgorithm = reencryptResult.SSEAlgorithm
+		newObjRef.SSEKMSKeyID = reencryptResult.SSEKMSKeyID
+		newObjRef.SSEKMSContext = reencryptResult.SSEKMSContext
+
+		// Store in database and register new chunks atomically
+		err = s.db.WithTx(ctx, func(tx db.TxStore) error {
+			if err := tx.PutObject(ctx, newObjRef); err != nil {
 				return err
 			}
+
+			// Register new chunks (not shared with source)
+			for _, ref := range reencryptResult.ChunkRefs {
+				if err := tx.IncrementChunkRefCount(ctx, ref.ChunkID.String(), int64(ref.Size)); err != nil {
+					return err
+				}
+				if ref.FileServerAddr != "" {
+					if err := tx.AddChunkReplica(ctx, ref.ChunkID.String(), ref.FileServerAddr, ref.BackendID); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+	} else {
+		// Copy encryption metadata from source (no re-encryption)
+		if srcObj.SSEAlgorithm != "" {
+			newObjRef.SSEAlgorithm = srcObj.SSEAlgorithm
+			newObjRef.SSECustomerKeyMD5 = srcObj.SSECustomerKeyMD5
+			newObjRef.SSEKMSKeyID = srcObj.SSEKMSKeyID
+			newObjRef.SSEKMSContext = srcObj.SSEKMSContext
+
+			// Set result fields
+			result.SSEAlgorithm = srcObj.SSEAlgorithm
+			result.SSECustomerKeyMD5 = srcObj.SSECustomerKeyMD5
+			result.SSEKMSKeyID = srcObj.SSEKMSKeyID
+			if srcObj.SSEKMSKeyID != "" {
+				result.SSEKMSContext, _ = encryption.ParseStoredKMSContext(srcObj.SSEKMSContext)
+			}
 		}
-		return nil
-	})
+
+		// Store in database and increment chunk ref counts atomically
+		err = s.db.WithTx(ctx, func(tx db.TxStore) error {
+			if err := tx.PutObject(ctx, newObjRef); err != nil {
+				return err
+			}
+
+			// Increment ref counts for shared chunks
+			for _, ref := range srcObj.ChunkRefs {
+				if err := tx.IncrementChunkRefCount(ctx, ref.ChunkID.String(), int64(ref.Size)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
 	if err != nil {
 		return nil, newInternalError(err)
 	}
@@ -872,6 +1227,104 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 	return result, nil
 }
 
+// reencryptResult contains the result of re-encrypting an object
+type reencryptResult struct {
+	ChunkRefs     []types.ChunkRef
+	SSEAlgorithm  string
+	SSEKMSKeyID   string
+	SSEKMSContext string // Stored format: "context|dekCiphertext"
+}
+
+// copyWithReencryption reads source object, decrypts if needed, re-encrypts with new KMS key,
+// and writes new chunks to storage.
+func (s *serviceImpl) copyWithReencryption(ctx context.Context, srcObj *types.ObjectRef, req *CopyObjectRequest) (*reencryptResult, error) {
+	if s.encryption == nil || !s.encryption.HasKMS() {
+		return nil, &Error{
+			Code:    ErrCodeKMSError,
+			Message: "KMS service not available",
+		}
+	}
+
+	// Read source object data from storage
+	plaintext, err := s.storage.ReadObjectToBuffer(ctx, srcObj.ChunkRefs)
+	if err != nil {
+		return nil, newInternalError(err)
+	}
+
+	// If source is encrypted with SSE-KMS, decrypt it
+	if srcObj.SSEKMSKeyID != "" {
+		encMeta := &encryption.Metadata{
+			Algorithm: srcObj.SSEAlgorithm,
+			KMSKeyID:  srcObj.SSEKMSKeyID,
+		}
+		encMeta.KMSContext, encMeta.DEKCiphertext = encryption.ParseStoredKMSContext(srcObj.SSEKMSContext)
+
+		decrypted, err := s.encryption.Decrypt(ctx, plaintext, encMeta, nil)
+		if err != nil {
+			return nil, &Error{
+				Code:    ErrCodeKMSError,
+				Message: "failed to decrypt source object: " + err.Error(),
+				Err:     err,
+			}
+		}
+		plaintext = decrypted
+	}
+
+	// Re-encrypt with new KMS key
+	params := &encryption.Params{
+		SSEKMS: &encryption.SSEKMSParams{
+			KeyID:   req.SSEKMS.KeyID,
+			Context: req.SSEKMS.Context,
+		},
+	}
+
+	encResult, err := s.encryption.Encrypt(ctx, plaintext, params)
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "KMS key not found") ||
+			strings.Contains(errStr, "KMS key disabled") {
+			return nil, &Error{
+				Code:    ErrCodeKMSKeyNotFound,
+				Message: err.Error(),
+				Err:     err,
+			}
+		}
+		if strings.Contains(errStr, "KMS service not available") {
+			return nil, &Error{
+				Code:    ErrCodeKMSError,
+				Message: err.Error(),
+				Err:     err,
+			}
+		}
+		return nil, newInternalError(err)
+	}
+
+	// Write encrypted data to storage with new chunks
+	objectID := uuid.New()
+	writeResult, err := s.storage.WriteObject(ctx, &storage.WriteRequest{
+		ObjectID:    objectID.String(),
+		Body:        bytes.NewReader(encResult.Ciphertext),
+		Size:        uint64(len(encResult.Ciphertext)),
+		ProfileName: srcObj.ProfileID,
+	})
+	if err != nil {
+		return nil, newInternalError(err)
+	}
+
+	// Build stored KMS context (includes DEK ciphertext)
+	storedContext := encryption.BuildStoredKMSContext(
+		encResult.Metadata.KMSContext,
+		encResult.Metadata.DEKCiphertext,
+	)
+
+	return &reencryptResult{
+		ChunkRefs:     writeResult.ChunkRefs,
+		SSEAlgorithm:  encResult.Metadata.Algorithm,
+		SSEKMSKeyID:   encResult.Metadata.KMSKeyID,
+		SSEKMSContext: storedContext,
+	}, nil
+}
+
 // ListObjects lists objects using v1 API
 func (s *serviceImpl) ListObjects(ctx context.Context, req *ListObjectsRequest) (*ListObjectsResult, error) {
 	maxKeys := req.MaxKeys
@@ -893,12 +1346,20 @@ func (s *serviceImpl) ListObjects(ctx context.Context, req *ListObjectsRequest) 
 	// Build response
 	var contents []ObjectEntry
 	for _, obj := range listResult.Objects {
+		// Use StorageClass if set, otherwise fall back to ProfileID for older objects
+		storageClass := obj.StorageClass
+		if storageClass == "" {
+			storageClass = obj.ProfileID
+		}
+		if storageClass == "" {
+			storageClass = "STANDARD"
+		}
 		contents = append(contents, ObjectEntry{
 			Key:          obj.Key,
 			LastModified: time.Unix(0, obj.CreatedAt).UTC(),
 			ETag:         obj.ETag,
 			Size:         obj.Size,
-			StorageClass: "STANDARD",
+			StorageClass: storageClass,
 		})
 	}
 
@@ -943,12 +1404,20 @@ func (s *serviceImpl) ListObjectsV2(ctx context.Context, req *ListObjectsV2Reque
 	// Build response
 	var contents []ObjectEntry
 	for _, obj := range listResult.Objects {
+		// Use StorageClass if set, otherwise fall back to ProfileID for older objects
+		storageClass := obj.StorageClass
+		if storageClass == "" {
+			storageClass = obj.ProfileID
+		}
+		if storageClass == "" {
+			storageClass = "STANDARD"
+		}
 		entry := ObjectEntry{
 			Key:          obj.Key,
 			LastModified: time.Unix(0, obj.CreatedAt).UTC(),
 			ETag:         obj.ETag,
 			Size:         obj.Size,
-			StorageClass: "STANDARD",
+			StorageClass: storageClass,
 		}
 
 		if req.FetchOwner {

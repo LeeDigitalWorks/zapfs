@@ -81,36 +81,36 @@ type EventType string
 // See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-how-to-event-types-and-destinations.html
 const (
 	// Object created events
-	EventObjectCreated              EventType = "s3:ObjectCreated:*"
-	EventObjectCreatedPut           EventType = "s3:ObjectCreated:Put"
-	EventObjectCreatedPost          EventType = "s3:ObjectCreated:Post"
-	EventObjectCreatedCopy          EventType = "s3:ObjectCreated:Copy"
+	EventObjectCreated               EventType = "s3:ObjectCreated:*"
+	EventObjectCreatedPut            EventType = "s3:ObjectCreated:Put"
+	EventObjectCreatedPost           EventType = "s3:ObjectCreated:Post"
+	EventObjectCreatedCopy           EventType = "s3:ObjectCreated:Copy"
 	EventObjectCreatedCompleteUpload EventType = "s3:ObjectCreated:CompleteMultipartUpload"
 
 	// Object removed events
-	EventObjectRemoved              EventType = "s3:ObjectRemoved:*"
-	EventObjectRemovedDelete        EventType = "s3:ObjectRemoved:Delete"
-	EventObjectRemovedDeleteMarker  EventType = "s3:ObjectRemoved:DeleteMarkerCreated"
+	EventObjectRemoved             EventType = "s3:ObjectRemoved:*"
+	EventObjectRemovedDelete       EventType = "s3:ObjectRemoved:Delete"
+	EventObjectRemovedDeleteMarker EventType = "s3:ObjectRemoved:DeleteMarkerCreated"
 
 	// Object restore events (Enterprise - Glacier-like)
-	EventObjectRestore              EventType = "s3:ObjectRestore:*"
-	EventObjectRestorePost          EventType = "s3:ObjectRestore:Post"
-	EventObjectRestoreCompleted     EventType = "s3:ObjectRestore:Completed"
-	EventObjectRestoreDelete        EventType = "s3:ObjectRestore:Delete"
+	EventObjectRestore          EventType = "s3:ObjectRestore:*"
+	EventObjectRestorePost      EventType = "s3:ObjectRestore:Post"
+	EventObjectRestoreCompleted EventType = "s3:ObjectRestore:Completed"
+	EventObjectRestoreDelete    EventType = "s3:ObjectRestore:Delete"
 
 	// Object tagging events
-	EventObjectTagging              EventType = "s3:ObjectTagging:*"
-	EventObjectTaggingPut           EventType = "s3:ObjectTagging:Put"
-	EventObjectTaggingDelete        EventType = "s3:ObjectTagging:Delete"
+	EventObjectTagging       EventType = "s3:ObjectTagging:*"
+	EventObjectTaggingPut    EventType = "s3:ObjectTagging:Put"
+	EventObjectTaggingDelete EventType = "s3:ObjectTagging:Delete"
 
 	// Object ACL events
-	EventObjectACLPut               EventType = "s3:ObjectAcl:Put"
+	EventObjectACLPut EventType = "s3:ObjectAcl:Put"
 
 	// Lifecycle events
-	EventLifecycleExpiration        EventType = "s3:LifecycleExpiration:*"
-	EventLifecycleExpirationDelete  EventType = "s3:LifecycleExpiration:Delete"
+	EventLifecycleExpiration             EventType = "s3:LifecycleExpiration:*"
+	EventLifecycleExpirationDelete       EventType = "s3:LifecycleExpiration:Delete"
 	EventLifecycleExpirationDeleteMarker EventType = "s3:LifecycleExpiration:DeleteMarkerCreated"
-	EventLifecycleTransition        EventType = "s3:LifecycleTransition"
+	EventLifecycleTransition             EventType = "s3:LifecycleTransition"
 
 	// Replication events (Enterprise)
 	EventReplication                EventType = "s3:Replication:*"

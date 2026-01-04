@@ -1063,10 +1063,10 @@ func TestV4Verifier_SignedHeadersSorting(t *testing.T) {
 	verifier := NewV4Verifier(nil)
 
 	tests := []struct {
-		name           string
-		signedHeaders  []string
-		expectedOrder  []string
-		headers        map[string]string
+		name          string
+		signedHeaders []string
+		expectedOrder []string
+		headers       map[string]string
 	}{
 		{
 			name:          "already sorted headers",

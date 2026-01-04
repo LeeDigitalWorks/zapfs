@@ -53,6 +53,24 @@ spec:
           - --cert_file=/etc/tls/tls.crt
           - --key_file=/etc/tls/tls.key
           {{- end }}
+          {{- if .Values.federation.enabled }}
+          - --federation.enabled=true
+          - --federation.mode={{ .Values.federation.api.mode | default "both" }}
+          - --federation.external_timeout={{ .Values.federation.externalTimeout | default "5m" }}
+          - --federation.external_max_idle_conns={{ .Values.federation.externalMaxIdleConns | default 100 }}
+          {{- if .Values.federation.features.lifecycleEnabled }}
+          - --federation.features.lifecycle_enabled=true
+          {{- end }}
+          {{- if .Values.federation.features.notificationsEnabled }}
+          - --federation.features.notifications_enabled=true
+          {{- end }}
+          {{- if .Values.federation.features.accessLoggingEnabled }}
+          - --federation.features.access_logging_enabled=true
+          {{- end }}
+          {{- if .Values.federation.features.metricsEnabled }}
+          - --federation.features.metrics_enabled=true
+          {{- end }}
+          {{- end }}
         ports:
         - name: http
           containerPort: {{ .Values.metadata.httpPort | default 8082 }}

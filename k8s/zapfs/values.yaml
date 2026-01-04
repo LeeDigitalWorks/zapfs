@@ -312,6 +312,79 @@ file:
     type: ClusterIP
 
 # =============================================================================
+# Federation Configuration (Community Feature)
+# =============================================================================
+# Enables S3 federation for connecting to external S3 buckets.
+# Useful for:
+# - Migration from AWS S3 or other S3-compatible storage
+# - Hybrid cloud with data spanning multiple S3 endpoints
+# - Gradual migration with zero downtime
+#
+# Federation modes:
+# - passthrough: Proxy requests to external S3, store metadata locally
+# - migrating: Ingest data from external S3 into ZapFS (lazy + active)
+
+federation:
+  # Enable federation features on metadata service
+  enabled: false
+
+  # API instances configuration
+  # These serve S3 HTTP requests and can enqueue migration tasks
+  api:
+    # Mode for API instances: "api" (no workers) or "both" (API + workers)
+    mode: "both"
+
+  # Worker instances configuration
+  # Dedicated instances for processing federation migration tasks
+  workers:
+    enabled: false           # Set to true to deploy dedicated worker instances
+    replicaCount: 2          # Number of worker replicas
+    mode: "worker"           # Worker-only mode (no HTTP API)
+
+    # Worker-specific configuration
+    syncConcurrency: 10      # Concurrent migration workers per pod
+    syncRateLimit: 200       # Max objects/sec per pod
+    syncBatchSize: 1000      # Objects per discovery batch
+
+    # Resource limits for workers (typically need more than API servers)
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+
+    # Pod placement
+    podAnnotations: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
+  # Shared federation settings (applied to all federation-enabled instances)
+  externalTimeout: "5m"           # Timeout for external S3 requests
+  externalMaxIdleConns: 100       # Max idle connections to external S3
+
+  # Feature flags for federated buckets
+  # All disabled by default - defer to external S3 as source of truth
+  features:
+    lifecycleEnabled: false       # Process lifecycle rules locally
+    notificationsEnabled: false   # Emit event notifications locally
+    accessLoggingEnabled: false   # Write access logs locally
+    metricsEnabled: false         # Collect metrics locally
+
+  # Autoscaling for worker instances
+  # Scales based on migration task queue depth
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    # Target queue depth per worker
+    targetQueueDepth: 100
+    # Or use CPU-based scaling
+    targetCPUUtilizationPercentage: 80
+
+# =============================================================================
 # External Database
 # =============================================================================
 # ZapFS requires an external SQL database for metadata storage.

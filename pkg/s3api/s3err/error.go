@@ -111,7 +111,7 @@ const (
 	ErrNoSuchTagSet
 	ErrOwnershipControlsNotFoundError
 	ErrReplicationConfigurationNotFoundError
-	ErrNoSuchConfiguration                      // For analytics, metrics, inventory, intelligent tiering
+	ErrNoSuchConfiguration // For analytics, metrics, inventory, intelligent tiering
 	ErrNoSuchPublicAccessBlockConfiguration
 
 	// Object Lock
@@ -240,6 +240,10 @@ const (
 	ErrInvalidMaxDeleteObjects
 	ErrInvalidPartNumberMarker
 	ErrInvalidUnorderedWithDelimiter
+
+	// Restore errors
+	ErrRestoreAlreadyInProgress
+	ErrObjectNotInArchiveTier
 )
 
 // errorCodeResponse maps error codes to their AWS API error definitions.
@@ -991,6 +995,20 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidArgument",
 		Description:    "Unordered listing cannot be used with delimiter.",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+
+	// =========================================================================
+	// Restore Errors
+	// =========================================================================
+	ErrRestoreAlreadyInProgress: {
+		Code:           "RestoreAlreadyInProgress",
+		Description:    "Object restore is already in progress.",
+		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrObjectNotInArchiveTier: {
+		Code:           "InvalidObjectState",
+		Description:    "The operation is not valid for the object's storage class.",
+		HTTPStatusCode: http.StatusForbidden,
 	},
 }
 

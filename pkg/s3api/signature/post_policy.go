@@ -38,36 +38,36 @@ func NewPostPolicyVerifier(iamManager *iam.Manager, region string) *PostPolicyVe
 // PostFormData contains the parsed form fields from a POST upload
 type PostFormData struct {
 	// Required fields
-	Key       string // Object key (may contain ${filename} substitution)
-	Policy    string // Base64-encoded policy document
-	Signature string // x-amz-signature
-	Algorithm string // x-amz-algorithm (must be AWS4-HMAC-SHA256)
-	Date      string // x-amz-date (ISO8601 format)
+	Key        string // Object key (may contain ${filename} substitution)
+	Policy     string // Base64-encoded policy document
+	Signature  string // x-amz-signature
+	Algorithm  string // x-amz-algorithm (must be AWS4-HMAC-SHA256)
+	Date       string // x-amz-date (ISO8601 format)
 	Credential string // x-amz-credential (accessKey/date/region/s3/aws4_request)
 
 	// Optional fields
-	ACL                  string
-	ContentType          string
-	ContentDisposition   string
-	ContentEncoding      string
-	CacheControl         string
-	Expires              string
+	ACL                   string
+	ContentType           string
+	ContentDisposition    string
+	ContentEncoding       string
+	CacheControl          string
+	Expires               string
 	SuccessActionRedirect string
-	SuccessActionStatus  int
-	Tagging              string
+	SuccessActionStatus   int
+	Tagging               string
 
 	// Custom x-amz-meta-* headers
 	Metadata map[string]string
 
 	// File content (populated by caller)
-	Filename    string
-	FileSize    int64
+	Filename string
+	FileSize int64
 }
 
 // PostPolicyResult contains the result of a successful POST policy verification
 type PostPolicyResult struct {
 	Identity    *iam.Identity
-	Key         string            // Final object key after ${filename} substitution
+	Key         string // Final object key after ${filename} substitution
 	ContentType string
 	ACL         string
 	Metadata    map[string]string
@@ -75,8 +75,8 @@ type PostPolicyResult struct {
 
 // PolicyDocument represents the decoded POST policy
 type PolicyDocument struct {
-	Expiration string          `json:"expiration"`
-	Conditions []interface{}   `json:"conditions"`
+	Expiration string        `json:"expiration"`
+	Conditions []interface{} `json:"conditions"`
 }
 
 // VerifyPostForm verifies the POST form data against the policy

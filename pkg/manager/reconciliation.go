@@ -7,8 +7,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
+	"github.com/LeeDigitalWorks/zapfs/proto/file_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/manager_pb"
 	"github.com/LeeDigitalWorks/zapfs/proto/metadata_pb"
 )
@@ -95,9 +98,8 @@ func (ms *ManagerServer) ReportReconciliation(ctx context.Context, req *manager_
 			Strs("missing_chunks", req.GetMissingChunks()[:min(10, len(req.GetMissingChunks()))]).
 			Msg("file server reported missing chunks (need re-replication)")
 
-		// TODO: Trigger re-replication for missing chunks
-		// This would query chunk_replicas for other servers that have the chunk
-		// and initiate a copy to this server
+		// Trigger re-replication asynchronously
+		go ms.triggerReReplication(context.Background(), serverID, req.GetMissingChunks())
 	}
 
 	return &manager_pb.ReconciliationAck{
@@ -116,11 +118,8 @@ func (ms *ManagerServer) TriggerReconciliation(ctx context.Context, req *manager
 		return nil, err
 	}
 	if leaderAddr != "" {
-		// TODO: Forward to leader
-		return &manager_pb.TriggerReconciliationResponse{
-			Success: false,
-			Message: "not leader, reconciliation must be triggered on leader",
-		}, nil
+		logger.Debug().Str("leader", leaderAddr).Msg("Forwarding TriggerReconciliation to leader")
+		return ms.leaderForwarder.ForwardTriggerReconciliation(ctx, leaderAddr, req)
 	}
 
 	serverID := req.GetServerId()
@@ -175,4 +174,150 @@ func (ms *ManagerServer) getMetadataServiceAddress() (string, error) {
 	}
 
 	return "", fmt.Errorf("no metadata service available")
+}
+
+// triggerReReplication initiates re-replication for missing chunks on a server.
+// For each missing chunk, it finds another server that has it and triggers a migration.
+func (ms *ManagerServer) triggerReReplication(ctx context.Context, targetServerID string, missingChunks []string) {
+	if len(missingChunks) == 0 {
+		return
+	}
+
+	logger.Info().
+		Str("target_server", targetServerID).
+		Int("chunk_count", len(missingChunks)).
+		Msg("starting re-replication for missing chunks")
+
+	// Get metadata service address
+	metadataAddr, err := ms.getMetadataServiceAddress()
+	if err != nil {
+		logger.Error().Err(err).Msg("cannot re-replicate: no metadata service available")
+		return
+	}
+
+	// Get metadata client
+	metadataClient, err := ms.metadataClientPool.Get(ctx, metadataAddr)
+	if err != nil {
+		logger.Error().Err(err).Str("metadata_addr", metadataAddr).Msg("failed to connect to metadata service for re-replication")
+		return
+	}
+
+	// Process chunks with limited concurrency
+	const maxConcurrent = 4
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+
+	var successCount, failCount int64
+	var mu sync.Mutex
+
+	for _, chunkID := range missingChunks {
+		chunkID := chunkID // capture for goroutine
+
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			// Find replicas for this chunk
+			resp, err := metadataClient.GetChunkReplicas(ctx, &metadata_pb.GetChunkReplicasRequest{
+				ChunkId: chunkID,
+			})
+			if err != nil {
+				logger.Error().Err(err).Str("chunk_id", chunkID).Msg("failed to get chunk replicas")
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				return
+			}
+
+			if len(resp.GetReplicas()) == 0 {
+				logger.Warn().Str("chunk_id", chunkID).Msg("no replicas found for chunk - data may be lost")
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				return
+			}
+
+			// Find a source server (not the target)
+			var sourceServer string
+			for _, replica := range resp.GetReplicas() {
+				if replica.GetServerId() != targetServerID {
+					sourceServer = replica.GetServerId()
+					break
+				}
+			}
+
+			if sourceServer == "" {
+				logger.Warn().Str("chunk_id", chunkID).Msg("no alternative source server found for chunk")
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				return
+			}
+
+			// Trigger migration from source to target
+			if err := ms.migrateChunk(ctx, chunkID, sourceServer, targetServerID); err != nil {
+				logger.Error().Err(err).
+					Str("chunk_id", chunkID).
+					Str("source", sourceServer).
+					Str("target", targetServerID).
+					Msg("failed to migrate chunk for re-replication")
+				mu.Lock()
+				failCount++
+				mu.Unlock()
+				return
+			}
+
+			mu.Lock()
+			successCount++
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+
+	logger.Info().
+		Str("target_server", targetServerID).
+		Int64("success", successCount).
+		Int64("failed", failCount).
+		Msg("re-replication completed")
+}
+
+// migrateChunk tells a source server to copy a chunk to a target server.
+func (ms *ManagerServer) migrateChunk(ctx context.Context, chunkID, sourceServer, targetServer string) error {
+	// Create a context with timeout for the migration
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	// Get file client for source server
+	sourceClient, err := fileClientPool.Get(ctx, sourceServer)
+	if err != nil {
+		return fmt.Errorf("connect to source server %s: %w", sourceServer, err)
+	}
+
+	// Use MigrateChunk RPC - don't delete after migrate since we're adding a replica
+	resp, err := sourceClient.MigrateChunk(ctx, &file_pb.MigrateChunkRequest{
+		ChunkId:            chunkID,
+		TargetServer:       targetServer,
+		DeleteAfterMigrate: false, // Keep source copy
+	})
+	if err != nil {
+		return fmt.Errorf("migrate chunk: %w", err)
+	}
+
+	if !resp.GetSuccess() {
+		return fmt.Errorf("migration failed: %s", resp.GetError())
+	}
+
+	logger.Debug().
+		Str("chunk_id", chunkID).
+		Str("source", sourceServer).
+		Str("target", targetServer).
+		Int64("bytes", resp.GetBytesTransferred()).
+		Int64("duration_ms", resp.GetDurationMs()).
+		Msg("chunk re-replicated successfully")
+
+	return nil
 }

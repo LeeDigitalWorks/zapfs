@@ -15,7 +15,8 @@ type PutObjectRequest struct {
 	Bucket        string
 	Key           string
 	Body          io.Reader
-	ContentLength int64 // -1 if unknown (chunked encoding)
+	ContentLength int64  // -1 if unknown (chunked encoding)
+	ContentType   string // MIME type (defaults to application/octet-stream)
 	StorageClass  string
 	Owner         string
 

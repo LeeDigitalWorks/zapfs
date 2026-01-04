@@ -258,8 +258,8 @@ func BucketAccessPolicy(bucket string, actions ...string) *Policy {
 		Version: "2012-10-17",
 		Statements: []PolicyStatement{
 			{
-				Effect:    EffectAllow,
-				Actions:   StringOrSlice(actions),
+				Effect:  EffectAllow,
+				Actions: StringOrSlice(actions),
 				Resources: StringOrSlice{
 					"arn:aws:s3:::" + bucket,
 					"arn:aws:s3:::" + bucket + "/*",

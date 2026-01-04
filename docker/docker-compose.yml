@@ -196,8 +196,17 @@ services:
       - --db_driver=mysql
       - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
       - --manager_addr=manager-1:8050
+      - --s3_domains=localhost,s3.localhost
+      - --website_domains=s3-website.localhost
       # IAM mode: "remote" syncs from manager, "local" uses config file
       # - --iam_mode=remote
+    environment:
+      # Federation configuration (S3 passthrough/migration)
+      # Set ZAPFS_FEDERATION_ENABLED=true to enable federation features
+      ZAPFS_FEDERATION_ENABLED: ${ZAPFS_FEDERATION_ENABLED:-false}
+      ZAPFS_FEDERATION_MODE: ${ZAPFS_FEDERATION_MODE:-both}
+      ZAPFS_FEDERATION_SYNC_CONCURRENCY: ${ZAPFS_FEDERATION_SYNC_CONCURRENCY:-5}
+      ZAPFS_FEDERATION_SYNC_RATE_LIMIT: ${ZAPFS_FEDERATION_SYNC_RATE_LIMIT:-100}
     ports:
       - "8082:8082"  # S3 API (HTTP)
       - "8083:8083"  # gRPC
@@ -215,6 +224,58 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+  # ===========================================================================
+  # Metadata Worker (Optional - for larger federation deployments)
+  # ===========================================================================
+  # Dedicated worker instances for processing federation migration tasks.
+  # Use when you need to scale migration workers independently from API servers.
+  #
+  # To enable:
+  #   docker compose --profile federation up
+  #
+  metadata-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    profiles:
+      - federation  # Only start with: docker compose --profile federation up
+    command:
+      - metadata
+      - --ip=0.0.0.0
+      - --http_port=8082
+      - --grpc_port=8083
+      - --debug_port=8086
+      - --db_driver=mysql
+      - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
+      - --manager_addr=manager-1:8050
+      - --federation.enabled=true
+      - --federation.mode=worker
+      - --federation.sync_concurrency=10
+      - --federation.sync_rate_limit=200
+    environment:
+      ZAPFS_FEDERATION_ENABLED: "true"
+      ZAPFS_FEDERATION_MODE: worker
+    ports:
+      - "8086:8086"  # Debug (different port to avoid conflict)
+    volumes:
+      - ../cmd/config:/config:ro
+    networks:
+      - zapfs-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      manager-1:
+        condition: service_healthy
+      metadata:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8086/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      replicas: 1  # Scale up for more migration throughput
 
   # ===========================================================================
   # File Servers
@@ -337,6 +398,43 @@ services:
     command: redis-server --appendonly yes
 
   # ===========================================================================
+  # MinIO (External S3 for federation testing)
+  # ===========================================================================
+  # Use this service to test federation features with an external S3.
+  # MinIO acts as the "external S3" that ZapFS federates with.
+  #
+  # To test federation:
+  #   1. Start with: docker compose --profile federation up
+  #   2. Create a bucket in MinIO:
+  #      mc alias set minio http://localhost:9000 minioadmin minioadmin
+  #      mc mb minio/external-bucket
+  #   3. Register the bucket in ZapFS:
+  #      curl -X POST http://localhost:8082/admin/federation/buckets \
+  #        -H "Content-Type: application/json" \
+  #        -d '{"local_bucket":"my-bucket","mode":"passthrough","external":{"endpoint":"minio:9000","region":"us-east-1","access_key_id":"minioadmin","secret_access_key":"minioadmin","bucket":"external-bucket","path_style":true}}'
+  #
+  minio:
+    image: minio/minio:latest
+    profiles:
+      - federation  # Only start with: docker compose --profile federation up
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    networks:
+      - zapfs-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ===========================================================================
   # ClickHouse (Enterprise - for access logging)
   # ===========================================================================
   # Enable this service for S3 access logging with ClickHouse storage.
@@ -387,3 +485,4 @@ volumes:
   mysql-data:
   redis-data:
   clickhouse-data:
+  minio-data:

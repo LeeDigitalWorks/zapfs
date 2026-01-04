@@ -8,15 +8,16 @@ import "github.com/google/uuid"
 // ObjectRef represents stored object metadata
 // This is what the metadata service tracks for each object
 type ObjectRef struct {
-	ID        uuid.UUID `json:"id"`
-	Bucket    string    `json:"bucket"`
-	Key       string    `json:"key"`
-	Size      uint64    `json:"size"`
-	Version   uint64    `json:"version"`
-	ETag      string    `json:"etag"`
-	CreatedAt int64     `json:"created_at"` // Unix timestamp
-	DeletedAt int64     `json:"deleted_at,omitempty"`
-	TTL       uint32    `json:"ttl,omitempty"` // Seconds until expiration
+	ID          uuid.UUID `json:"id"`
+	Bucket      string    `json:"bucket"`
+	Key         string    `json:"key"`
+	Size        uint64    `json:"size"`
+	Version     uint64    `json:"version"`
+	ETag        string    `json:"etag"`
+	ContentType string    `json:"content_type,omitempty"` // MIME type of the object
+	CreatedAt   int64     `json:"created_at"`             // Unix timestamp
+	DeletedAt   int64     `json:"deleted_at,omitempty"`
+	TTL         uint32    `json:"ttl,omitempty"` // Seconds until expiration
 
 	// Storage profile used for this object
 	ProfileID string `json:"profile_id,omitempty"`
@@ -24,11 +25,37 @@ type ObjectRef struct {
 	// StorageClass is the S3 storage class (STANDARD, GLACIER, DEEP_ARCHIVE, etc.)
 	StorageClass string `json:"storage_class,omitempty"`
 
-	// Transition metadata (enterprise feature)
+	// Transition metadata (enterprise feature and federation)
 	// TransitionedAt is when the object was transitioned to a different storage class (0 = not transitioned)
 	TransitionedAt int64 `json:"transitioned_at,omitempty"`
-	// TransitionedRef is the remote object key in the tier backend (e.g., "ab/cd/uuid" for S3 Glacier)
+	// TransitionedRef is the remote object reference. Usage depends on context:
+	//
+	// For lifecycle transitions (enterprise):
+	//   - Format: "ab/cd/uuid" (tier backend path)
+	//   - Set when object is transitioned to GLACIER, DEEP_ARCHIVE, etc.
+	//   - ChunkRefs are cleared; data is in tier storage
+	//
+	// For federation/migration (community):
+	//   - Format: "bucket/key" or "bucket/key?versionId=xxx"
+	//   - Set when bucket is in PASSTHROUGH or MIGRATING mode
+	//   - Points to object location in external S3
+	//   - ChunkRefs empty = data only in external S3 (lazy migration pending)
+	//   - ChunkRefs set = data ingested locally (migration complete for this object)
 	TransitionedRef string `json:"transitioned_ref,omitempty"`
+
+	// Restore metadata (enterprise feature - for archived objects)
+	// RestoreStatus tracks the restore state: "", "pending", "in_progress", "completed"
+	RestoreStatus string `json:"restore_status,omitempty"`
+	// RestoreExpiryDate is when the restored copy expires (Unix nano, 0 = not restored)
+	RestoreExpiryDate int64 `json:"restore_expiry_date,omitempty"`
+	// RestoreTier is the retrieval tier used: "Expedited", "Standard", "Bulk"
+	RestoreTier string `json:"restore_tier,omitempty"`
+	// RestoreRequestedAt is when the restore was requested (Unix nano)
+	RestoreRequestedAt int64 `json:"restore_requested_at,omitempty"`
+
+	// Intelligent tiering access tracking
+	// LastAccessedAt is updated on GET for intelligent tiering (Unix nano, 0 = never accessed, use CreatedAt)
+	LastAccessedAt int64 `json:"last_accessed_at,omitempty"`
 
 	// Storage location - one of these is set depending on storage mode
 	ChunkRefs  []ChunkRef  `json:"chunk_refs,omitempty"`   // For simple/replicated storage
@@ -65,4 +92,22 @@ func (o *ObjectRef) IsDeleted() bool {
 // IsErasureCoded returns true if the object uses EC storage
 func (o *ObjectRef) IsErasureCoded() bool {
 	return len(o.ECGroupIDs) > 0
+}
+
+// IsFederated returns true if the object has a federation reference.
+// This means the object data exists (or existed) in an external S3 bucket.
+func (o *ObjectRef) IsFederated() bool {
+	return o.TransitionedRef != ""
+}
+
+// NeedsLazyMigration returns true if the object is federated but has no local chunks.
+// This means the object data needs to be fetched from external S3 on read.
+func (o *ObjectRef) NeedsLazyMigration() bool {
+	return o.IsFederated() && len(o.ChunkRefs) == 0 && len(o.ECGroupIDs) == 0
+}
+
+// HasLocalData returns true if the object has local chunk data.
+// For federated objects, this means the migration is complete for this object.
+func (o *ObjectRef) HasLocalData() bool {
+	return len(o.ChunkRefs) > 0 || len(o.ECGroupIDs) > 0
 }

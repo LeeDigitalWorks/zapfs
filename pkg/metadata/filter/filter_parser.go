@@ -12,9 +12,9 @@ type ParserFilter struct {
 	router *Router
 }
 
-func NewParserFilter(hosts ...string) *ParserFilter {
+func NewParserFilter(hosts []string, websiteHosts []string) *ParserFilter {
 	return &ParserFilter{
-		router: NewRouter(hosts...),
+		router: NewRouter(hosts, websiteHosts),
 	}
 }
 
@@ -34,6 +34,7 @@ func (f *ParserFilter) Run(d *data.Data) (Response, error) {
 	d.S3Info.Action = match.Action
 	d.S3Info.Bucket = match.Bucket
 	d.S3Info.Key = match.Key
+	d.IsWebsiteRequest = match.IsWebsiteRequest
 
 	return Next{}, nil
 }

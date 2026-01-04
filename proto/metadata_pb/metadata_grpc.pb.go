@@ -27,6 +27,7 @@ const (
 	MetadataService_DeleteCollection_FullMethodName      = "/metadata_pb.MetadataService/DeleteCollection"
 	MetadataService_ListCollections_FullMethodName       = "/metadata_pb.MetadataService/ListCollections"
 	MetadataService_StreamChunksForServer_FullMethodName = "/metadata_pb.MetadataService/StreamChunksForServer"
+	MetadataService_GetChunkReplicas_FullMethodName      = "/metadata_pb.MetadataService/GetChunkReplicas"
 )
 
 // MetadataServiceClient is the client API for MetadataService service.
@@ -43,6 +44,9 @@ type MetadataServiceClient interface {
 	// Reconciliation - streams all chunk IDs expected on a file server.
 	// Used by Manager to coordinate file server reconciliation.
 	StreamChunksForServer(ctx context.Context, in *StreamChunksForServerRequest, opts ...grpc.CallOption) (MetadataService_StreamChunksForServerClient, error)
+	// GetChunkReplicas returns the servers that have a copy of a specific chunk.
+	// Used by Manager for re-replication of missing chunks.
+	GetChunkReplicas(ctx context.Context, in *GetChunkReplicasRequest, opts ...grpc.CallOption) (*GetChunkReplicasResponse, error)
 }
 
 type metadataServiceClient struct {
@@ -148,6 +152,15 @@ func (x *metadataServiceStreamChunksForServerClient) Recv() (*ChunkIDResponse, e
 	return m, nil
 }
 
+func (c *metadataServiceClient) GetChunkReplicas(ctx context.Context, in *GetChunkReplicasRequest, opts ...grpc.CallOption) (*GetChunkReplicasResponse, error) {
+	out := new(GetChunkReplicasResponse)
+	err := c.cc.Invoke(ctx, MetadataService_GetChunkReplicas_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MetadataServiceServer is the server API for MetadataService service.
 // All implementations must embed UnimplementedMetadataServiceServer
 // for forward compatibility
@@ -162,6 +175,9 @@ type MetadataServiceServer interface {
 	// Reconciliation - streams all chunk IDs expected on a file server.
 	// Used by Manager to coordinate file server reconciliation.
 	StreamChunksForServer(*StreamChunksForServerRequest, MetadataService_StreamChunksForServerServer) error
+	// GetChunkReplicas returns the servers that have a copy of a specific chunk.
+	// Used by Manager for re-replication of missing chunks.
+	GetChunkReplicas(context.Context, *GetChunkReplicasRequest) (*GetChunkReplicasResponse, error)
 	mustEmbedUnimplementedMetadataServiceServer()
 }
 
@@ -192,6 +208,9 @@ func (UnimplementedMetadataServiceServer) ListCollections(context.Context, *List
 }
 func (UnimplementedMetadataServiceServer) StreamChunksForServer(*StreamChunksForServerRequest, MetadataService_StreamChunksForServerServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamChunksForServer not implemented")
+}
+func (UnimplementedMetadataServiceServer) GetChunkReplicas(context.Context, *GetChunkReplicasRequest) (*GetChunkReplicasResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetChunkReplicas not implemented")
 }
 func (UnimplementedMetadataServiceServer) mustEmbedUnimplementedMetadataServiceServer() {}
 
@@ -353,6 +372,24 @@ func (x *metadataServiceStreamChunksForServerServer) Send(m *ChunkIDResponse) er
 	return x.ServerStream.SendMsg(m)
 }
 
+func _MetadataService_GetChunkReplicas_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetChunkReplicasRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetadataServiceServer).GetChunkReplicas(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetadataService_GetChunkReplicas_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetadataServiceServer).GetChunkReplicas(ctx, req.(*GetChunkReplicasRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MetadataService_ServiceDesc is the grpc.ServiceDesc for MetadataService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -387,6 +424,10 @@ var MetadataService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListCollections",
 			Handler:    _MetadataService_ListCollections_Handler,
+		},
+		{
+			MethodName: "GetChunkReplicas",
+			Handler:    _MetadataService_GetChunkReplicas_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

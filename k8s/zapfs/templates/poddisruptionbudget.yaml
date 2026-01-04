@@ -1,0 +1,80 @@
+# Copyright 2024 ZapFS Authors
+# SPDX-License-Identifier: Apache-2.0
+
+{{/*
+PodDisruptionBudgets ensure minimum availability during voluntary disruptions
+(node maintenance, upgrades, etc.)
+*/}}
+
+{{- if and .Values.manager.enabled .Values.manager.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "zapfs.fullname" . }}-manager
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  {{- if .Values.manager.pdb.minAvailable }}
+  minAvailable: {{ .Values.manager.pdb.minAvailable }}
+  {{- else if .Values.manager.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.manager.pdb.maxUnavailable }}
+  {{- else }}
+  # Default: maintain Raft quorum (majority must be available)
+  # For 3 replicas: minAvailable=2 ensures quorum
+  minAvailable: {{ div (add1 .Values.manager.replicas) 2 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+{{- end }}
+
+{{- if and .Values.metadata.enabled .Values.metadata.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "zapfs.fullname" . }}-metadata
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metadata
+spec:
+  {{- if .Values.metadata.pdb.minAvailable }}
+  minAvailable: {{ .Values.metadata.pdb.minAvailable }}
+  {{- else if .Values.metadata.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.metadata.pdb.maxUnavailable }}
+  {{- else }}
+  # Default: keep at least 1 metadata server available
+  minAvailable: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metadata
+{{- end }}
+
+{{- if and .Values.file.enabled .Values.file.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "zapfs.fullname" . }}-file
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: file
+spec:
+  {{- if .Values.file.pdb.minAvailable }}
+  minAvailable: {{ .Values.file.pdb.minAvailable }}
+  {{- else if .Values.file.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.file.pdb.maxUnavailable }}
+  {{- else }}
+  # Default: keep at least 1 file server available
+  minAvailable: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: file
+{{- end }}

@@ -288,14 +288,14 @@ func TestGetObjectRetentionHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		bucket          string
-		key             string
-		setupBucket     *types.BucketInfo
-		setupObject     *types.ObjectRef
-		setupRetention  *s3types.ObjectLockRetention
-		expectedStatus  int
-		expectedMode    string
+		name           string
+		bucket         string
+		key            string
+		setupBucket    *types.BucketInfo
+		setupObject    *types.ObjectRef
+		setupRetention *s3types.ObjectLockRetention
+		expectedStatus int
+		expectedMode   string
 	}{
 		{
 			name:   "object not found",

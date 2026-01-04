@@ -33,53 +33,59 @@ type chunkRegistryEntry struct {
 type DB struct {
 	mu sync.RWMutex
 
-	buckets           map[string]*types.BucketInfo
-	objects           map[string]*types.ObjectRef // key: bucket/key
-	uploads           map[string]*types.MultipartUpload
-	parts             map[string][]*types.MultipartPart // key: uploadID
-	acls              map[string]*s3types.AccessControlList
-	policies          map[string]*s3types.BucketPolicy
-	cors              map[string]*s3types.CORSConfiguration
-	websites          map[string]*s3types.WebsiteConfiguration
-	tags              map[string]*s3types.TagSet
-	encrypt           map[string]*s3types.ServerSideEncryptionConfig
-	lifecycle         map[string]*s3types.Lifecycle
-	objLock           map[string]*s3types.ObjectLockConfiguration
-	retention         map[string]*s3types.ObjectLockRetention
-	legalHold         map[string]*s3types.ObjectLockLegalHold
-	publicAccessBlock map[string]*s3types.PublicAccessBlockConfig
-	ownershipControls map[string]*s3types.OwnershipControls
-	logging           map[string]*db.BucketLoggingConfig
-	notifications     map[string]*s3types.NotificationConfiguration
+	buckets            map[string]*types.BucketInfo
+	objects            map[string]*types.ObjectRef // key: bucket/key
+	uploads            map[string]*types.MultipartUpload
+	parts              map[string][]*types.MultipartPart // key: uploadID
+	acls               map[string]*s3types.AccessControlList
+	policies           map[string]*s3types.BucketPolicy
+	cors               map[string]*s3types.CORSConfiguration
+	websites           map[string]*s3types.WebsiteConfiguration
+	tags               map[string]*s3types.TagSet
+	encrypt            map[string]*s3types.ServerSideEncryptionConfig
+	lifecycle          map[string]*s3types.Lifecycle
+	objLock            map[string]*s3types.ObjectLockConfiguration
+	retention          map[string]*s3types.ObjectLockRetention
+	legalHold          map[string]*s3types.ObjectLockLegalHold
+	publicAccessBlock  map[string]*s3types.PublicAccessBlockConfig
+	ownershipControls  map[string]*s3types.OwnershipControls
+	logging            map[string]*db.BucketLoggingConfig
+	notifications      map[string]*s3types.NotificationConfiguration
+	replication        map[string]*s3types.ReplicationConfiguration
+	federation         map[string]*s3types.FederationConfig
+	intelligentTiering map[string]map[string]*s3types.IntelligentTieringConfiguration // bucket -> configID -> config
 
 	// Chunk registry for centralized RefCount tracking
-	chunkRegistry map[string]*chunkRegistryEntry         // key: chunkID
-	chunkReplicas map[string]map[string]db.ReplicaInfo   // key: chunkID -> serverID -> ReplicaInfo
+	chunkRegistry map[string]*chunkRegistryEntry       // key: chunkID
+	chunkReplicas map[string]map[string]db.ReplicaInfo // key: chunkID -> serverID -> ReplicaInfo
 }
 
 // New creates a new in-memory database for testing.
 func New() *DB {
 	return &DB{
-		buckets:           make(map[string]*types.BucketInfo),
-		objects:           make(map[string]*types.ObjectRef),
-		uploads:           make(map[string]*types.MultipartUpload),
-		parts:             make(map[string][]*types.MultipartPart),
-		acls:              make(map[string]*s3types.AccessControlList),
-		policies:          make(map[string]*s3types.BucketPolicy),
-		cors:              make(map[string]*s3types.CORSConfiguration),
-		websites:          make(map[string]*s3types.WebsiteConfiguration),
-		tags:              make(map[string]*s3types.TagSet),
-		encrypt:           make(map[string]*s3types.ServerSideEncryptionConfig),
-		lifecycle:         make(map[string]*s3types.Lifecycle),
-		objLock:           make(map[string]*s3types.ObjectLockConfiguration),
-		retention:         make(map[string]*s3types.ObjectLockRetention),
-		legalHold:         make(map[string]*s3types.ObjectLockLegalHold),
-		publicAccessBlock: make(map[string]*s3types.PublicAccessBlockConfig),
-		ownershipControls: make(map[string]*s3types.OwnershipControls),
-		logging:           make(map[string]*db.BucketLoggingConfig),
-		notifications:     make(map[string]*s3types.NotificationConfiguration),
-		chunkRegistry:     make(map[string]*chunkRegistryEntry),
-		chunkReplicas:     make(map[string]map[string]db.ReplicaInfo),
+		buckets:            make(map[string]*types.BucketInfo),
+		objects:            make(map[string]*types.ObjectRef),
+		uploads:            make(map[string]*types.MultipartUpload),
+		parts:              make(map[string][]*types.MultipartPart),
+		acls:               make(map[string]*s3types.AccessControlList),
+		policies:           make(map[string]*s3types.BucketPolicy),
+		cors:               make(map[string]*s3types.CORSConfiguration),
+		websites:           make(map[string]*s3types.WebsiteConfiguration),
+		tags:               make(map[string]*s3types.TagSet),
+		encrypt:            make(map[string]*s3types.ServerSideEncryptionConfig),
+		lifecycle:          make(map[string]*s3types.Lifecycle),
+		objLock:            make(map[string]*s3types.ObjectLockConfiguration),
+		retention:          make(map[string]*s3types.ObjectLockRetention),
+		legalHold:          make(map[string]*s3types.ObjectLockLegalHold),
+		publicAccessBlock:  make(map[string]*s3types.PublicAccessBlockConfig),
+		ownershipControls:  make(map[string]*s3types.OwnershipControls),
+		logging:            make(map[string]*db.BucketLoggingConfig),
+		notifications:      make(map[string]*s3types.NotificationConfiguration),
+		replication:        make(map[string]*s3types.ReplicationConfiguration),
+		federation:         make(map[string]*s3types.FederationConfig),
+		intelligentTiering: make(map[string]map[string]*s3types.IntelligentTieringConfiguration),
+		chunkRegistry:      make(map[string]*chunkRegistryEntry),
+		chunkReplicas:      make(map[string]map[string]db.ReplicaInfo),
 	}
 }
 
@@ -286,6 +292,134 @@ func (d *DB) UpdateObjectTransition(ctx context.Context, objectID string, storag
 		}
 	}
 	return db.ErrObjectNotFound
+}
+
+// UpdateRestoreStatus updates the restore status for an archived object.
+func (d *DB) UpdateRestoreStatus(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for key, obj := range d.objects {
+		if obj.ID.String() == objectID {
+			obj.RestoreStatus = status
+			obj.RestoreTier = tier
+			obj.RestoreRequestedAt = requestedAt
+			d.objects[key] = obj
+			return nil
+		}
+	}
+	return db.ErrObjectNotFound
+}
+
+// UpdateRestoreExpiry extends the expiry date of a restored object copy.
+func (d *DB) UpdateRestoreExpiry(ctx context.Context, objectID string, expiryDate int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for key, obj := range d.objects {
+		if obj.ID.String() == objectID {
+			obj.RestoreExpiryDate = expiryDate
+			d.objects[key] = obj
+			return nil
+		}
+	}
+	return db.ErrObjectNotFound
+}
+
+// CompleteRestore marks a restore as complete.
+func (d *DB) CompleteRestore(ctx context.Context, objectID string, expiryDate int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for key, obj := range d.objects {
+		if obj.ID.String() == objectID {
+			obj.RestoreStatus = "completed"
+			obj.RestoreExpiryDate = expiryDate
+			d.objects[key] = obj
+			return nil
+		}
+	}
+	return db.ErrObjectNotFound
+}
+
+// ResetRestoreStatus clears the restore status after a restored copy expires.
+func (d *DB) ResetRestoreStatus(ctx context.Context, objectID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for key, obj := range d.objects {
+		if obj.ID.String() == objectID {
+			obj.RestoreStatus = ""
+			obj.RestoreExpiryDate = 0
+			obj.RestoreTier = ""
+			obj.RestoreRequestedAt = 0
+			d.objects[key] = obj
+			return nil
+		}
+	}
+	return db.ErrObjectNotFound
+}
+
+// UpdateLastAccessedAt updates the last access timestamp for an object.
+func (d *DB) UpdateLastAccessedAt(ctx context.Context, objectID string, accessedAt int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for key, obj := range d.objects {
+		if obj.ID.String() == objectID {
+			obj.LastAccessedAt = accessedAt
+			d.objects[key] = obj
+			return nil
+		}
+	}
+	return nil // Best-effort, don't fail if object not found
+}
+
+func (d *DB) GetColdIntelligentTieringObjects(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var result []*types.ObjectRef
+	for _, obj := range d.objects {
+		if obj.StorageClass != "INTELLIGENT_TIERING" || !obj.IsLatest || obj.DeletedAt > 0 {
+			continue
+		}
+		if int64(obj.Size) < minSize {
+			continue
+		}
+		// Check if object is cold (not accessed since threshold)
+		accessTime := obj.LastAccessedAt
+		if accessTime == 0 {
+			accessTime = obj.CreatedAt // Never accessed, use creation time
+		}
+		if accessTime >= threshold {
+			continue // Not cold yet
+		}
+		objCopy := *obj
+		result = append(result, &objCopy)
+		if limit > 0 && len(result) >= limit {
+			break
+		}
+	}
+	return result, nil
+}
+
+// GetExpiredRestores returns objects with expired restore copies for cleanup.
+func (d *DB) GetExpiredRestores(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var result []*types.ObjectRef
+	for _, obj := range d.objects {
+		if obj.RestoreStatus == "completed" && obj.RestoreExpiryDate > 0 && obj.RestoreExpiryDate < now {
+			objCopy := *obj
+			result = append(result, &objCopy)
+			if limit > 0 && len(result) >= limit {
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 // ============================================================================
@@ -1020,6 +1154,101 @@ func (d *DB) DeleteNotificationConfiguration(ctx context.Context, bucket string)
 }
 
 // ============================================================================
+// Replication Configuration (Enterprise)
+// ============================================================================
+
+func (d *DB) GetReplicationConfiguration(ctx context.Context, bucket string) (*s3types.ReplicationConfiguration, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	config, ok := d.replication[bucket]
+	if !ok {
+		return nil, db.ErrReplicationNotFound
+	}
+	return config, nil
+}
+
+func (d *DB) SetReplicationConfiguration(ctx context.Context, bucket string, config *s3types.ReplicationConfiguration) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.replication[bucket] = config
+	return nil
+}
+
+func (d *DB) DeleteReplicationConfiguration(ctx context.Context, bucket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if _, ok := d.replication[bucket]; !ok {
+		return db.ErrReplicationNotFound
+	}
+	delete(d.replication, bucket)
+	return nil
+}
+
+// ============================================================================
+// Intelligent Tiering Store
+// ============================================================================
+
+func (d *DB) GetIntelligentTieringConfiguration(ctx context.Context, bucket, configID string) (*s3types.IntelligentTieringConfiguration, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	bucketConfigs, ok := d.intelligentTiering[bucket]
+	if !ok {
+		return nil, db.ErrIntelligentTieringNotFound
+	}
+	config, ok := bucketConfigs[configID]
+	if !ok {
+		return nil, db.ErrIntelligentTieringNotFound
+	}
+	return config, nil
+}
+
+func (d *DB) PutIntelligentTieringConfiguration(ctx context.Context, bucket string, config *s3types.IntelligentTieringConfiguration) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.intelligentTiering[bucket] == nil {
+		d.intelligentTiering[bucket] = make(map[string]*s3types.IntelligentTieringConfiguration)
+	}
+	d.intelligentTiering[bucket][config.ID] = config
+	return nil
+}
+
+func (d *DB) DeleteIntelligentTieringConfiguration(ctx context.Context, bucket, configID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	bucketConfigs, ok := d.intelligentTiering[bucket]
+	if !ok {
+		return db.ErrIntelligentTieringNotFound
+	}
+	if _, ok := bucketConfigs[configID]; !ok {
+		return db.ErrIntelligentTieringNotFound
+	}
+	delete(bucketConfigs, configID)
+	return nil
+}
+
+func (d *DB) ListIntelligentTieringConfigurations(ctx context.Context, bucket string) ([]*s3types.IntelligentTieringConfiguration, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	bucketConfigs := d.intelligentTiering[bucket]
+	if bucketConfigs == nil {
+		return []*s3types.IntelligentTieringConfiguration{}, nil
+	}
+
+	var configs []*s3types.IntelligentTieringConfiguration
+	for _, config := range bucketConfigs {
+		configs = append(configs, config)
+	}
+	return configs, nil
+}
+
+// ============================================================================
 // Lifecycle Scan Store (stub for in-memory testing)
 // ============================================================================
 
@@ -1208,6 +1437,108 @@ func (d *DB) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
 	delete(d.chunkRegistry, chunkID)
 	delete(d.chunkReplicas, chunkID)
 	return nil
+}
+
+// ============================================================================
+// Federation Operations
+// ============================================================================
+
+func (d *DB) GetFederationConfig(ctx context.Context, bucket string) (*s3types.FederationConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	config, exists := d.federation[bucket]
+	if !exists {
+		return nil, db.ErrFederationNotFound
+	}
+	// Return a copy to prevent mutation
+	copy := *config
+	return &copy, nil
+}
+
+func (d *DB) SetFederationConfig(ctx context.Context, config *s3types.FederationConfig) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Store a copy
+	copy := *config
+	d.federation[config.Bucket] = &copy
+	return nil
+}
+
+func (d *DB) DeleteFederationConfig(ctx context.Context, bucket string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	delete(d.federation, bucket)
+	return nil
+}
+
+func (d *DB) ListFederatedBuckets(ctx context.Context) ([]*s3types.FederationConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var result []*s3types.FederationConfig
+	for _, config := range d.federation {
+		copy := *config
+		result = append(result, &copy)
+	}
+	return result, nil
+}
+
+func (d *DB) UpdateMigrationProgress(ctx context.Context, bucket string, objectsSynced, bytesSynced int64, lastSyncKey string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	config, exists := d.federation[bucket]
+	if !exists {
+		return db.ErrFederationNotFound
+	}
+	config.ObjectsSynced = objectsSynced
+	config.BytesSynced = bytesSynced
+	config.LastSyncKey = lastSyncKey
+	return nil
+}
+
+func (d *DB) SetMigrationPaused(ctx context.Context, bucket string, paused bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	config, exists := d.federation[bucket]
+	if !exists {
+		return db.ErrFederationNotFound
+	}
+	config.MigrationPaused = paused
+	return nil
+}
+
+func (d *DB) SetDualWriteEnabled(ctx context.Context, bucket string, enabled bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	config, exists := d.federation[bucket]
+	if !exists {
+		return db.ErrFederationNotFound
+	}
+	config.DualWriteEnabled = enabled
+	return nil
+}
+
+func (d *DB) GetFederatedBucketsNeedingSync(ctx context.Context, limit int) ([]*s3types.FederationConfig, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var result []*s3types.FederationConfig
+	for _, config := range d.federation {
+		if !config.MigrationPaused && config.MigrationStartedAt > 0 {
+			copy := *config
+			result = append(result, &copy)
+			if len(result) >= limit {
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 // ============================================================================

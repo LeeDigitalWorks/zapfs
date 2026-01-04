@@ -37,3 +37,48 @@ type ReadRangeRequest struct {
 	Offset    uint64
 	Length    uint64
 }
+
+// FederatedWriteRequest extends WriteRequest with federation parameters.
+// Used for dual-write when a bucket is in MIGRATING mode with dual-write enabled.
+type FederatedWriteRequest struct {
+	WriteRequest
+
+	// Key is the object key (used for external S3)
+	Key string
+
+	// ContentType is the MIME type for external S3
+	ContentType string
+
+	// ExternalBucket is the bucket name on external S3
+	ExternalBucket string
+
+	// ExternalEndpoint is the external S3 endpoint
+	ExternalEndpoint string
+
+	// ExternalRegion is the external S3 region
+	ExternalRegion string
+
+	// ExternalAccessKeyID is the access key for external S3
+	ExternalAccessKeyID string
+
+	// ExternalSecretAccessKey is the secret key for external S3
+	ExternalSecretAccessKey string
+
+	// ExternalPathStyle indicates if path-style addressing should be used
+	ExternalPathStyle bool
+}
+
+// FederatedWriteResult extends WriteResult with external S3 info.
+type FederatedWriteResult struct {
+	WriteResult
+
+	// ExternalETag is the ETag from external S3 (empty if write failed or disabled)
+	ExternalETag string
+
+	// ExternalVersionID is the version ID from external S3 (for versioned buckets)
+	ExternalVersionID string
+
+	// ExternalError contains any error from the external write (nil if succeeded)
+	// Note: Local write is required to succeed; external errors are logged but not fatal.
+	ExternalError error
+}

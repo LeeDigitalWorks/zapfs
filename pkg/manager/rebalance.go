@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/grpc/pool"
@@ -336,66 +337,151 @@ func (ms *ManagerServer) ExecuteRebalance(req *manager_pb.ExecuteRebalanceReques
 		return err
 	}
 
-	// Execute migrations
-	var migrationsCompleted int32
+	// Execute migrations with configurable parallelism
+	var migrationsCompleted int64
 	var bytesMoved int64
 
-	// TODO: Use maxConcurrent for parallel migrations
-	_ = req.GetMaxConcurrent()
+	maxConcurrent := int(req.GetMaxConcurrent())
+	if maxConcurrent <= 0 {
+		maxConcurrent = 1 // Default to sequential if not specified
+	}
+	if maxConcurrent > 32 {
+		maxConcurrent = 32 // Cap at reasonable maximum
+	}
 
 	deleteSource := req.GetDeleteSource()
 
-	// Group migrations by source server for concurrent execution
-	migrationsBySource := make(map[string][]*manager_pb.ChunkMigration)
-	for _, m := range plan.Migrations {
-		migrationsBySource[m.FromServer] = append(migrationsBySource[m.FromServer], m)
-	}
+	// Use semaphore pattern for concurrency control
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	errChan := make(chan error, 1) // Buffered to prevent blocking
 
-	// Execute migrations (simplified - single threaded for now)
+	// Progress update channel for serialized stream writes
+	type progressUpdate struct {
+		completed int64
+		bytes     int64
+		chunkID   string
+	}
+	progressChan := make(chan progressUpdate, len(plan.Migrations))
+
+	// Context for cancellation
+	migrationCtx, cancelMigrations := context.WithCancel(ctx)
+	defer cancelMigrations()
+
+	// Start progress reporter goroutine
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		for {
+			select {
+			case <-migrationCtx.Done():
+				return
+			case update, ok := <-progressChan:
+				if !ok {
+					return
+				}
+				completed := atomic.LoadInt64(&migrationsCompleted)
+				bytes := atomic.LoadInt64(&bytesMoved)
+				if err := stream.Send(&manager_pb.RebalanceProgress{
+					PlanId:              plan.PlanId,
+					MigrationsCompleted: int32(completed),
+					MigrationsTotal:     int32(len(plan.Migrations)),
+					BytesMoved:          bytes,
+					BytesTotal:          plan.TotalBytes,
+					ProgressPercent:     float64(bytes) / float64(plan.TotalBytes) * 100,
+					CurrentChunk:        update.chunkID,
+					Status:              "running",
+				}); err != nil {
+					select {
+					case errChan <- err:
+					default:
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	// Execute migrations in parallel
+migrationLoop:
 	for _, migration := range plan.Migrations {
+		migration := migration // capture for goroutine
+
+		// Check for cancellation before starting new migration
 		select {
-		case <-ctx.Done():
-			return stream.Send(&manager_pb.RebalanceProgress{
-				PlanId:              plan.PlanId,
-				MigrationsCompleted: migrationsCompleted,
-				MigrationsTotal:     int32(len(plan.Migrations)),
-				BytesMoved:          bytesMoved,
-				BytesTotal:          plan.TotalBytes,
-				ProgressPercent:     float64(bytesMoved) / float64(plan.TotalBytes) * 100,
-				Status:              "cancelled",
-			})
+		case <-migrationCtx.Done():
+			break migrationLoop
+		case err := <-errChan:
+			cancelMigrations()
+			wg.Wait()
+			close(progressChan)
+			<-progressDone
+			return err
 		default:
 		}
 
-		// Execute this migration
-		err := ms.executeSingleMigration(ctx, migration, deleteSource)
-		if err != nil {
-			logger.Warn().
-				Err(err).
-				Str("chunk_id", migration.ChunkId).
-				Str("from", migration.FromServer).
-				Str("to", migration.ToServer).
-				Msg("Migration failed, continuing with next")
-			// Continue with other migrations
-			continue
+		// Acquire semaphore slot
+		select {
+		case sem <- struct{}{}:
+		case <-migrationCtx.Done():
+			break migrationLoop
 		}
 
-		migrationsCompleted++
-		bytesMoved += migration.SizeBytes
+		wg.Add(1)
+		go func(m *manager_pb.ChunkMigration) {
+			defer wg.Done()
+			defer func() { <-sem }() // Release semaphore slot
 
-		// Send progress update
-		if err := stream.Send(&manager_pb.RebalanceProgress{
+			err := ms.executeSingleMigration(migrationCtx, m, deleteSource)
+			if err != nil {
+				logger.Warn().
+					Err(err).
+					Str("chunk_id", m.ChunkId).
+					Str("from", m.FromServer).
+					Str("to", m.ToServer).
+					Msg("Migration failed, continuing with next")
+				return
+			}
+
+			atomic.AddInt64(&migrationsCompleted, 1)
+			atomic.AddInt64(&bytesMoved, m.SizeBytes)
+
+			// Send progress update (non-blocking)
+			select {
+			case progressChan <- progressUpdate{
+				completed: atomic.LoadInt64(&migrationsCompleted),
+				bytes:     atomic.LoadInt64(&bytesMoved),
+				chunkID:   m.ChunkId,
+			}:
+			default:
+				// Skip if channel is full (avoid blocking workers)
+			}
+		}(migration)
+	}
+
+	// Wait for all migrations to complete
+	wg.Wait()
+	close(progressChan)
+	<-progressDone
+
+	// Check for stream errors
+	select {
+	case err := <-errChan:
+		return err
+	default:
+	}
+
+	// Check if cancelled
+	if ctx.Err() != nil {
+		return stream.Send(&manager_pb.RebalanceProgress{
 			PlanId:              plan.PlanId,
-			MigrationsCompleted: migrationsCompleted,
+			MigrationsCompleted: int32(atomic.LoadInt64(&migrationsCompleted)),
 			MigrationsTotal:     int32(len(plan.Migrations)),
-			BytesMoved:          bytesMoved,
+			BytesMoved:          atomic.LoadInt64(&bytesMoved),
 			BytesTotal:          plan.TotalBytes,
-			ProgressPercent:     float64(bytesMoved) / float64(plan.TotalBytes) * 100,
-			CurrentChunk:        migration.ChunkId,
-			Status:              "running",
-		}); err != nil {
-			return err
-		}
+			ProgressPercent:     float64(atomic.LoadInt64(&bytesMoved)) / float64(plan.TotalBytes) * 100,
+			Status:              "cancelled",
+		})
 	}
 
 	// Cleanup cached plan
@@ -403,17 +489,21 @@ func (ms *ManagerServer) ExecuteRebalance(req *manager_pb.ExecuteRebalanceReques
 	delete(rebalancePlanCache, plan.PlanId)
 	rebalancePlanCacheMu.Unlock()
 
+	finalCompleted := atomic.LoadInt64(&migrationsCompleted)
+	finalBytes := atomic.LoadInt64(&bytesMoved)
+
 	logger.Info().
 		Str("plan_id", plan.PlanId).
-		Int32("completed", migrationsCompleted).
-		Int64("bytes_moved", bytesMoved).
+		Int64("completed", finalCompleted).
+		Int64("bytes_moved", finalBytes).
+		Int("max_concurrent", maxConcurrent).
 		Msg("Rebalance execution completed")
 
 	return stream.Send(&manager_pb.RebalanceProgress{
 		PlanId:              plan.PlanId,
-		MigrationsCompleted: migrationsCompleted,
+		MigrationsCompleted: int32(finalCompleted),
 		MigrationsTotal:     int32(len(plan.Migrations)),
-		BytesMoved:          bytesMoved,
+		BytesMoved:          finalBytes,
 		BytesTotal:          plan.TotalBytes,
 		ProgressPercent:     100,
 		Status:              "completed",

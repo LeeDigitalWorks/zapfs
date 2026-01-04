@@ -1,0 +1,195 @@
+# Copyright 2024 ZapFS Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# ZapFS Helm Chart - DigitalOcean Kubernetes (DOKS) Configuration
+#
+# This file provides production-ready defaults for deploying ZapFS on DigitalOcean.
+#
+# Prerequisites:
+#   1. DOKS cluster with at least 3 nodes (for HA)
+#   2. DigitalOcean Managed MySQL or external MySQL/Vitess
+#   3. (Optional) DigitalOcean Spaces for backup storage
+#
+# Usage:
+#   # Generate IAM master key
+#   export IAM_MASTER_KEY=$(openssl rand -base64 32)
+#
+#   # Install with your database DSN
+#   helm install zapfs ./k8s/zapfs \
+#     -f ./k8s/zapfs/values-digitalocean.yaml \
+#     --set manager.iamMasterKey="$IAM_MASTER_KEY" \
+#     --set metadata.database.dsn="zapfs:PASSWORD@tcp(your-db-host:25060)/zapfs?tls=true"
+#
+# For testing (single replica, relaxed anti-affinity):
+#   helm install zapfs ./k8s/zapfs \
+#     -f ./k8s/zapfs/values-digitalocean.yaml \
+#     --set manager.replicas=1 \
+#     --set metadata.replicaCount=1 \
+#     --set file.replicas=1 \
+#     --set manager.pdb.enabled=false \
+#     --set metadata.pdb.enabled=false \
+#     --set file.pdb.enabled=false
+
+# =============================================================================
+# Image Configuration
+# =============================================================================
+
+image:
+  repository: zapfs/zapfs
+  pullPolicy: IfNotPresent
+  # tag: "latest"  # Use specific version in production
+
+# =============================================================================
+# Manager Cluster
+# =============================================================================
+
+manager:
+  enabled: true
+  replicas: 3  # Raft requires odd number for quorum
+
+  # DigitalOcean block storage
+  storage: "10Gi"
+  storageClass: "do-block-storage"
+
+  # IAM master key - REQUIRED
+  # Generate with: openssl rand -base64 32
+  # Set via --set manager.iamMasterKey="..." or use external secret
+  iamMasterKey: ""
+  # iamMasterKeySecret: "zapfs-iam-secret"  # Or reference existing secret
+
+  # Resources tuned for DO droplets
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  # HA configuration
+  antiAffinityStrict: false  # Set true if you have 3+ nodes
+
+  # PDB ensures quorum during upgrades
+  pdb:
+    enabled: true
+    # Automatically maintains Raft quorum (majority)
+
+# =============================================================================
+# Metadata Service
+# =============================================================================
+
+metadata:
+  enabled: true
+  replicaCount: 2
+
+  # S3 domain names - UPDATE THESE
+  s3Domains:
+    - "s3.your-domain.com"
+    # - "s3.nyc1.your-domain.com"  # Regional subdomain
+
+  # Database configuration - REQUIRED
+  # DigitalOcean Managed MySQL example:
+  #   dsn: "zapfs:PASSWORD@tcp(private-db-xxx.db.ondigitalocean.com:25060)/zapfs?tls=true"
+  database:
+    driver: "mysql"
+    dsn: ""  # Set via --set metadata.database.dsn="..."
+
+  # Resources
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  # HA configuration
+  antiAffinityStrict: false
+
+  pdb:
+    enabled: true
+
+  # Ingress for external S3 access
+  ingress:
+    enabled: true
+    className: "nginx"  # Use nginx-ingress or traefik
+    annotations:
+      # For DigitalOcean Load Balancer with cert-manager
+      # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/proxy-body-size: "5g"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    hosts:
+      - host: s3.your-domain.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    # Uncomment for TLS with cert-manager:
+    # tls:
+    #   - secretName: zapfs-s3-tls
+    #     hosts:
+    #       - s3.your-domain.com
+
+# =============================================================================
+# File Servers
+# =============================================================================
+
+file:
+  enabled: true
+  replicas: 2
+
+  # DigitalOcean block storage for chunk data
+  # Note: DO block storage has a max size of 16TB per volume
+  storage: "100Gi"
+  storageClass: "do-block-storage"
+
+  # Resources - file servers are I/O and memory intensive
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  # HA configuration
+  antiAffinityStrict: false
+
+  # Not needed for cloud - no RDMA/UCX on DigitalOcean
+  colocateWithManager: false
+
+  pdb:
+    enabled: true
+
+# =============================================================================
+# Notes for DigitalOcean Deployment
+# =============================================================================
+#
+# 1. DATABASE SETUP
+#    - Use DigitalOcean Managed MySQL (recommended) or deploy your own
+#    - Enable private networking for database access
+#    - Example DSN: "user:pass@tcp(private-db-xxx.db.ondigitalocean.com:25060)/zapfs?tls=true"
+#
+# 2. NETWORKING
+#    - Use DigitalOcean Load Balancer for ingress (auto-provisioned by nginx-ingress)
+#    - Enable VPC for private communication between services
+#
+# 3. STORAGE
+#    - do-block-storage is the default storage class on DOKS
+#    - Maximum volume size: 16TB
+#    - For larger deployments, add more file server replicas
+#
+# 4. SCALING
+#    - Metadata: Stateless, scale horizontally
+#    - File: Add replicas for more storage capacity
+#    - Manager: Keep at 3 or 5 for Raft (odd numbers only)
+#
+# 5. BACKUP
+#    - Use DigitalOcean Spaces for S3-compatible backup storage
+#    - Configure backup in manager settings (enterprise feature)
+#
+# 6. MONITORING
+#    - Deploy kube-prometheus-stack for metrics
+#    - All services expose Prometheus metrics on debug ports
+#    - Create ServiceMonitor resources for auto-discovery

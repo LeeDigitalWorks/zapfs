@@ -16,7 +16,7 @@ import (
 // GetNotificationConfiguration retrieves the notification config for a bucket.
 func (v *Vitess) GetNotificationConfiguration(ctx context.Context, bucket string) (*s3types.NotificationConfiguration, error) {
 	var configJSON []byte
-	err := v.db.QueryRowContext(ctx, `
+	err := v.Store.DB().QueryRowContext(ctx, `
 		SELECT config FROM notification_configs WHERE bucket = ?
 	`, bucket).Scan(&configJSON)
 
@@ -41,7 +41,7 @@ func (v *Vitess) SetNotificationConfiguration(ctx context.Context, bucket string
 		return fmt.Errorf("marshal notification config: %w", err)
 	}
 
-	_, err = v.db.ExecContext(ctx, `
+	_, err = v.Store.DB().ExecContext(ctx, `
 		INSERT INTO notification_configs (bucket, config)
 		VALUES (?, ?)
 		ON DUPLICATE KEY UPDATE config = VALUES(config), updated_at = CURRENT_TIMESTAMP
@@ -54,7 +54,7 @@ func (v *Vitess) SetNotificationConfiguration(ctx context.Context, bucket string
 
 // DeleteNotificationConfiguration removes the notification config for a bucket.
 func (v *Vitess) DeleteNotificationConfiguration(ctx context.Context, bucket string) error {
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		DELETE FROM notification_configs WHERE bucket = ?
 	`, bucket)
 	if err != nil {

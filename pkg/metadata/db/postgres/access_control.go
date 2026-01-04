@@ -19,7 +19,7 @@ import (
 
 func (p *Postgres) GetPublicAccessBlock(ctx context.Context, bucket string) (*s3types.PublicAccessBlockConfig, error) {
 	var blockPublicAcls, ignorePublicAcls, blockPublicPolicy, restrictPublicBuckets bool
-	err := p.db.QueryRowContext(ctx, `
+	err := p.Store.DB().QueryRowContext(ctx, `
 		SELECT block_public_acls, ignore_public_acls, block_public_policy, restrict_public_buckets
 		FROM bucket_public_access_block WHERE bucket = $1
 	`, bucket).Scan(&blockPublicAcls, &ignorePublicAcls, &blockPublicPolicy, &restrictPublicBuckets)
@@ -41,7 +41,7 @@ func (p *Postgres) GetPublicAccessBlock(ctx context.Context, bucket string) (*s3
 
 func (p *Postgres) SetPublicAccessBlock(ctx context.Context, bucket string, config *s3types.PublicAccessBlockConfig) error {
 	now := time.Now().UnixNano()
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		INSERT INTO bucket_public_access_block (bucket, block_public_acls, ignore_public_acls, block_public_policy, restrict_public_buckets, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (bucket) DO UPDATE SET
@@ -58,7 +58,7 @@ func (p *Postgres) SetPublicAccessBlock(ctx context.Context, bucket string, conf
 }
 
 func (p *Postgres) DeletePublicAccessBlock(ctx context.Context, bucket string) error {
-	result, err := p.db.ExecContext(ctx, `
+	result, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM bucket_public_access_block WHERE bucket = $1
 	`, bucket)
 	if err != nil {
@@ -78,7 +78,7 @@ func (p *Postgres) DeletePublicAccessBlock(ctx context.Context, bucket string) e
 
 func (p *Postgres) GetOwnershipControls(ctx context.Context, bucket string) (*s3types.OwnershipControls, error) {
 	var objectOwnership string
-	err := p.db.QueryRowContext(ctx, `
+	err := p.Store.DB().QueryRowContext(ctx, `
 		SELECT object_ownership FROM bucket_ownership_controls WHERE bucket = $1
 	`, bucket).Scan(&objectOwnership)
 
@@ -103,7 +103,7 @@ func (p *Postgres) SetOwnershipControls(ctx context.Context, bucket string, cont
 
 	objectOwnership := controls.Rules[0].ObjectOwnership
 	now := time.Now().UnixNano()
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		INSERT INTO bucket_ownership_controls (bucket, object_ownership, created_at, updated_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (bucket) DO UPDATE SET object_ownership = EXCLUDED.object_ownership, updated_at = EXCLUDED.updated_at
@@ -115,7 +115,7 @@ func (p *Postgres) SetOwnershipControls(ctx context.Context, bucket string, cont
 }
 
 func (p *Postgres) DeleteOwnershipControls(ctx context.Context, bucket string) error {
-	result, err := p.db.ExecContext(ctx, `
+	result, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM bucket_ownership_controls WHERE bucket = $1
 	`, bucket)
 	if err != nil {

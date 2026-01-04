@@ -21,6 +21,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/signature"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/usage"
 )
 
@@ -66,6 +67,7 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		Key:           key,
 		Body:          body,
 		ContentLength: contentLength,
+		ContentType:   d.Req.Header.Get("Content-Type"),
 		StorageClass:  d.Req.Header.Get(s3consts.XAmzStorageClass),
 		Owner:         d.S3Info.OwnerID,
 	}
@@ -149,6 +151,12 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 // GetObjectHandler retrieves an object.
 // GET /{bucket}/{key}
 func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
+	// Delegate to website serving for static website requests
+	if d.IsWebsiteRequest {
+		s.ServeWebsiteContent(d, w)
+		return
+	}
+
 	ctx := d.Ctx
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
@@ -247,6 +255,16 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 	w.Header().Set("Last-Modified", result.Metadata.LastModified.Format(http.TimeFormat))
 	w.Header().Set("Content-Type", result.Metadata.ContentType)
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+
+	// Set storage class header
+	if result.Metadata.StorageClass != "" && result.Metadata.StorageClass != "STANDARD" {
+		w.Header().Set(s3consts.XAmzStorageClass, result.Metadata.StorageClass)
+	}
+
+	// Set restore status header for archived objects
+	if result.Object != nil && result.Object.RestoreStatus != "" {
+		w.Header().Set(s3consts.XAmzRestore, formatRestoreHeader(result.Object))
+	}
 
 	// Set version ID if versioning is enabled or a specific version was requested
 	if result.Object != nil {
@@ -419,6 +437,12 @@ func (s *MetadataServer) ListObjectsHandler(d *data.Data, w http.ResponseWriter)
 // HeadObjectHandler returns object metadata without the body.
 // HEAD /{bucket}/{key}
 func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) {
+	// Delegate to website serving for static website requests
+	if d.IsWebsiteRequest {
+		s.ServeWebsiteContent(d, w)
+		return
+	}
+
 	ctx := d.Ctx
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
@@ -502,6 +526,16 @@ func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) 
 	w.Header().Set("Last-Modified", result.Metadata.LastModified.Format(http.TimeFormat))
 	w.Header().Set("Content-Type", result.Metadata.ContentType)
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
+
+	// Set storage class header
+	if result.Metadata.StorageClass != "" && result.Metadata.StorageClass != "STANDARD" {
+		w.Header().Set(s3consts.XAmzStorageClass, result.Metadata.StorageClass)
+	}
+
+	// Set restore status header for archived objects
+	if result.Object != nil && result.Object.RestoreStatus != "" {
+		w.Header().Set(s3consts.XAmzRestore, formatRestoreHeader(result.Object))
+	}
 
 	// Return SSE headers if encrypted
 	if result.Metadata.SSEAlgorithm != "" {
@@ -1088,13 +1122,12 @@ func (s *MetadataServer) PostObjectHandler(d *data.Data, w http.ResponseWriter) 
 	}
 
 	// Build service request
-	// TODO: ContentType should be passed to PutObjectRequest when supported
-	_ = contentType
 	req := &object.PutObjectRequest{
 		Bucket:        bucket,
 		Key:           result.Key,
 		Body:          file,
 		ContentLength: formData.FileSize,
+		ContentType:   contentType,
 		Owner:         ownerID,
 	}
 
@@ -1251,4 +1284,23 @@ func (s *MetadataServer) WriteGetObjectResponseHandler(d *data.Data, w http.Resp
 func (s *MetadataServer) CreateSessionHandler(d *data.Data, w http.ResponseWriter) {
 	// S3 Express One Zone specific - not applicable
 	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+}
+
+// formatRestoreHeader formats the x-amz-restore header value based on object restore status.
+// Returns a string in the format:
+//   - ongoing-request="true" for pending/in_progress restores
+//   - ongoing-request="false", expiry-date="<RFC 3339 date>" for completed restores
+func formatRestoreHeader(obj *types.ObjectRef) string {
+	switch obj.RestoreStatus {
+	case "pending", "in_progress":
+		return `ongoing-request="true"`
+	case "completed":
+		if obj.RestoreExpiryDate > 0 {
+			expiryTime := time.Unix(0, obj.RestoreExpiryDate)
+			return fmt.Sprintf(`ongoing-request="false", expiry-date="%s"`, expiryTime.UTC().Format(time.RFC1123))
+		}
+		return `ongoing-request="false"`
+	default:
+		return ""
+	}
 }

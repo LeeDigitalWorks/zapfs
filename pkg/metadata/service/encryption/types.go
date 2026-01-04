@@ -27,11 +27,11 @@ type SSEKMSParams struct {
 
 // Metadata contains encryption information stored with an object
 type Metadata struct {
-	Algorithm     string // "AES256" for SSE-C, "aws:kms" for SSE-KMS
+	Algorithm      string // "AES256" for SSE-C, "aws:kms" for SSE-KMS
 	CustomerKeyMD5 string // For SSE-C: MD5 of customer key
-	KMSKeyID      string // For SSE-KMS: KMS key ID
-	KMSContext    string // For SSE-KMS: encryption context
-	DEKCiphertext string // For SSE-KMS: encrypted data encryption key (base64)
+	KMSKeyID       string // For SSE-KMS: KMS key ID
+	KMSContext     string // For SSE-KMS: encryption context
+	DEKCiphertext  string // For SSE-KMS: encrypted data encryption key (base64)
 }
 
 // Result contains the result of an encryption operation

@@ -20,6 +20,10 @@ service MetadataService {
   // Reconciliation - streams all chunk IDs expected on a file server.
   // Used by Manager to coordinate file server reconciliation.
   rpc StreamChunksForServer(StreamChunksForServerRequest) returns (stream ChunkIDResponse);
+
+  // GetChunkReplicas returns the servers that have a copy of a specific chunk.
+  // Used by Manager for re-replication of missing chunks.
+  rpc GetChunkReplicas(GetChunkReplicasRequest) returns (GetChunkReplicasResponse);
 }
 
 message GetObjectRequest {
@@ -130,4 +134,19 @@ message StreamChunksForServerRequest {
 
 message ChunkIDResponse {
   string chunk_id = 1;
+}
+
+// GetChunkReplicas messages
+
+message GetChunkReplicasRequest {
+  string chunk_id = 1;
+}
+
+message GetChunkReplicasResponse {
+  repeated ChunkReplicaInfo replicas = 1;
+}
+
+message ChunkReplicaInfo {
+  string server_id = 1;   // File server address
+  string backend_id = 2;  // Storage backend on the server
 }

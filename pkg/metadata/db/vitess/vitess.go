@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	dbsql "github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/sql"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -47,7 +48,7 @@ type Config struct {
 	ConnMaxIdleTime time.Duration
 
 	// TLS settings
-	TLSMode  TLSMode // TLS mode: disabled, preferred, required, verify-ca
+	TLSMode   TLSMode // TLS mode: disabled, preferred, required, verify-ca
 	TLSCAFile string  // Path to CA certificate file (for verify-ca mode)
 }
 
@@ -64,8 +65,8 @@ func DefaultConfig(dsn string) Config {
 
 // Vitess implements db.DB using Vitess as the backing store
 type Vitess struct {
-	db     *sql.DB
-	config Config
+	*dbsql.Store // Embedded for shared object operations
+	config       Config
 }
 
 // NewVitess creates a new Vitess-backed database
@@ -84,56 +85,52 @@ func NewVitess(cfg Config) (db.DB, error) {
 	// Apply performance optimizations to DSN
 	dsn = optimizeDSN(dsn)
 
-	sqlDB, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+	// Create shared Store with MySQL dialect
+	sqlCfg := dbsql.Config{
+		DSN:             dsn,
+		Driver:          db.DriverVitess,
+		MaxOpenConns:    cfg.MaxOpenConns,
+		MaxIdleConns:    cfg.MaxIdleConns,
+		ConnMaxLifetime: cfg.ConnMaxLifetime,
+		ConnMaxIdleTime: cfg.ConnMaxIdleTime,
 	}
 
-	// Configure connection pool
-	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
-
-	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := sqlDB.PingContext(ctx); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+	store, err := dbsql.Open("mysql", dbsql.MySQLDialect{}, sqlCfg)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Vitess{
-		db:     sqlDB,
+		Store:  store,
 		config: cfg,
 	}, nil
 }
 
 // Close closes the database connection
 func (v *Vitess) Close() error {
-	return v.db.Close()
+	return v.Store.Close()
 }
 
 // SqlDB returns the underlying *sql.DB for use with taskqueue.DBQueue
 func (v *Vitess) SqlDB() *sql.DB {
-	return v.db
+	return v.Store.DB()
 }
 
 // Stats returns database connection pool statistics
 func (v *Vitess) Stats() sql.DBStats {
-	return v.db.Stats()
+	return v.Store.DB().Stats()
 }
 
 // WithTx executes fn within a database transaction.
 // If fn returns an error, the transaction is rolled back.
 // If fn returns nil, the transaction is committed.
 func (v *Vitess) WithTx(ctx context.Context, fn func(tx db.TxStore) error) error {
-	sqlTx, err := v.db.BeginTx(ctx, nil)
+	sqlTx, err := v.Store.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	txStore := &vitessTx{tx: sqlTx}
+	txStore := dbsql.NewTxStore(sqlTx, dbsql.MySQLDialect{})
 
 	if err := fn(txStore); err != nil {
 		if rbErr := sqlTx.Rollback(); rbErr != nil {

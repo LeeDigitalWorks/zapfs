@@ -15,7 +15,7 @@ import (
 // Migrate runs database migrations for PostgreSQL/CockroachDB
 func (p *Postgres) Migrate(ctx context.Context) error {
 	// Ensure schema_migrations table exists
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INT PRIMARY KEY,
 			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -30,7 +30,7 @@ func (p *Postgres) Migrate(ctx context.Context) error {
 	if driver == "" {
 		driver = db.DriverPostgres
 	}
-	return db.RunMigrations(ctx, &postgresMigrator{db: p.db}, driver)
+	return db.RunMigrations(ctx, &postgresMigrator{db: p.Store.DB()}, driver)
 }
 
 // postgresMigrator implements db.Migrator for PostgreSQL

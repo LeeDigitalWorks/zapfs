@@ -19,7 +19,7 @@ import (
 // GetNotificationConfiguration retrieves the notification config for a bucket.
 func (p *Postgres) GetNotificationConfiguration(ctx context.Context, bucket string) (*s3types.NotificationConfiguration, error) {
 	var configJSON []byte
-	err := p.db.QueryRowContext(ctx, `
+	err := p.Store.DB().QueryRowContext(ctx, `
 		SELECT config FROM notification_configs WHERE bucket = $1
 	`, bucket).Scan(&configJSON)
 
@@ -44,7 +44,7 @@ func (p *Postgres) SetNotificationConfiguration(ctx context.Context, bucket stri
 		return fmt.Errorf("marshal notification config: %w", err)
 	}
 
-	_, err = p.db.ExecContext(ctx, `
+	_, err = p.Store.DB().ExecContext(ctx, `
 		INSERT INTO notification_configs (bucket, config)
 		VALUES ($1, $2)
 		ON CONFLICT (bucket) DO UPDATE SET config = EXCLUDED.config, updated_at = CURRENT_TIMESTAMP
@@ -57,7 +57,7 @@ func (p *Postgres) SetNotificationConfiguration(ctx context.Context, bucket stri
 
 // DeleteNotificationConfiguration removes the notification config for a bucket.
 func (p *Postgres) DeleteNotificationConfiguration(ctx context.Context, bucket string) error {
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM notification_configs WHERE bucket = $1
 	`, bucket)
 	if err != nil {

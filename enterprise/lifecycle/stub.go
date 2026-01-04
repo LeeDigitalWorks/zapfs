@@ -47,10 +47,16 @@ type TransitionDeps struct {
 	BackendManager *backend.Manager
 	Profiles       *types.ProfileSet
 	Pools          *types.PoolSet
+	Coordinator    interface{} // Stub: not used in community edition
 }
 
 // ExecuteTransition returns an error in community edition
 func ExecuteTransition(_ context.Context, _ *TransitionDeps, _ taskqueue.LifecyclePayload) error {
+	return ErrEnterpriseRequired
+}
+
+// ExecutePromotion returns an error in community edition
+func ExecutePromotion(_ context.Context, _ *TransitionDeps, _ taskqueue.LifecyclePayload) error {
 	return ErrEnterpriseRequired
 }
 
@@ -73,6 +79,8 @@ var (
 	TransitionBytesTotal = noopCounterVec{}
 	TransitionDuration   = noopHistogramVec{}
 	TierBackendErrors    = noopCounterVec{}
+	PromotionsTotal      = noopCounterVec{}
+	PromotionBytesTotal  = noopCounter{}
 )
 
 // init checks if lifecycle transitions are configured and warns user

@@ -1110,3 +1110,407 @@ var ManagerService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "manager.proto",
 }
+
+const (
+	FederationService_RegisterBucket_FullMethodName       = "/manager_pb.FederationService/RegisterBucket"
+	FederationService_UnregisterBucket_FullMethodName     = "/manager_pb.FederationService/UnregisterBucket"
+	FederationService_GetBucketStatus_FullMethodName      = "/manager_pb.FederationService/GetBucketStatus"
+	FederationService_SetBucketMode_FullMethodName        = "/manager_pb.FederationService/SetBucketMode"
+	FederationService_PauseMigration_FullMethodName       = "/manager_pb.FederationService/PauseMigration"
+	FederationService_ResumeMigration_FullMethodName      = "/manager_pb.FederationService/ResumeMigration"
+	FederationService_SetDualWrite_FullMethodName         = "/manager_pb.FederationService/SetDualWrite"
+	FederationService_UpdateCredentials_FullMethodName    = "/manager_pb.FederationService/UpdateCredentials"
+	FederationService_ListFederatedBuckets_FullMethodName = "/manager_pb.FederationService/ListFederatedBuckets"
+)
+
+// FederationServiceClient is the client API for FederationService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type FederationServiceClient interface {
+	// Register an existing external S3 bucket for federation
+	RegisterBucket(ctx context.Context, in *FederationRegisterBucketRequest, opts ...grpc.CallOption) (*FederationRegisterBucketResponse, error)
+	// Unregister a federated bucket
+	UnregisterBucket(ctx context.Context, in *FederationUnregisterBucketRequest, opts ...grpc.CallOption) (*FederationUnregisterBucketResponse, error)
+	// Get federation status for a bucket
+	GetBucketStatus(ctx context.Context, in *FederationGetBucketStatusRequest, opts ...grpc.CallOption) (*FederationGetBucketStatusResponse, error)
+	// Change bucket mode (passthrough → migrating → local)
+	SetBucketMode(ctx context.Context, in *FederationSetBucketModeRequest, opts ...grpc.CallOption) (*FederationSetBucketModeResponse, error)
+	// Pause an active migration
+	PauseMigration(ctx context.Context, in *FederationPauseMigrationRequest, opts ...grpc.CallOption) (*FederationPauseMigrationResponse, error)
+	// Resume a paused migration
+	ResumeMigration(ctx context.Context, in *FederationResumeMigrationRequest, opts ...grpc.CallOption) (*FederationResumeMigrationResponse, error)
+	// Enable/disable dual-write for a bucket in migrating mode
+	SetDualWrite(ctx context.Context, in *FederationSetDualWriteRequest, opts ...grpc.CallOption) (*FederationSetDualWriteResponse, error)
+	// Update external S3 credentials (for rotation)
+	UpdateCredentials(ctx context.Context, in *FederationUpdateCredentialsRequest, opts ...grpc.CallOption) (*FederationUpdateCredentialsResponse, error)
+	// List all federated buckets
+	ListFederatedBuckets(ctx context.Context, in *FederationListBucketsRequest, opts ...grpc.CallOption) (*FederationListBucketsResponse, error)
+}
+
+type federationServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewFederationServiceClient(cc grpc.ClientConnInterface) FederationServiceClient {
+	return &federationServiceClient{cc}
+}
+
+func (c *federationServiceClient) RegisterBucket(ctx context.Context, in *FederationRegisterBucketRequest, opts ...grpc.CallOption) (*FederationRegisterBucketResponse, error) {
+	out := new(FederationRegisterBucketResponse)
+	err := c.cc.Invoke(ctx, FederationService_RegisterBucket_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) UnregisterBucket(ctx context.Context, in *FederationUnregisterBucketRequest, opts ...grpc.CallOption) (*FederationUnregisterBucketResponse, error) {
+	out := new(FederationUnregisterBucketResponse)
+	err := c.cc.Invoke(ctx, FederationService_UnregisterBucket_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) GetBucketStatus(ctx context.Context, in *FederationGetBucketStatusRequest, opts ...grpc.CallOption) (*FederationGetBucketStatusResponse, error) {
+	out := new(FederationGetBucketStatusResponse)
+	err := c.cc.Invoke(ctx, FederationService_GetBucketStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) SetBucketMode(ctx context.Context, in *FederationSetBucketModeRequest, opts ...grpc.CallOption) (*FederationSetBucketModeResponse, error) {
+	out := new(FederationSetBucketModeResponse)
+	err := c.cc.Invoke(ctx, FederationService_SetBucketMode_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) PauseMigration(ctx context.Context, in *FederationPauseMigrationRequest, opts ...grpc.CallOption) (*FederationPauseMigrationResponse, error) {
+	out := new(FederationPauseMigrationResponse)
+	err := c.cc.Invoke(ctx, FederationService_PauseMigration_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) ResumeMigration(ctx context.Context, in *FederationResumeMigrationRequest, opts ...grpc.CallOption) (*FederationResumeMigrationResponse, error) {
+	out := new(FederationResumeMigrationResponse)
+	err := c.cc.Invoke(ctx, FederationService_ResumeMigration_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) SetDualWrite(ctx context.Context, in *FederationSetDualWriteRequest, opts ...grpc.CallOption) (*FederationSetDualWriteResponse, error) {
+	out := new(FederationSetDualWriteResponse)
+	err := c.cc.Invoke(ctx, FederationService_SetDualWrite_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) UpdateCredentials(ctx context.Context, in *FederationUpdateCredentialsRequest, opts ...grpc.CallOption) (*FederationUpdateCredentialsResponse, error) {
+	out := new(FederationUpdateCredentialsResponse)
+	err := c.cc.Invoke(ctx, FederationService_UpdateCredentials_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *federationServiceClient) ListFederatedBuckets(ctx context.Context, in *FederationListBucketsRequest, opts ...grpc.CallOption) (*FederationListBucketsResponse, error) {
+	out := new(FederationListBucketsResponse)
+	err := c.cc.Invoke(ctx, FederationService_ListFederatedBuckets_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// FederationServiceServer is the server API for FederationService service.
+// All implementations must embed UnimplementedFederationServiceServer
+// for forward compatibility
+type FederationServiceServer interface {
+	// Register an existing external S3 bucket for federation
+	RegisterBucket(context.Context, *FederationRegisterBucketRequest) (*FederationRegisterBucketResponse, error)
+	// Unregister a federated bucket
+	UnregisterBucket(context.Context, *FederationUnregisterBucketRequest) (*FederationUnregisterBucketResponse, error)
+	// Get federation status for a bucket
+	GetBucketStatus(context.Context, *FederationGetBucketStatusRequest) (*FederationGetBucketStatusResponse, error)
+	// Change bucket mode (passthrough → migrating → local)
+	SetBucketMode(context.Context, *FederationSetBucketModeRequest) (*FederationSetBucketModeResponse, error)
+	// Pause an active migration
+	PauseMigration(context.Context, *FederationPauseMigrationRequest) (*FederationPauseMigrationResponse, error)
+	// Resume a paused migration
+	ResumeMigration(context.Context, *FederationResumeMigrationRequest) (*FederationResumeMigrationResponse, error)
+	// Enable/disable dual-write for a bucket in migrating mode
+	SetDualWrite(context.Context, *FederationSetDualWriteRequest) (*FederationSetDualWriteResponse, error)
+	// Update external S3 credentials (for rotation)
+	UpdateCredentials(context.Context, *FederationUpdateCredentialsRequest) (*FederationUpdateCredentialsResponse, error)
+	// List all federated buckets
+	ListFederatedBuckets(context.Context, *FederationListBucketsRequest) (*FederationListBucketsResponse, error)
+	mustEmbedUnimplementedFederationServiceServer()
+}
+
+// UnimplementedFederationServiceServer must be embedded to have forward compatible implementations.
+type UnimplementedFederationServiceServer struct {
+}
+
+func (UnimplementedFederationServiceServer) RegisterBucket(context.Context, *FederationRegisterBucketRequest) (*FederationRegisterBucketResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterBucket not implemented")
+}
+func (UnimplementedFederationServiceServer) UnregisterBucket(context.Context, *FederationUnregisterBucketRequest) (*FederationUnregisterBucketResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnregisterBucket not implemented")
+}
+func (UnimplementedFederationServiceServer) GetBucketStatus(context.Context, *FederationGetBucketStatusRequest) (*FederationGetBucketStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBucketStatus not implemented")
+}
+func (UnimplementedFederationServiceServer) SetBucketMode(context.Context, *FederationSetBucketModeRequest) (*FederationSetBucketModeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetBucketMode not implemented")
+}
+func (UnimplementedFederationServiceServer) PauseMigration(context.Context, *FederationPauseMigrationRequest) (*FederationPauseMigrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PauseMigration not implemented")
+}
+func (UnimplementedFederationServiceServer) ResumeMigration(context.Context, *FederationResumeMigrationRequest) (*FederationResumeMigrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResumeMigration not implemented")
+}
+func (UnimplementedFederationServiceServer) SetDualWrite(context.Context, *FederationSetDualWriteRequest) (*FederationSetDualWriteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetDualWrite not implemented")
+}
+func (UnimplementedFederationServiceServer) UpdateCredentials(context.Context, *FederationUpdateCredentialsRequest) (*FederationUpdateCredentialsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateCredentials not implemented")
+}
+func (UnimplementedFederationServiceServer) ListFederatedBuckets(context.Context, *FederationListBucketsRequest) (*FederationListBucketsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFederatedBuckets not implemented")
+}
+func (UnimplementedFederationServiceServer) mustEmbedUnimplementedFederationServiceServer() {}
+
+// UnsafeFederationServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to FederationServiceServer will
+// result in compilation errors.
+type UnsafeFederationServiceServer interface {
+	mustEmbedUnimplementedFederationServiceServer()
+}
+
+func RegisterFederationServiceServer(s grpc.ServiceRegistrar, srv FederationServiceServer) {
+	s.RegisterService(&FederationService_ServiceDesc, srv)
+}
+
+func _FederationService_RegisterBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationRegisterBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).RegisterBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_RegisterBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).RegisterBucket(ctx, req.(*FederationRegisterBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_UnregisterBucket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationUnregisterBucketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).UnregisterBucket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_UnregisterBucket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).UnregisterBucket(ctx, req.(*FederationUnregisterBucketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_GetBucketStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationGetBucketStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).GetBucketStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_GetBucketStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).GetBucketStatus(ctx, req.(*FederationGetBucketStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_SetBucketMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationSetBucketModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).SetBucketMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_SetBucketMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).SetBucketMode(ctx, req.(*FederationSetBucketModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_PauseMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationPauseMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).PauseMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_PauseMigration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).PauseMigration(ctx, req.(*FederationPauseMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_ResumeMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationResumeMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).ResumeMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_ResumeMigration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).ResumeMigration(ctx, req.(*FederationResumeMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_SetDualWrite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationSetDualWriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).SetDualWrite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_SetDualWrite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).SetDualWrite(ctx, req.(*FederationSetDualWriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_UpdateCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationUpdateCredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).UpdateCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_UpdateCredentials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).UpdateCredentials(ctx, req.(*FederationUpdateCredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FederationService_ListFederatedBuckets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FederationListBucketsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FederationServiceServer).ListFederatedBuckets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FederationService_ListFederatedBuckets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FederationServiceServer).ListFederatedBuckets(ctx, req.(*FederationListBucketsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// FederationService_ServiceDesc is the grpc.ServiceDesc for FederationService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var FederationService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "manager_pb.FederationService",
+	HandlerType: (*FederationServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RegisterBucket",
+			Handler:    _FederationService_RegisterBucket_Handler,
+		},
+		{
+			MethodName: "UnregisterBucket",
+			Handler:    _FederationService_UnregisterBucket_Handler,
+		},
+		{
+			MethodName: "GetBucketStatus",
+			Handler:    _FederationService_GetBucketStatus_Handler,
+		},
+		{
+			MethodName: "SetBucketMode",
+			Handler:    _FederationService_SetBucketMode_Handler,
+		},
+		{
+			MethodName: "PauseMigration",
+			Handler:    _FederationService_PauseMigration_Handler,
+		},
+		{
+			MethodName: "ResumeMigration",
+			Handler:    _FederationService_ResumeMigration_Handler,
+		},
+		{
+			MethodName: "SetDualWrite",
+			Handler:    _FederationService_SetDualWrite_Handler,
+		},
+		{
+			MethodName: "UpdateCredentials",
+			Handler:    _FederationService_UpdateCredentials_Handler,
+		},
+		{
+			MethodName: "ListFederatedBuckets",
+			Handler:    _FederationService_ListFederatedBuckets_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "manager.proto",
+}

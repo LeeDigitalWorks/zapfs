@@ -98,14 +98,14 @@ func TestMemoryStore_GetUserByAccessKey(t *testing.T) {
 	tests := []struct {
 		name      string
 		accessKey string
-		setup     func(*MemoryStore)
+		setup     func(CredentialStore)
 		wantErr   error
 		wantUser  string
 	}{
 		{
 			name:      "find existing user",
 			accessKey: "AKIAFOUND",
-			setup: func(s *MemoryStore) {
+			setup: func(s CredentialStore) {
 				s.CreateUser(context.Background(), &Identity{
 					Name:        "founduser",
 					Credentials: []*Credential{{AccessKey: "AKIAFOUND", SecretKey: "secret"}},
@@ -117,7 +117,7 @@ func TestMemoryStore_GetUserByAccessKey(t *testing.T) {
 		{
 			name:      "access key not found",
 			accessKey: "AKIANOTFOUND",
-			setup:     func(s *MemoryStore) {},
+			setup:     func(s CredentialStore) {},
 			wantErr:   ErrAccessKeyNotFound,
 			wantUser:  "",
 		},
@@ -209,14 +209,14 @@ func TestManager_LookupByAccessKey(t *testing.T) {
 	tests := []struct {
 		name      string
 		accessKey string
-		setup     func(*MemoryStore)
+		setup     func(CredentialStore)
 		wantFound bool
 		wantUser  string
 	}{
 		{
 			name:      "cache miss then hit",
 			accessKey: "AKIACACHE",
-			setup: func(s *MemoryStore) {
+			setup: func(s CredentialStore) {
 				s.CreateUser(context.Background(), &Identity{
 					Name:        "cacheduser",
 					Credentials: []*Credential{{AccessKey: "AKIACACHE", SecretKey: "secret", Status: "Active"}},
@@ -228,14 +228,14 @@ func TestManager_LookupByAccessKey(t *testing.T) {
 		{
 			name:      "not found",
 			accessKey: "AKIANOTEXIST",
-			setup:     func(s *MemoryStore) {},
+			setup:     func(s CredentialStore) {},
 			wantFound: false,
 			wantUser:  "",
 		},
 		{
 			name:      "disabled user not found",
 			accessKey: "AKIADISABLED",
-			setup: func(s *MemoryStore) {
+			setup: func(s CredentialStore) {
 				s.CreateUser(context.Background(), &Identity{
 					Name:        "disableduser",
 					Disabled:    true,
@@ -248,7 +248,7 @@ func TestManager_LookupByAccessKey(t *testing.T) {
 		{
 			name:      "inactive credential not found",
 			accessKey: "AKIAINACTIVE",
-			setup: func(s *MemoryStore) {
+			setup: func(s CredentialStore) {
 				s.CreateUser(context.Background(), &Identity{
 					Name:        "inactiveuser",
 					Credentials: []*Credential{{AccessKey: "AKIAINACTIVE", SecretKey: "secret", Status: "Inactive"}},

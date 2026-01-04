@@ -48,6 +48,8 @@ services:
       - --db_driver=mysql
       - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
       - --manager_addr=manager:8050
+      - --s3_domains=localhost,s3.localhost
+      - --website_domains=s3-website.localhost
     ports:
       - "8082:8082"  # S3 API endpoint
       - "8085:8085"  # Metrics

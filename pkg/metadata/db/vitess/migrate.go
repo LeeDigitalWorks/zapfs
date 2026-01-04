@@ -15,7 +15,7 @@ import (
 // Migrate runs database migrations for Vitess/MySQL
 func (v *Vitess) Migrate(ctx context.Context) error {
 	// Ensure schema_migrations table exists
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INT PRIMARY KEY,
 			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -26,7 +26,7 @@ func (v *Vitess) Migrate(ctx context.Context) error {
 	}
 
 	// Use the migrations framework with MySQL driver
-	return db.RunMigrations(ctx, &vitessMigrator{db: v.db}, db.DriverMySQL)
+	return db.RunMigrations(ctx, &vitessMigrator{db: v.Store.DB()}, db.DriverMySQL)
 }
 
 // vitessMigrator implements db.Migrator for Vitess

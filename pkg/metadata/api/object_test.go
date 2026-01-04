@@ -1704,16 +1704,16 @@ func TestGetObjectAttributesHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		bucket         string
-		key            string
-		attrs          string // x-amz-object-attributes header
-		createObject   bool
-		objectSize     uint64
-		objectETag     string
-		storageClass   string
-		expectedCode   int
-		checkResponse  func(t *testing.T, resp s3types.GetObjectAttributesResponse)
+		name          string
+		bucket        string
+		key           string
+		attrs         string // x-amz-object-attributes header
+		createObject  bool
+		objectSize    uint64
+		objectETag    string
+		storageClass  string
+		expectedCode  int
+		checkResponse func(t *testing.T, resp s3types.GetObjectAttributesResponse)
 	}{
 		{
 			name:         "missing attributes header",

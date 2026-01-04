@@ -46,7 +46,7 @@ type Config struct {
 	DefaultProfile string
 
 	// Enterprise features (may be nil)
-	IAMService  *iam.Service          // For internal KMS operations (testing/dev only)
+	IAMService  *iam.Service           // For internal KMS operations (testing/dev only)
 	KMSProvider encryption.KMSProvider // External KMS provider (AWS KMS, Vault, etc.)
 	CRRHook     object.CRRHook         // For cross-region replication
 
@@ -55,7 +55,7 @@ type Config struct {
 	Emitter *events.Emitter
 
 	// Cross-region replication configuration (enterprise)
-	RegionConfig           *manager.RegionConfig // For getting S3 endpoints per region
+	RegionConfig           *manager.RegionConfig  // For getting S3 endpoints per region
 	ReplicationCredentials ReplicationCredentials // For authenticating to remote regions
 
 	// Task queue for background processing (optional)

@@ -7,10 +7,10 @@
 package license
 
 import (
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"os"
 	"sync"
 	"time"
-	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

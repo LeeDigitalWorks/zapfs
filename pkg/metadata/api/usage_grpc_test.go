@@ -67,8 +67,9 @@ func (m *mockUsageStore) GetMTDBandwidthEgress(ctx context.Context, ownerID stri
 // mockCollector implements usage.Collector for testing
 type mockCollector struct{}
 
-func (m *mockCollector) RecordRequest(ownerID, bucket, operation string)                                      {}
-func (m *mockCollector) RecordBandwidth(ownerID, bucket string, bytes int64, direction usage.Direction)       {}
+func (m *mockCollector) RecordRequest(ownerID, bucket, operation string) {}
+func (m *mockCollector) RecordBandwidth(ownerID, bucket string, bytes int64, direction usage.Direction) {
+}
 func (m *mockCollector) RecordStorageDelta(ownerID, bucket string, bytesDelta int64, objectDelta int, storageClass string) {
 }
 func (m *mockCollector) Start(ctx context.Context) {}

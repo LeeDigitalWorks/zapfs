@@ -102,7 +102,7 @@ func (h *Handler) encryptSSEC(plaintext []byte, params *SSECParams) (*Result, er
 	return &Result{
 		Ciphertext: ciphertext,
 		Metadata: &Metadata{
-			Algorithm:     params.Algorithm,
+			Algorithm:      params.Algorithm,
 			CustomerKeyMD5: params.KeyMD5,
 		},
 	}, nil

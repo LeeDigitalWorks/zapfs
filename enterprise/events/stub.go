@@ -64,7 +64,7 @@ type KeyFilter struct {
 
 // FilterRule is a single prefix or suffix filter.
 type FilterRule struct {
-	Name  string `json:"Name"`  // "prefix" or "suffix"
+	Name  string `json:"Name"` // "prefix" or "suffix"
 	Value string `json:"Value"`
 }
 

@@ -26,11 +26,11 @@ import (
 // See: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
 
 var (
-	ErrInvalidChunkFormat      = errors.New("invalid chunk format")
-	ErrChunkSignatureMismatch  = errors.New("chunk signature mismatch")
-	ErrChunkTooLarge           = errors.New("chunk size exceeds maximum")
+	ErrInvalidChunkFormat       = errors.New("invalid chunk format")
+	ErrChunkSignatureMismatch   = errors.New("chunk signature mismatch")
+	ErrChunkTooLarge            = errors.New("chunk size exceeds maximum")
 	ErrTrailerSignatureMismatch = errors.New("trailer signature mismatch")
-	ErrInvalidTrailerFormat    = errors.New("invalid trailer format")
+	ErrInvalidTrailerFormat     = errors.New("invalid trailer format")
 )
 
 const (
@@ -383,9 +383,9 @@ func (v *VerifyingChunkReader) readAndBufferChunk() error {
 // See: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming-trailers.html
 type TrailerChunkReader struct {
 	*VerifyingChunkReader
-	trailers       map[string]string // Parsed trailer headers (excluding signature)
-	trailersRead   bool              // Whether trailers have been parsed
-	trailerErr     error             // Error from trailer parsing/verification
+	trailers     map[string]string // Parsed trailer headers (excluding signature)
+	trailersRead bool              // Whether trailers have been parsed
+	trailerErr   error             // Error from trailer parsing/verification
 }
 
 // NewTrailerChunkReader creates a ChunkReader that supports trailing checksums

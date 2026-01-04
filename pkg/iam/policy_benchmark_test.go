@@ -107,9 +107,9 @@ func BenchmarkConditionEvaluation(b *testing.B) {
 		Actions:   StringOrSlice{"s3:GetObject"},
 		Resources: StringOrSlice{"arn:aws:s3:::mybucket/*"},
 		Condition: map[string]Condition{
-			"IpAddress":       {"aws:SourceIp": StringOrSlice{"192.168.1.0/24", "10.0.0.0/8"}},
-			"StringEquals":    {"aws:SecureTransport": StringOrSlice{"true"}},
-			"StringLike":      {"s3:prefix": StringOrSlice{"public/*", "shared/*"}},
+			"IpAddress":    {"aws:SourceIp": StringOrSlice{"192.168.1.0/24", "10.0.0.0/8"}},
+			"StringEquals": {"aws:SecureTransport": StringOrSlice{"true"}},
+			"StringLike":   {"s3:prefix": StringOrSlice{"public/*", "shared/*"}},
 		},
 	}
 

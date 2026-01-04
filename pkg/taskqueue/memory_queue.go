@@ -11,6 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// Compile-time interface verification
+var _ Queue = (*MemoryQueue)(nil)
+
 // MemoryQueue is an in-memory implementation of Queue for testing.
 // NOT for production use - tasks are not persisted.
 type MemoryQueue struct {
@@ -20,7 +23,7 @@ type MemoryQueue struct {
 }
 
 // NewMemoryQueue creates a new in-memory queue.
-func NewMemoryQueue() *MemoryQueue {
+func NewMemoryQueue() Queue {
 	return &MemoryQueue{
 		tasks: make(map[string]*Task),
 	}

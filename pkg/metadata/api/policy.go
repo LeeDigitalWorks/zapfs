@@ -54,7 +54,10 @@ func (s *MetadataServer) GetBucketPolicyHandler(d *data.Data, w http.ResponseWri
 // PutBucketPolicyHandler sets the policy of a bucket.
 // PUT /{bucket}?policy
 func (s *MetadataServer) PutBucketPolicyHandler(d *data.Data, w http.ResponseWriter) {
+	logger.Debug().Str("bucket", d.S3Info.Bucket).Msg("PutBucketPolicy: handler called")
+
 	if s.svc == nil {
+		logger.Error().Msg("PutBucketPolicy: service is nil")
 		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return
 	}
@@ -64,6 +67,7 @@ func (s *MetadataServer) PutBucketPolicyHandler(d *data.Data, w http.ResponseWri
 	// Read policy JSON from body
 	body, err := io.ReadAll(d.Req.Body)
 	if err != nil || len(body) == 0 {
+		logger.Warn().Err(err).Int("bodyLen", len(body)).Msg("PutBucketPolicy: failed to read body")
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedPolicy)
 		return
 	}

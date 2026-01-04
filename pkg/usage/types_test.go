@@ -89,16 +89,16 @@ func TestUsageEvent(t *testing.T) {
 func TestDailyUsage(t *testing.T) {
 	now := time.Now()
 	daily := DailyUsage{
-		ID:                    1,
-		UsageDate:             now,
-		OwnerID:               "owner-123",
-		Bucket:                "my-bucket",
-		StorageBytes:          1024 * 1024,
-		StorageBytesStandard:  1024 * 1024,
-		ObjectCount:           100,
-		RequestsGet:           500,
-		RequestsPut:           50,
-		BandwidthEgressBytes:  1024 * 1024 * 10,
+		ID:                   1,
+		UsageDate:            now,
+		OwnerID:              "owner-123",
+		Bucket:               "my-bucket",
+		StorageBytes:         1024 * 1024,
+		StorageBytesStandard: 1024 * 1024,
+		ObjectCount:          100,
+		RequestsGet:          500,
+		RequestsPut:          50,
+		BandwidthEgressBytes: 1024 * 1024 * 10,
 	}
 
 	if daily.StorageBytes != 1024*1024 {

@@ -24,6 +24,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/postgres"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/vitess"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/federation"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
@@ -55,9 +56,10 @@ type MetadataServerOpts struct {
 	NodeID        string
 	AdvertiseAddr string
 
-	ManagerAddr string
-	S3Domains   []string
-	RegionID    string
+	ManagerAddr    string
+	S3Domains      []string
+	WebsiteDomains []string // Domains for static website hosting
+	RegionID       string
 
 	PoolsConfig    string
 	ProfilesConfig string
@@ -103,6 +105,20 @@ type MetadataServerOpts struct {
 	EventsRedisPassword string
 	EventsRedisDB       int
 	EventsRedisChannel  string
+
+	// Federation (S3 passthrough/migration)
+	FederationEnabled              bool
+	FederationMode                 string // "api", "worker", or "both"
+	FederationSyncBatchSize        int
+	FederationSyncConcurrency      int
+	FederationSyncRateLimit        int
+	FederationExternalTimeout      time.Duration
+	FederationExternalMaxIdleConns int
+	// Feature flags for federated buckets
+	FederationLifecycleEnabled     bool
+	FederationNotificationsEnabled bool
+	FederationAccessLoggingEnabled bool
+	FederationMetricsEnabled       bool
 }
 
 var metadataCmd = &cobra.Command{
@@ -133,6 +149,7 @@ func init() {
 
 	f.String("manager_addr", "localhost:8050", "Manager server gRPC address")
 	f.StringSlice("s3_domains", []string{"localhost"}, "S3 domain names for virtual-hosted style")
+	f.StringSlice("website_domains", []string{}, "Static website hosting domains")
 	f.String("region_id", "us-west", "Region ID for this metadata server")
 	f.String("pools_config", "", "Path to storage pools JSON config file")
 	f.String("profiles_config", "", "Path to storage profiles JSON config file")
@@ -177,6 +194,20 @@ func init() {
 	f.String("events.redis_password", "", "Redis password for event notifications")
 	f.Int("events.redis_db", 0, "Redis database number for event notifications")
 	f.String("events.redis_channel", "s3:events", "Redis channel prefix for event notifications")
+
+	// Federation (S3 passthrough/migration)
+	f.Bool("federation.enabled", false, "Enable S3 federation features")
+	f.String("federation.mode", "both", "Instance mode: 'api' (serve HTTP only), 'worker' (process migration tasks only), or 'both'")
+	f.Int("federation.sync_batch_size", 1000, "Objects per batch when discovering from external S3")
+	f.Int("federation.sync_concurrency", 5, "Number of concurrent migration workers")
+	f.Int("federation.sync_rate_limit", 100, "Max objects/sec to sync from external S3")
+	f.Duration("federation.external_timeout", 5*time.Minute, "Timeout for external S3 requests")
+	f.Int("federation.external_max_idle_conns", 100, "Max idle connections to external S3")
+	// Feature flags for federated buckets (all disabled by default - defer to external S3)
+	f.Bool("federation.features.lifecycle_enabled", false, "Process lifecycle rules for federated buckets locally")
+	f.Bool("federation.features.notifications_enabled", false, "Emit event notifications for federated buckets locally")
+	f.Bool("federation.features.access_logging_enabled", false, "Write access logs for federated buckets locally")
+	f.Bool("federation.features.metrics_enabled", false, "Collect metrics for federated buckets locally")
 
 	viper.BindPFlags(f)
 }
@@ -250,10 +281,21 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	// Database
+	rawDB, err := initializeDatabase(opts)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize database")
+	}
+	// Wrap with metrics instrumentation
+	metadataDB := db.NewMetricsDB(rawDB)
+	if err := metadataDB.Migrate(cmd.Context()); err != nil {
+		logger.Fatal().Err(err).Msg("failed to run database migrations")
+	}
+
 	// Filter chain using IAM service
 	chain := filter.NewChain()
 	chain.AddFilter(filter.NewRequestIDFilter())
-	chain.AddFilter(filter.NewParserFilter(opts.S3Domains...))
+	chain.AddFilter(filter.NewParserFilter(opts.S3Domains, opts.WebsiteDomains))
 	chain.AddFilter(filter.NewValidationFilter(globalBucketCache))
 	chain.AddFilter(filter.NewAuthenticationFilter(iamService.Manager()))
 	chain.AddFilter(filter.NewAuthorizationFilter(filter.AuthorizationConfig{
@@ -261,6 +303,31 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 		ACLStore:     bucketStore,
 		IAMEvaluator: iamService.Evaluator(),
 	}))
+
+	// Federation filter - added after authorization, before rate limit
+	// This enables S3 passthrough and lazy migration for federated buckets
+	var federationClientPool *federation.ClientPool
+	if opts.FederationEnabled {
+		federationClientPool = federation.NewClientPool(
+			opts.FederationExternalTimeout,
+			opts.FederationExternalMaxIdleConns,
+		)
+
+		federationFilter := filter.NewFederationFilter(filter.FederationFilterConfig{
+			Enabled:     true,
+			ConfigStore: metadataDB, // implements FederationConfigStore
+			ClientPool:  federationClientPool,
+			CacheTTL:    time.Minute,
+		})
+
+		chain.AddFilter(federationFilter)
+
+		logger.Info().
+			Str("mode", opts.FederationMode).
+			Dur("external_timeout", opts.FederationExternalTimeout).
+			Msg("federation filter enabled")
+	}
+
 	if opts.RateLimitEnabled && !env.IsLocal() {
 		rateLimitCfg := filter.DefaultRateLimitConfig()
 		rateLimitCfg.BurstMultiplier = opts.RateLimitBurstMultipler
@@ -287,17 +354,6 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 
 	// Storage infrastructure
 	pools, profiles, profilePlacer, backendManager := initializeStorage(opts)
-
-	// Database
-	rawDB, err := initializeDatabase(opts)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialize database")
-	}
-	// Wrap with metrics instrumentation
-	metadataDB := db.NewMetricsDB(rawDB)
-	if err := metadataDB.Migrate(cmd.Context()); err != nil {
-		logger.Fatal().Err(err).Msg("failed to run database migrations")
-	}
 
 	// Start background bucket loader to populate bucket cache from DB
 	bucketLoader := cache.NewBucketLoader(
@@ -409,10 +465,10 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 
 	// Task worker for enterprise features (replication, event notifications)
 	taskWorker, err := InitializeTaskWorker(cmd.Context(), TaskWorkerConfig{
-		DB:           sqlDBConn,
-		WorkerID:     opts.NodeID,
-		LocalRegion:  opts.RegionID,
-		Concurrency:  5,
+		DB:                sqlDBConn,
+		WorkerID:          opts.NodeID,
+		LocalRegion:       opts.RegionID,
+		Concurrency:       5,
 		NotificationStore: metadataDB,
 		EventPublishers: EventPublisherConfig{
 			RedisAddr:     opts.EventsRedisAddr,
@@ -475,6 +531,14 @@ func runMetadataServer(cmd *cobra.Command, args []string) {
 
 	// Start servers
 	httpMux := http.NewServeMux()
+
+	// Register federation admin endpoints if federation is enabled
+	if opts.FederationEnabled {
+		federationAdmin := api.NewFederationAdminHandler(metadataDB)
+		federationAdmin.RegisterRoutes(httpMux)
+		logger.Info().Msg("federation admin endpoints registered at /admin/federation/")
+	}
+
 	httpMux.Handle("/", metadataServer)
 	httpServer := startHTTPServer(httpMux, opts.IP, opts.HTTPPort)
 	grpcServer := startMetadataGRPCServer(opts, metadataServer)
@@ -525,6 +589,7 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		AdvertiseAddr:  advertiseAddr,
 		ManagerAddr:    f.String("manager_addr"),
 		S3Domains:      f.StringSlice("s3_domains"),
+		WebsiteDomains: f.StringSlice("website_domains"),
 		RegionID:       f.String("region_id"),
 		PoolsConfig:    f.String("pools_config"),
 		ProfilesConfig: f.String("profiles_config"),
@@ -564,6 +629,18 @@ func loadMetadataOpts(cmd *cobra.Command) MetadataServerOpts {
 		EventsRedisPassword: f.String("events.redis_password"),
 		EventsRedisDB:       f.Int("events.redis_db"),
 		EventsRedisChannel:  f.String("events.redis_channel"),
+		// Federation
+		FederationEnabled:              f.Bool("federation.enabled"),
+		FederationMode:                 f.String("federation.mode"),
+		FederationSyncBatchSize:        f.Int("federation.sync_batch_size"),
+		FederationSyncConcurrency:      f.Int("federation.sync_concurrency"),
+		FederationSyncRateLimit:        f.Int("federation.sync_rate_limit"),
+		FederationExternalTimeout:      f.Duration("federation.external_timeout"),
+		FederationExternalMaxIdleConns: f.Int("federation.external_max_idle_conns"),
+		FederationLifecycleEnabled:     f.Bool("federation.features.lifecycle_enabled"),
+		FederationNotificationsEnabled: f.Bool("federation.features.notifications_enabled"),
+		FederationAccessLoggingEnabled: f.Bool("federation.features.access_logging_enabled"),
+		FederationMetricsEnabled:       f.Bool("federation.features.metrics_enabled"),
 	}
 }
 

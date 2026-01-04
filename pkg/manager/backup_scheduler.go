@@ -32,9 +32,9 @@ type BackupSchedulerConfig struct {
 	DestinationDir string
 
 	// Retention policy
-	RetainCount int           // Number of backups to retain (default: 7)
-	RetainDays  int           // Days to retain backups (default: 30)
-	MaxSize     int64         // Max total backup size in bytes (0 = unlimited)
+	RetainCount int   // Number of backups to retain (default: 7)
+	RetainDays  int   // Days to retain backups (default: 30)
+	MaxSize     int64 // Max total backup size in bytes (0 = unlimited)
 
 	// Backup naming
 	Prefix string // Prefix for backup files (default: "manager")
@@ -406,17 +406,17 @@ func (ms *ManagerServer) ListBackups(ctx context.Context, req *manager_pb.ListBa
 
 	for _, m := range manifests {
 		backups = append(backups, &manager_pb.BackupInfo{
-			BackupId:           m.ID,
-			CreatedAt:          m.CreatedAt.Unix(),
-			TopologyVersion:    m.TopologyVersion,
-			CollectionsVersion: m.CollectionsVersion,
-			FileServicesCount:  int32(m.FileServicesCount),
+			BackupId:              m.ID,
+			CreatedAt:             m.CreatedAt.Unix(),
+			TopologyVersion:       m.TopologyVersion,
+			CollectionsVersion:    m.CollectionsVersion,
+			FileServicesCount:     int32(m.FileServicesCount),
 			MetadataServicesCount: int32(m.MetadataServices),
-			CollectionsCount:   int32(m.CollectionsCount),
-			SizeBytes:          m.SizeBytes,
-			Filename:           m.Filename,
-			Description:        m.Description,
-			Scheduled:          m.Scheduled,
+			CollectionsCount:      int32(m.CollectionsCount),
+			SizeBytes:             m.SizeBytes,
+			Filename:              m.Filename,
+			Description:           m.Description,
+			Scheduled:             m.Scheduled,
 		})
 	}
 

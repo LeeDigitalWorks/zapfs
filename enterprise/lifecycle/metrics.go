@@ -56,4 +56,25 @@ var (
 		},
 		[]string{"storage_class", "operation"},
 	)
+
+	// PromotionsTotal counts the total number of intelligent tiering promotions
+	PromotionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "zapfs",
+			Subsystem: "lifecycle",
+			Name:      "promotions_total",
+			Help:      "Total number of intelligent tiering promotions back to hot storage",
+		},
+		[]string{"status"},
+	)
+
+	// PromotionBytesTotal counts the total bytes promoted back to hot storage
+	PromotionBytesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "zapfs",
+			Subsystem: "lifecycle",
+			Name:      "promotion_bytes_total",
+			Help:      "Total bytes promoted back to hot storage",
+		},
+	)
 )

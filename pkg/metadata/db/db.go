@@ -108,6 +108,9 @@ type DB interface {
 	// Lifecycle scanner state
 	LifecycleScanStore
 
+	// Intelligent Tiering operations
+	IntelligentTieringStore
+
 	// Object Lock operations
 	ObjectLockStore
 
@@ -122,6 +125,12 @@ type DB interface {
 
 	// Notification operations (event notifications)
 	NotificationStore
+
+	// Replication operations (cross-region replication - Enterprise)
+	ReplicationStore
+
+	// Federation operations (S3 passthrough/migration)
+	FederationStore
 
 	// Chunk registry operations (centralized RefCount tracking)
 	ChunkRegistryStore
@@ -183,6 +192,42 @@ type ObjectStore interface {
 	//   - transitionedAt: Unix timestamp (nanos) when the transition occurred
 	//   - transitionedRef: the key in the tier backend where the object data is stored
 	UpdateObjectTransition(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error
+
+	// Restore operations (enterprise feature - for archived objects)
+
+	// UpdateRestoreStatus updates the restore status for an archived object.
+	// Called when a restore is initiated or when status changes during restore.
+	UpdateRestoreStatus(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error
+
+	// UpdateRestoreExpiry extends the expiry date of a restored object copy.
+	// Used when a restore request is made on an already-restored object to extend availability.
+	UpdateRestoreExpiry(ctx context.Context, objectID string, expiryDate int64) error
+
+	// CompleteRestore marks a restore as complete and updates the object with restored copy info.
+	// The restoredChunkRefs are the chunk references for the restored copy in hot storage.
+	CompleteRestore(ctx context.Context, objectID string, expiryDate int64) error
+
+	// ResetRestoreStatus clears the restore status after a restored copy expires.
+	// Called by the restore cleanup job when restore_expiry_date has passed.
+	ResetRestoreStatus(ctx context.Context, objectID string) error
+
+	// GetExpiredRestores returns objects with expired restore copies for cleanup.
+	// Returns up to 'limit' objects where restore_status='completed' and restore_expiry_date < now.
+	GetExpiredRestores(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error)
+
+	// Intelligent tiering access tracking
+
+	// UpdateLastAccessedAt updates the last access timestamp for an object.
+	// Called asynchronously on GET for intelligent tiering to track access patterns.
+	UpdateLastAccessedAt(ctx context.Context, objectID string, accessedAt int64) error
+
+	// GetColdIntelligentTieringObjects returns objects with INTELLIGENT_TIERING storage class
+	// that haven't been accessed since the threshold time, for automatic demotion.
+	// Returns up to 'limit' objects where:
+	// - storage_class = 'INTELLIGENT_TIERING'
+	// - (last_accessed_at < threshold OR (last_accessed_at = 0 AND created_at < threshold))
+	// - size >= minSize (to skip small objects, AWS uses 128KB)
+	GetColdIntelligentTieringObjects(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error)
 }
 
 // ListObjectsParams contains parameters for ListObjectsV2
@@ -407,6 +452,26 @@ type LifecycleStore interface {
 	DeleteBucketLifecycle(ctx context.Context, bucket string) error
 }
 
+// IntelligentTieringStore provides operations for intelligent tiering configurations
+type IntelligentTieringStore interface {
+	// GetIntelligentTieringConfiguration retrieves a configuration by ID
+	GetIntelligentTieringConfiguration(ctx context.Context, bucket, configID string) (*s3types.IntelligentTieringConfiguration, error)
+
+	// PutIntelligentTieringConfiguration stores a configuration
+	PutIntelligentTieringConfiguration(ctx context.Context, bucket string, config *s3types.IntelligentTieringConfiguration) error
+
+	// DeleteIntelligentTieringConfiguration removes a configuration by ID
+	DeleteIntelligentTieringConfiguration(ctx context.Context, bucket, configID string) error
+
+	// ListIntelligentTieringConfigurations lists all configurations for a bucket
+	ListIntelligentTieringConfigurations(ctx context.Context, bucket string) ([]*s3types.IntelligentTieringConfiguration, error)
+}
+
+// Common Intelligent Tiering errors
+var (
+	ErrIntelligentTieringNotFound = fmt.Errorf("intelligent tiering configuration not found")
+)
+
 // LifecycleScanState tracks scan progress for a bucket
 type LifecycleScanState struct {
 	Bucket            string
@@ -523,6 +588,60 @@ type NotificationStore interface {
 	// DeleteNotificationConfiguration removes the notification config for a bucket.
 	DeleteNotificationConfiguration(ctx context.Context, bucket string) error
 }
+
+// ReplicationStore provides operations for bucket replication configurations (Enterprise).
+type ReplicationStore interface {
+	// GetReplicationConfiguration retrieves the replication config for a bucket.
+	// Returns ErrReplicationNotFound if no configuration exists.
+	GetReplicationConfiguration(ctx context.Context, bucket string) (*s3types.ReplicationConfiguration, error)
+
+	// SetReplicationConfiguration stores the replication config for a bucket.
+	SetReplicationConfiguration(ctx context.Context, bucket string, config *s3types.ReplicationConfiguration) error
+
+	// DeleteReplicationConfiguration removes the replication config for a bucket.
+	DeleteReplicationConfiguration(ctx context.Context, bucket string) error
+}
+
+// Common Replication errors
+var (
+	ErrReplicationNotFound = fmt.Errorf("replication configuration not found")
+)
+
+// FederationStore provides operations for S3 bucket federation configurations.
+// Used for passthrough mode (proxy to external S3) and migration mode (ingest from external S3).
+type FederationStore interface {
+	// GetFederationConfig retrieves the federation config for a bucket.
+	// Returns ErrFederationNotFound if no configuration exists.
+	GetFederationConfig(ctx context.Context, bucket string) (*s3types.FederationConfig, error)
+
+	// SetFederationConfig stores or updates the federation config for a bucket.
+	SetFederationConfig(ctx context.Context, config *s3types.FederationConfig) error
+
+	// DeleteFederationConfig removes the federation config for a bucket.
+	DeleteFederationConfig(ctx context.Context, bucket string) error
+
+	// ListFederatedBuckets returns all buckets with federation configurations.
+	ListFederatedBuckets(ctx context.Context) ([]*s3types.FederationConfig, error)
+
+	// UpdateMigrationProgress updates the migration progress counters for a bucket.
+	// This is called frequently during migration and only updates the progress fields.
+	UpdateMigrationProgress(ctx context.Context, bucket string, objectsSynced, bytesSynced int64, lastSyncKey string) error
+
+	// SetMigrationPaused sets the migration_paused flag for a bucket.
+	SetMigrationPaused(ctx context.Context, bucket string, paused bool) error
+
+	// SetDualWriteEnabled sets the dual_write_enabled flag for a bucket.
+	SetDualWriteEnabled(ctx context.Context, bucket string, enabled bool) error
+
+	// GetFederatedBucketsNeedingSync returns buckets that are in migrating mode and not paused.
+	// Used by migration workers to find work.
+	GetFederatedBucketsNeedingSync(ctx context.Context, limit int) ([]*s3types.FederationConfig, error)
+}
+
+// Common Federation errors
+var (
+	ErrFederationNotFound = fmt.Errorf("federation configuration not found")
+)
 
 // ChunkInfo contains information about a chunk for registry operations
 type ChunkInfo struct {

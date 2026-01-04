@@ -45,8 +45,19 @@ packages:
       all: false
     interfaces:
       CredentialStore:
+      # PolicyStore and GroupStore have inpackage mocks for internal tests
       PolicyStore:
+        config:
+          inpackage: true
+          dir: "pkg/iam"
+          pkgname: "iam"
+          filename: mock_policystore_test.go
       GroupStore:
+        config:
+          inpackage: true
+          dir: "pkg/iam"
+          pkgname: "iam"
+          filename: mock_groupstore_test.go
 
   # Metadata DB Package - database layer
   github.com/LeeDigitalWorks/zapfs/pkg/metadata/db:
@@ -93,6 +104,7 @@ packages:
       all: false
     interfaces:
       Service:
+      CRRHook:
 
   github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/bucket:
     config:
@@ -113,6 +125,12 @@ packages:
     interfaces:
       Service:
       BucketStore:
+
+  github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption:
+    config:
+      all: false
+    interfaces:
+      KMSProvider:
 
   # Cache Package - caching layer
   github.com/LeeDigitalWorks/zapfs/pkg/cache:
@@ -161,3 +179,11 @@ packages:
     interfaces:
       Queue:
       Handler:
+
+  # Usage Package - usage tracking and metering
+  github.com/LeeDigitalWorks/zapfs/pkg/usage:
+    config:
+      all: false
+    interfaces:
+      Store:
+

@@ -1,0 +1,118 @@
+{{- if and .Values.federation.enabled .Values.federation.workers.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zapfs.fullname" . }}-metadata-worker
+  labels:
+    {{- include "zapfs.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metadata-worker
+spec:
+  replicas: {{ .Values.federation.workers.replicaCount | default 2 }}
+  selector:
+    matchLabels:
+      {{- include "zapfs.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metadata-worker
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.federation.workers.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "zapfs.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: metadata-worker
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "zapfs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.metadata.podSecurityContext | nindent 8 }}
+      containers:
+      - name: metadata-worker
+        securityContext:
+          {{- toYaml .Values.metadata.securityContext | nindent 10 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - /zapfs
+          - metadata
+          - --http_port={{ .Values.metadata.httpPort | default 8082 }}
+          - --grpc_port={{ .Values.metadata.grpcPort | default 8083 }}
+          - --debug_port={{ .Values.metadata.debugPort | default 8085 }}
+          - --manager_addr={{ .Values.metadata.managerAddr | default (printf "%s-manager:%d" (include "zapfs.fullname" .) (.Values.manager.grpcPort | default 8050 | int)) }}
+          - --region_id={{ .Values.metadata.regionID | default "us-west" }}
+          {{- if .Values.metadata.database }}
+          - --db_driver={{ .Values.metadata.database.driver | default "mysql" }}
+          - --db_dsn={{ .Values.metadata.database.dsn }}
+          {{- end }}
+          # Federation worker configuration
+          - --federation.enabled=true
+          - --federation.mode={{ .Values.federation.workers.mode | default "worker" }}
+          - --federation.sync_concurrency={{ .Values.federation.workers.syncConcurrency | default 10 }}
+          - --federation.sync_rate_limit={{ .Values.federation.workers.syncRateLimit | default 200 }}
+          - --federation.sync_batch_size={{ .Values.federation.workers.syncBatchSize | default 1000 }}
+          - --federation.external_timeout={{ .Values.federation.externalTimeout | default "5m" }}
+          - --federation.external_max_idle_conns={{ .Values.federation.externalMaxIdleConns | default 100 }}
+          {{- if .Values.federation.features.lifecycleEnabled }}
+          - --federation.features.lifecycle_enabled=true
+          {{- end }}
+          {{- if .Values.federation.features.notificationsEnabled }}
+          - --federation.features.notifications_enabled=true
+          {{- end }}
+          {{- if .Values.federation.features.accessLoggingEnabled }}
+          - --federation.features.access_logging_enabled=true
+          {{- end }}
+          {{- if .Values.federation.features.metricsEnabled }}
+          - --federation.features.metrics_enabled=true
+          {{- end }}
+        ports:
+        - name: debug
+          containerPort: {{ .Values.metadata.debugPort | default 8085 }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: debug
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: debug
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.federation.workers.resources | nindent 10 }}
+      {{- with .Values.federation.workers.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.federation.workers.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if not .Values.federation.workers.affinity }}
+      affinity:
+        # Anti-affinity: spread workers across nodes for better distribution
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- include "zapfs.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: metadata-worker
+              topologyKey: kubernetes.io/hostname
+      {{- end }}
+      {{- with .Values.federation.workers.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -608,14 +608,21 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 
 	// Create final object within transaction
 	err = s.db.WithTx(ctx, func(tx db.TxStore) error {
+		// Determine content type (use upload's ContentType or default)
+		contentType := upload.ContentType
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
 		obj := &types.ObjectRef{
-			ID:        uuid.New(),
-			Bucket:    req.Bucket,
-			Key:       req.Key,
-			Size:      uint64(totalSize),
-			ETag:      finalETag,
-			CreatedAt: time.Now().UnixNano(),
-			ChunkRefs: allChunkRefs,
+			ID:          uuid.New(),
+			Bucket:      req.Bucket,
+			Key:         req.Key,
+			Size:        uint64(totalSize),
+			ETag:        finalETag,
+			ContentType: contentType,
+			CreatedAt:   time.Now().UnixNano(),
+			ChunkRefs:   allChunkRefs,
 		}
 
 		// Copy SSE metadata from upload to final object
@@ -869,4 +876,3 @@ func deduplicateChunksForRegistry(refs []types.ChunkRef) []db.ChunkInfo {
 	}
 	return unique
 }
-

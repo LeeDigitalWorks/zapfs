@@ -73,14 +73,14 @@ func TestGroupChunksByID(t *testing.T) {
 	t.Run("multipart with replicas", func(t *testing.T) {
 		refs := []types.ChunkRef{
 			// Part 1 - 2 replicas
-			{ChunkID: "chunk-1", Offset: 0, Size: 5*1024*1024, FileServerAddr: "file-1:8081"},
-			{ChunkID: "chunk-1", Offset: 0, Size: 5*1024*1024, FileServerAddr: "file-2:8081"},
+			{ChunkID: "chunk-1", Offset: 0, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+			{ChunkID: "chunk-1", Offset: 0, Size: 5 * 1024 * 1024, FileServerAddr: "file-2:8081"},
 			// Part 2 - 2 replicas
-			{ChunkID: "chunk-2", Offset: 5*1024*1024, Size: 5*1024*1024, FileServerAddr: "file-1:8081"},
-			{ChunkID: "chunk-2", Offset: 5*1024*1024, Size: 5*1024*1024, FileServerAddr: "file-2:8081"},
+			{ChunkID: "chunk-2", Offset: 5 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+			{ChunkID: "chunk-2", Offset: 5 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-2:8081"},
 			// Part 3 - 2 replicas
-			{ChunkID: "chunk-3", Offset: 10*1024*1024, Size: 5*1024*1024, FileServerAddr: "file-1:8081"},
-			{ChunkID: "chunk-3", Offset: 10*1024*1024, Size: 5*1024*1024, FileServerAddr: "file-2:8081"},
+			{ChunkID: "chunk-3", Offset: 10 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+			{ChunkID: "chunk-3", Offset: 10 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-2:8081"},
 		}
 		groups := groupChunksByID(refs)
 

@@ -4,10 +4,10 @@
 package pool
 
 import (
-	"slices"
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,7 +31,7 @@ type ClusterPool[T any] struct {
 	factory ClientFactory[T]
 
 	// Known nodes in the cluster
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	nodeAddrs []string
 
 	closed atomic.Bool

@@ -15,7 +15,7 @@ import (
 
 // GetBucketLogging retrieves the logging configuration for a bucket.
 func (v *Vitess) GetBucketLogging(ctx context.Context, bucket string) (*db.BucketLoggingConfig, error) {
-	row := v.db.QueryRowContext(ctx, `
+	row := v.Store.DB().QueryRowContext(ctx, `
 		SELECT id, source_bucket, target_bucket, target_prefix, created_at, updated_at
 		FROM bucket_logging
 		WHERE source_bucket = ?
@@ -60,7 +60,7 @@ func (v *Vitess) SetBucketLogging(ctx context.Context, config *db.BucketLoggingC
 	}
 
 	// Upsert the configuration
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		INSERT INTO bucket_logging (id, source_bucket, target_bucket, target_prefix, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
@@ -74,7 +74,7 @@ func (v *Vitess) SetBucketLogging(ctx context.Context, config *db.BucketLoggingC
 
 // DeleteBucketLogging removes the logging configuration for a bucket.
 func (v *Vitess) DeleteBucketLogging(ctx context.Context, bucket string) error {
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		DELETE FROM bucket_logging WHERE source_bucket = ?
 	`, bucket)
 	return err
@@ -82,7 +82,7 @@ func (v *Vitess) DeleteBucketLogging(ctx context.Context, bucket string) error {
 
 // ListLoggingConfigs returns all bucket logging configurations.
 func (v *Vitess) ListLoggingConfigs(ctx context.Context) ([]*db.BucketLoggingConfig, error) {
-	rows, err := v.db.QueryContext(ctx, `
+	rows, err := v.Store.DB().QueryContext(ctx, `
 		SELECT id, source_bucket, target_bucket, target_prefix, created_at, updated_at
 		FROM bucket_logging
 		ORDER BY source_bucket

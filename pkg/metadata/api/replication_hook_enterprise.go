@@ -16,10 +16,15 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
+// TagLoader is a function that loads tags for an object.
+// Returns nil if object has no tags or an error occurs.
+type TagLoader func(ctx context.Context, bucket, key string) (map[string]string, error)
+
 // CRRHook queues replication tasks for objects in buckets with replication enabled.
 type CRRHook struct {
 	queue       taskqueue.Queue
 	localRegion string
+	tagLoader   TagLoader // Optional: loads object tags for tag filtering
 }
 
 // NewCRRHook creates a new cross-region replication hook.
@@ -28,6 +33,12 @@ func NewCRRHook(queue taskqueue.Queue, localRegion string) *CRRHook {
 		queue:       queue,
 		localRegion: localRegion,
 	}
+}
+
+// SetTagLoader sets the function used to load object tags for tag filtering.
+// If not set, rules with tag filters will be skipped.
+func (h *CRRHook) SetTagLoader(loader TagLoader) {
+	h.tagLoader = loader
 }
 
 // AfterPutObject is called after an object is successfully stored.
@@ -49,14 +60,33 @@ func (h *CRRHook) AfterPutObject(ctx context.Context, bucket *s3types.Bucket, ke
 		return
 	}
 
+	// Load tags lazily (only if any rule has tag filters)
+	var objectTags map[string]string
+	var tagsLoaded bool
+
 	// Process each replication rule
 	for _, rule := range bucket.ReplicationConfig.Rules {
 		if rule.Status != s3types.ReplicationRuleStatusEnabled {
 			continue
 		}
 
+		// Load tags if this rule has tag filters and we haven't loaded yet
+		if !tagsLoaded && ruleHasTagFilter(&rule) {
+			if h.tagLoader != nil {
+				var err error
+				objectTags, err = h.tagLoader(ctx, bucket.Name, key)
+				if err != nil {
+					logger.Warn().Err(err).
+						Str("bucket", bucket.Name).
+						Str("key", key).
+						Msg("failed to load tags for replication filter")
+				}
+			}
+			tagsLoaded = true
+		}
+
 		// Check if key matches the rule filter
-		if !matchesReplicationRule(key, &rule) {
+		if !matchesReplicationRule(key, &rule, objectTags) {
 			continue
 		}
 
@@ -120,6 +150,10 @@ func (h *CRRHook) AfterDeleteObject(ctx context.Context, bucket *s3types.Bucket,
 		return
 	}
 
+	// Load tags lazily (only if any rule has tag filters)
+	var objectTags map[string]string
+	var tagsLoaded bool
+
 	for _, rule := range bucket.ReplicationConfig.Rules {
 		if rule.Status != s3types.ReplicationRuleStatusEnabled {
 			continue
@@ -130,7 +164,22 @@ func (h *CRRHook) AfterDeleteObject(ctx context.Context, bucket *s3types.Bucket,
 			continue
 		}
 
-		if !matchesReplicationRule(key, &rule) {
+		// Load tags if this rule has tag filters and we haven't loaded yet
+		if !tagsLoaded && ruleHasTagFilter(&rule) {
+			if h.tagLoader != nil {
+				var err error
+				objectTags, err = h.tagLoader(ctx, bucket.Name, key)
+				if err != nil {
+					logger.Warn().Err(err).
+						Str("bucket", bucket.Name).
+						Str("key", key).
+						Msg("failed to load tags for replication filter")
+				}
+			}
+			tagsLoaded = true
+		}
+
+		if !matchesReplicationRule(key, &rule, objectTags) {
 			continue
 		}
 
@@ -155,8 +204,22 @@ func (h *CRRHook) AfterDeleteObject(ctx context.Context, bucket *s3types.Bucket,
 	}
 }
 
+// ruleHasTagFilter returns true if the rule has any tag-based filtering.
+func ruleHasTagFilter(rule *s3types.ReplicationRule) bool {
+	if rule.Filter == nil {
+		return false
+	}
+	if rule.Filter.Tag != nil {
+		return true
+	}
+	if rule.Filter.And != nil && len(rule.Filter.And.Tags) > 0 {
+		return true
+	}
+	return false
+}
+
 // matchesReplicationRule checks if a key matches the rule's filter.
-func matchesReplicationRule(key string, rule *s3types.ReplicationRule) bool {
+func matchesReplicationRule(key string, rule *s3types.ReplicationRule, objectTags map[string]string) bool {
 	// Check prefix (deprecated but still supported)
 	if rule.Prefix != "" {
 		if len(key) < len(rule.Prefix) || key[:len(rule.Prefix)] != rule.Prefix {
@@ -171,10 +234,41 @@ func matchesReplicationRule(key string, rule *s3types.ReplicationRule) bool {
 				return false
 			}
 		}
-		// TODO: Check tags
+
+		// Check single tag filter
+		if rule.Filter.Tag != nil {
+			if !matchTag(objectTags, rule.Filter.Tag.Key, rule.Filter.Tag.Value) {
+				return false
+			}
+		}
+
+		// Check And filter (prefix + multiple tags)
+		if rule.Filter.And != nil {
+			// Check prefix in And filter
+			if rule.Filter.And.Prefix != "" {
+				if len(key) < len(rule.Filter.And.Prefix) || key[:len(rule.Filter.And.Prefix)] != rule.Filter.And.Prefix {
+					return false
+				}
+			}
+			// Check all tags in And filter (all must match)
+			for _, tag := range rule.Filter.And.Tags {
+				if !matchTag(objectTags, tag.Key, tag.Value) {
+					return false
+				}
+			}
+		}
 	}
 
 	return true
+}
+
+// matchTag checks if objectTags contains the specified key-value pair.
+func matchTag(objectTags map[string]string, key, value string) bool {
+	if objectTags == nil {
+		return false
+	}
+	v, exists := objectTags[key]
+	return exists && v == value
 }
 
 // extractBucketName extracts bucket name from ARN or returns as-is.

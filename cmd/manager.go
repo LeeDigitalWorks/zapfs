@@ -65,6 +65,11 @@ type ManagerServerOpts struct {
 
 	// Placement defaults
 	DefaultNumReplicas uint32 // Default replication factor when not specified per-request
+
+	// Federation (S3 passthrough/migration)
+	FederationEnabled              bool
+	FederationExternalTimeout      time.Duration
+	FederationExternalMaxIdleConns int
 }
 
 var managerCmd = &cobra.Command{
@@ -132,6 +137,11 @@ func init() {
 	f.String("oidc_groups_claim", "", "OIDC claim containing group memberships")
 	f.StringSlice("oidc_required_groups", nil, "Required OIDC groups for access")
 	f.StringSlice("oidc_allowed_domains", nil, "Allowed email domains for OIDC users")
+
+	// Federation (S3 passthrough/migration)
+	f.Bool("federation.enabled", false, "Enable S3 federation features")
+	f.Duration("federation.external_timeout", 5*time.Minute, "Timeout for external S3 requests")
+	f.Int("federation.external_max_idle_conns", 100, "Max idle connections to external S3")
 
 	viper.BindPFlags(f)
 }
@@ -304,6 +314,10 @@ func loadManagerOpts(cmd *cobra.Command) ManagerServerOpts {
 		RegionID:           f.String("region_id"),
 		LeaderTimeout:      f.Duration("leader_timeout"),
 		DefaultNumReplicas: f.Uint32("default_num_replicas"),
+		// Federation
+		FederationEnabled:              f.Bool("federation.enabled"),
+		FederationExternalTimeout:      f.Duration("federation.external_timeout"),
+		FederationExternalMaxIdleConns: f.Int("federation.external_max_idle_conns"),
 	}
 
 	// Set defaults
@@ -367,7 +381,7 @@ func startManagerAdminServer(opts ManagerServerOpts, ms *manager.ManagerServer, 
 
 	// Mount IAM admin handlers (uses ManagerServer to notify subscribers on changes)
 	iamHandler := manager.NewIAMAdminHandler(ms.GetIAMService())
-	iamHandler.SetNotifier(ms) // ManagerServer implements CredentialNotifier
+	iamHandler.SetNotifier(ms)                           // ManagerServer implements CredentialNotifier
 	iamHandler.SetRaftStore(ms.GetRaftCredentialStore()) // Use Raft for mutations (Phase 2)
 	mux.Handle("/v1/iam/", iamHandler)
 
@@ -416,8 +430,24 @@ func startManagerGRPCServer(opts ManagerServerOpts, ms *manager.ManagerServer) *
 	manager_pb.RegisterManagerServiceServer(grpcServer, ms)
 	iam_pb.RegisterIAMServiceServer(grpcServer, ms)
 
+	// Register FederationService if enabled
+	federationCfg := &manager.FederationConfig{
+		Enabled:              opts.FederationEnabled,
+		ExternalTimeout:      opts.FederationExternalTimeout,
+		ExternalMaxIdleConns: opts.FederationExternalMaxIdleConns,
+	}
+	federationService := manager.NewFederationService(ms, federationCfg)
+	manager_pb.RegisterFederationServiceServer(grpcServer, federationService)
+
 	go func() {
-		logger.Info().Str("grpc_addr", listener.Addr().String()).Msg("Manager gRPC server listening (Manager + IAM services)")
+		servicesMsg := "Manager + IAM services"
+		if opts.FederationEnabled {
+			servicesMsg = "Manager + IAM + Federation services"
+		}
+		logger.Info().
+			Str("grpc_addr", listener.Addr().String()).
+			Bool("federation_enabled", opts.FederationEnabled).
+			Msg("Manager gRPC server listening (" + servicesMsg + ")")
 		if err := grpcServer.Serve(listener); err != nil {
 			logger.Fatal().Err(err).Msg("failed to start gRPC server")
 		}

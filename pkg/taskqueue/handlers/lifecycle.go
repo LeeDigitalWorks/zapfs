@@ -68,6 +68,8 @@ func (h *LifecycleHandler) Handle(ctx context.Context, task *taskqueue.Task) err
 		handleErr = h.handleAbortMultipart(ctx, payload)
 	case taskqueue.LifecycleActionTransition:
 		handleErr = h.handleTransition(ctx, payload)
+	case taskqueue.LifecycleActionPromote:
+		handleErr = h.handlePromotion(ctx, payload)
 	default:
 		return fmt.Errorf("unknown action: %s", payload.Action)
 	}
@@ -237,6 +239,35 @@ func (h *LifecycleHandler) handleTransition(ctx context.Context, payload taskque
 			return nil
 		}
 		return fmt.Errorf("execute transition: %w", err)
+	}
+
+	return nil
+}
+
+// handlePromotion promotes an object from cold tier storage back to hot storage.
+// This is triggered when an INTELLIGENT_TIERING object that has been demoted
+// to cold storage is accessed - it should be promoted back to hot storage.
+func (h *LifecycleHandler) handlePromotion(ctx context.Context, payload taskqueue.LifecyclePayload) error {
+	// Check if transition deps are configured
+	if h.transitionDeps == nil {
+		logger.Warn().
+			Str("bucket", payload.Bucket).
+			Str("key", payload.Key).
+			Msg("Storage promotions require enterprise edition, skipping")
+		return nil
+	}
+
+	// Execute promotion using enterprise package
+	if err := enterpriseLifecycle.ExecutePromotion(ctx, h.transitionDeps, payload); err != nil {
+		// Check if this is an enterprise-required error
+		if errors.Is(err, enterpriseLifecycle.ErrLicenseRequired) {
+			logger.Warn().
+				Str("bucket", payload.Bucket).
+				Str("key", payload.Key).
+				Msg("Storage promotions require valid enterprise license, skipping")
+			return nil
+		}
+		return fmt.Errorf("execute promotion: %w", err)
 	}
 
 	return nil

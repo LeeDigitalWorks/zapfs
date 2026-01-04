@@ -180,6 +180,8 @@ message ReceiveChunkResponse {
 
 message GetChunkRequest {
   string chunk_id = 1;
+  int64 offset = 2;   // Start offset for range reads (0 = beginning)
+  int64 length = 3;   // Number of bytes to read (0 = entire chunk)
 }
 
 message GetChunkResponse {

@@ -110,6 +110,69 @@ func (_c *MockTxStore_AddChunkReplica_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// CompleteRestore provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) CompleteRestore(ctx context.Context, objectID string, expiryDate int64) error {
+	ret := _mock.Called(ctx, objectID, expiryDate)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteRestore")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, expiryDate)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockTxStore_CompleteRestore_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteRestore'
+type MockTxStore_CompleteRestore_Call struct {
+	*mock.Call
+}
+
+// CompleteRestore is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - expiryDate int64
+func (_e *MockTxStore_Expecter) CompleteRestore(ctx interface{}, objectID interface{}, expiryDate interface{}) *MockTxStore_CompleteRestore_Call {
+	return &MockTxStore_CompleteRestore_Call{Call: _e.mock.On("CompleteRestore", ctx, objectID, expiryDate)}
+}
+
+func (_c *MockTxStore_CompleteRestore_Call) Run(run func(ctx context.Context, objectID string, expiryDate int64)) *MockTxStore_CompleteRestore_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_CompleteRestore_Call) Return(err error) *MockTxStore_CompleteRestore_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockTxStore_CompleteRestore_Call) RunAndReturn(run func(ctx context.Context, objectID string, expiryDate int64) error) *MockTxStore_CompleteRestore_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CountBuckets provides a mock function for the type MockTxStore
 func (_mock *MockTxStore) CountBuckets(ctx context.Context) (int64, error) {
 	ret := _mock.Called(ctx)
@@ -967,6 +1030,160 @@ func (_c *MockTxStore_GetChunksByServer_Call) Return(strings []string, err error
 }
 
 func (_c *MockTxStore_GetChunksByServer_Call) RunAndReturn(run func(ctx context.Context, serverID string) ([]string, error)) *MockTxStore_GetChunksByServer_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetColdIntelligentTieringObjects provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) GetColdIntelligentTieringObjects(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error) {
+	ret := _mock.Called(ctx, threshold, minSize, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetColdIntelligentTieringObjects")
+	}
+
+	var r0 []*types.ObjectRef
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int64, int) ([]*types.ObjectRef, error)); ok {
+		return returnFunc(ctx, threshold, minSize, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int64, int) []*types.ObjectRef); ok {
+		r0 = returnFunc(ctx, threshold, minSize, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*types.ObjectRef)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, int64, int) error); ok {
+		r1 = returnFunc(ctx, threshold, minSize, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockTxStore_GetColdIntelligentTieringObjects_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetColdIntelligentTieringObjects'
+type MockTxStore_GetColdIntelligentTieringObjects_Call struct {
+	*mock.Call
+}
+
+// GetColdIntelligentTieringObjects is a helper method to define mock.On call
+//   - ctx context.Context
+//   - threshold int64
+//   - minSize int64
+//   - limit int
+func (_e *MockTxStore_Expecter) GetColdIntelligentTieringObjects(ctx interface{}, threshold interface{}, minSize interface{}, limit interface{}) *MockTxStore_GetColdIntelligentTieringObjects_Call {
+	return &MockTxStore_GetColdIntelligentTieringObjects_Call{Call: _e.mock.On("GetColdIntelligentTieringObjects", ctx, threshold, minSize, limit)}
+}
+
+func (_c *MockTxStore_GetColdIntelligentTieringObjects_Call) Run(run func(ctx context.Context, threshold int64, minSize int64, limit int)) *MockTxStore_GetColdIntelligentTieringObjects_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_GetColdIntelligentTieringObjects_Call) Return(objectRefs []*types.ObjectRef, err error) *MockTxStore_GetColdIntelligentTieringObjects_Call {
+	_c.Call.Return(objectRefs, err)
+	return _c
+}
+
+func (_c *MockTxStore_GetColdIntelligentTieringObjects_Call) RunAndReturn(run func(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error)) *MockTxStore_GetColdIntelligentTieringObjects_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetExpiredRestores provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) GetExpiredRestores(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error) {
+	ret := _mock.Called(ctx, now, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExpiredRestores")
+	}
+
+	var r0 []*types.ObjectRef
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int) ([]*types.ObjectRef, error)); ok {
+		return returnFunc(ctx, now, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int) []*types.ObjectRef); ok {
+		r0 = returnFunc(ctx, now, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*types.ObjectRef)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, int) error); ok {
+		r1 = returnFunc(ctx, now, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockTxStore_GetExpiredRestores_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExpiredRestores'
+type MockTxStore_GetExpiredRestores_Call struct {
+	*mock.Call
+}
+
+// GetExpiredRestores is a helper method to define mock.On call
+//   - ctx context.Context
+//   - now int64
+//   - limit int
+func (_e *MockTxStore_Expecter) GetExpiredRestores(ctx interface{}, now interface{}, limit interface{}) *MockTxStore_GetExpiredRestores_Call {
+	return &MockTxStore_GetExpiredRestores_Call{Call: _e.mock.On("GetExpiredRestores", ctx, now, limit)}
+}
+
+func (_c *MockTxStore_GetExpiredRestores_Call) Run(run func(ctx context.Context, now int64, limit int)) *MockTxStore_GetExpiredRestores_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_GetExpiredRestores_Call) Return(objectRefs []*types.ObjectRef, err error) *MockTxStore_GetExpiredRestores_Call {
+	_c.Call.Return(objectRefs, err)
+	return _c
+}
+
+func (_c *MockTxStore_GetExpiredRestores_Call) RunAndReturn(run func(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error)) *MockTxStore_GetExpiredRestores_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2181,6 +2398,63 @@ func (_c *MockTxStore_RemoveChunkReplica_Call) RunAndReturn(run func(ctx context
 	return _c
 }
 
+// ResetRestoreStatus provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) ResetRestoreStatus(ctx context.Context, objectID string) error {
+	ret := _mock.Called(ctx, objectID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResetRestoreStatus")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, objectID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockTxStore_ResetRestoreStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResetRestoreStatus'
+type MockTxStore_ResetRestoreStatus_Call struct {
+	*mock.Call
+}
+
+// ResetRestoreStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+func (_e *MockTxStore_Expecter) ResetRestoreStatus(ctx interface{}, objectID interface{}) *MockTxStore_ResetRestoreStatus_Call {
+	return &MockTxStore_ResetRestoreStatus_Call{Call: _e.mock.On("ResetRestoreStatus", ctx, objectID)}
+}
+
+func (_c *MockTxStore_ResetRestoreStatus_Call) Run(run func(ctx context.Context, objectID string)) *MockTxStore_ResetRestoreStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_ResetRestoreStatus_Call) Return(err error) *MockTxStore_ResetRestoreStatus_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockTxStore_ResetRestoreStatus_Call) RunAndReturn(run func(ctx context.Context, objectID string) error) *MockTxStore_ResetRestoreStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateBucketVersioning provides a mock function for the type MockTxStore
 func (_mock *MockTxStore) UpdateBucketVersioning(ctx context.Context, bucket string, versioning string) error {
 	ret := _mock.Called(ctx, bucket, versioning)
@@ -2240,6 +2514,69 @@ func (_c *MockTxStore_UpdateBucketVersioning_Call) Return(err error) *MockTxStor
 }
 
 func (_c *MockTxStore_UpdateBucketVersioning_Call) RunAndReturn(run func(ctx context.Context, bucket string, versioning string) error) *MockTxStore_UpdateBucketVersioning_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateLastAccessedAt provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) UpdateLastAccessedAt(ctx context.Context, objectID string, accessedAt int64) error {
+	ret := _mock.Called(ctx, objectID, accessedAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateLastAccessedAt")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, accessedAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockTxStore_UpdateLastAccessedAt_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateLastAccessedAt'
+type MockTxStore_UpdateLastAccessedAt_Call struct {
+	*mock.Call
+}
+
+// UpdateLastAccessedAt is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - accessedAt int64
+func (_e *MockTxStore_Expecter) UpdateLastAccessedAt(ctx interface{}, objectID interface{}, accessedAt interface{}) *MockTxStore_UpdateLastAccessedAt_Call {
+	return &MockTxStore_UpdateLastAccessedAt_Call{Call: _e.mock.On("UpdateLastAccessedAt", ctx, objectID, accessedAt)}
+}
+
+func (_c *MockTxStore_UpdateLastAccessedAt_Call) Run(run func(ctx context.Context, objectID string, accessedAt int64)) *MockTxStore_UpdateLastAccessedAt_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_UpdateLastAccessedAt_Call) Return(err error) *MockTxStore_UpdateLastAccessedAt_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockTxStore_UpdateLastAccessedAt_Call) RunAndReturn(run func(ctx context.Context, objectID string, accessedAt int64) error) *MockTxStore_UpdateLastAccessedAt_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2315,6 +2652,144 @@ func (_c *MockTxStore_UpdateObjectTransition_Call) Return(err error) *MockTxStor
 }
 
 func (_c *MockTxStore_UpdateObjectTransition_Call) RunAndReturn(run func(ctx context.Context, objectID string, storageClass string, transitionedAt int64, transitionedRef string) error) *MockTxStore_UpdateObjectTransition_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateRestoreExpiry provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) UpdateRestoreExpiry(ctx context.Context, objectID string, expiryDate int64) error {
+	ret := _mock.Called(ctx, objectID, expiryDate)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateRestoreExpiry")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, expiryDate)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockTxStore_UpdateRestoreExpiry_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateRestoreExpiry'
+type MockTxStore_UpdateRestoreExpiry_Call struct {
+	*mock.Call
+}
+
+// UpdateRestoreExpiry is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - expiryDate int64
+func (_e *MockTxStore_Expecter) UpdateRestoreExpiry(ctx interface{}, objectID interface{}, expiryDate interface{}) *MockTxStore_UpdateRestoreExpiry_Call {
+	return &MockTxStore_UpdateRestoreExpiry_Call{Call: _e.mock.On("UpdateRestoreExpiry", ctx, objectID, expiryDate)}
+}
+
+func (_c *MockTxStore_UpdateRestoreExpiry_Call) Run(run func(ctx context.Context, objectID string, expiryDate int64)) *MockTxStore_UpdateRestoreExpiry_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_UpdateRestoreExpiry_Call) Return(err error) *MockTxStore_UpdateRestoreExpiry_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockTxStore_UpdateRestoreExpiry_Call) RunAndReturn(run func(ctx context.Context, objectID string, expiryDate int64) error) *MockTxStore_UpdateRestoreExpiry_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateRestoreStatus provides a mock function for the type MockTxStore
+func (_mock *MockTxStore) UpdateRestoreStatus(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error {
+	ret := _mock.Called(ctx, objectID, status, tier, requestedAt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateRestoreStatus")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, int64) error); ok {
+		r0 = returnFunc(ctx, objectID, status, tier, requestedAt)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockTxStore_UpdateRestoreStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateRestoreStatus'
+type MockTxStore_UpdateRestoreStatus_Call struct {
+	*mock.Call
+}
+
+// UpdateRestoreStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - objectID string
+//   - status string
+//   - tier string
+//   - requestedAt int64
+func (_e *MockTxStore_Expecter) UpdateRestoreStatus(ctx interface{}, objectID interface{}, status interface{}, tier interface{}, requestedAt interface{}) *MockTxStore_UpdateRestoreStatus_Call {
+	return &MockTxStore_UpdateRestoreStatus_Call{Call: _e.mock.On("UpdateRestoreStatus", ctx, objectID, status, tier, requestedAt)}
+}
+
+func (_c *MockTxStore_UpdateRestoreStatus_Call) Run(run func(ctx context.Context, objectID string, status string, tier string, requestedAt int64)) *MockTxStore_UpdateRestoreStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 int64
+		if args[4] != nil {
+			arg4 = args[4].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTxStore_UpdateRestoreStatus_Call) Return(err error) *MockTxStore_UpdateRestoreStatus_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockTxStore_UpdateRestoreStatus_Call) RunAndReturn(run func(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error) *MockTxStore_UpdateRestoreStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }

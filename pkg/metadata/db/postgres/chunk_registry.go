@@ -21,7 +21,7 @@ import (
 // Clears zero_ref_since if the chunk was previously at ref_count=0.
 func (p *Postgres) IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error {
 	now := time.Now().UnixNano()
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		INSERT INTO chunk_registry (chunk_id, size, ref_count, created_at, zero_ref_since)
 		VALUES ($1, $2, 1, $3, 0)
 		ON CONFLICT (chunk_id) DO UPDATE SET
@@ -38,7 +38,7 @@ func (p *Postgres) IncrementChunkRefCount(ctx context.Context, chunkID string, s
 // If ref_count reaches 0, sets zero_ref_since to current time for GC grace period.
 func (p *Postgres) DecrementChunkRefCount(ctx context.Context, chunkID string) error {
 	now := time.Now().UnixNano()
-	result, err := p.db.ExecContext(ctx, `
+	result, err := p.Store.DB().ExecContext(ctx, `
 		UPDATE chunk_registry
 		SET ref_count = ref_count - 1,
 		    zero_ref_since = CASE WHEN ref_count = 1 THEN $1 ELSE zero_ref_since END
@@ -94,7 +94,7 @@ func (p *Postgres) DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []s
 // Used by GC to re-check ref count within a transaction before deleting.
 func (p *Postgres) GetChunkRefCount(ctx context.Context, chunkID string) (int, error) {
 	var refCount int
-	err := p.db.QueryRowContext(ctx, `
+	err := p.Store.DB().QueryRowContext(ctx, `
 		SELECT ref_count FROM chunk_registry WHERE chunk_id = $1
 	`, chunkID).Scan(&refCount)
 	if err == sql.ErrNoRows {
@@ -113,7 +113,7 @@ func (p *Postgres) GetChunkRefCount(ctx context.Context, chunkID string) (int, e
 // AddChunkReplica records that a chunk exists on a specific file server.
 func (p *Postgres) AddChunkReplica(ctx context.Context, chunkID, serverID, backendID string) error {
 	now := time.Now().UnixNano()
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		INSERT INTO chunk_replicas (chunk_id, server_id, backend_id, verified_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (chunk_id, server_id) DO NOTHING
@@ -126,7 +126,7 @@ func (p *Postgres) AddChunkReplica(ctx context.Context, chunkID, serverID, backe
 
 // RemoveChunkReplica removes the record of a chunk on a file server.
 func (p *Postgres) RemoveChunkReplica(ctx context.Context, chunkID, serverID string) error {
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM chunk_replicas WHERE chunk_id = $1 AND server_id = $2
 	`, chunkID, serverID)
 	if err != nil {
@@ -137,7 +137,7 @@ func (p *Postgres) RemoveChunkReplica(ctx context.Context, chunkID, serverID str
 
 // GetChunkReplicas returns all replica locations for a chunk.
 func (p *Postgres) GetChunkReplicas(ctx context.Context, chunkID string) ([]db.ReplicaInfo, error) {
-	rows, err := p.db.QueryContext(ctx, `
+	rows, err := p.Store.DB().QueryContext(ctx, `
 		SELECT server_id, backend_id, verified_at
 		FROM chunk_replicas
 		WHERE chunk_id = $1
@@ -161,7 +161,7 @@ func (p *Postgres) GetChunkReplicas(ctx context.Context, chunkID string) ([]db.R
 // GetChunksByServer returns all chunk IDs stored on a specific server.
 // Used for server decommissioning and rebalancing.
 func (p *Postgres) GetChunksByServer(ctx context.Context, serverID string) ([]string, error) {
-	rows, err := p.db.QueryContext(ctx, `
+	rows, err := p.Store.DB().QueryContext(ctx, `
 		SELECT chunk_id FROM chunk_replicas WHERE server_id = $1
 	`, serverID)
 	if err != nil {
@@ -189,7 +189,7 @@ func (p *Postgres) GetChunksByServer(ctx context.Context, serverID string) ([]st
 func (p *Postgres) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]db.ZeroRefChunk, error) {
 	cutoff := olderThan.UnixNano()
 
-	rows, err := p.db.QueryContext(ctx, `
+	rows, err := p.Store.DB().QueryContext(ctx, `
 		SELECT cr.chunk_id, cr.size, rep.server_id, rep.backend_id
 		FROM chunk_registry cr
 		LEFT JOIN chunk_replicas rep ON cr.chunk_id = rep.chunk_id
@@ -251,7 +251,7 @@ func (p *Postgres) GetZeroRefChunks(ctx context.Context, olderThan time.Time, li
 // DeleteChunkRegistry removes a chunk from the registry.
 // The chunk_replicas entries are automatically deleted via CASCADE.
 func (p *Postgres) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM chunk_registry WHERE chunk_id = $1
 	`, chunkID)
 	if err != nil {

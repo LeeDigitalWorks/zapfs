@@ -72,9 +72,9 @@ const (
 // AccessControlPolicy is the XML format for ACL API responses
 // This is the top-level wrapper for GetBucketAcl/GetObjectAcl responses
 type AccessControlPolicy struct {
-	XMLName           xml.Name        `xml:"AccessControlPolicy"`
-	Xmlns             string          `xml:"xmlns,attr,omitempty"`
-	Owner             Owner           `xml:"Owner"`
+	XMLName           xml.Name             `xml:"AccessControlPolicy"`
+	Xmlns             string               `xml:"xmlns,attr,omitempty"`
+	Owner             Owner                `xml:"Owner"`
 	AccessControlList AccessControlListXML `xml:"AccessControlList"`
 }
 

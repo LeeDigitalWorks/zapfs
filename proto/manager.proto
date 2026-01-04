@@ -247,11 +247,11 @@ message Collection {
 
   // Async Deletion Flag
   bool delete_pending = 5;
-  
+
   // Current usage
   int64 current_objects = 6;
   int64 current_size_bytes = 7;
-  
+
   // Metadata
   map<string, string> tags = 8;
   string description = 9;
@@ -260,6 +260,10 @@ message Collection {
 
   // Tombstone Flag to update caches
   bool is_deleted = 11;
+
+  // Federation: Bucket mode for passthrough/migration
+  // 0 = LOCAL (default), 1 = PASSTHROUGH, 2 = MIGRATING
+  FederationBucketMode bucket_mode = 12;
 }
 
 message CreateCollectionRequest {
@@ -486,4 +490,159 @@ message RebalanceProgress {
   string current_chunk = 7;
   string status = 8;  // "running", "completed", "failed", "cancelled"
   string error = 9;
+}
+
+// Federation Service for S3 bucket federation and migration control
+service FederationService {
+  // Register an existing external S3 bucket for federation
+  rpc RegisterBucket(FederationRegisterBucketRequest) returns (FederationRegisterBucketResponse);
+
+  // Unregister a federated bucket
+  rpc UnregisterBucket(FederationUnregisterBucketRequest) returns (FederationUnregisterBucketResponse);
+
+  // Get federation status for a bucket
+  rpc GetBucketStatus(FederationGetBucketStatusRequest) returns (FederationGetBucketStatusResponse);
+
+  // Change bucket mode (passthrough → migrating → local)
+  rpc SetBucketMode(FederationSetBucketModeRequest) returns (FederationSetBucketModeResponse);
+
+  // Pause an active migration
+  rpc PauseMigration(FederationPauseMigrationRequest) returns (FederationPauseMigrationResponse);
+
+  // Resume a paused migration
+  rpc ResumeMigration(FederationResumeMigrationRequest) returns (FederationResumeMigrationResponse);
+
+  // Enable/disable dual-write for a bucket in migrating mode
+  rpc SetDualWrite(FederationSetDualWriteRequest) returns (FederationSetDualWriteResponse);
+
+  // Update external S3 credentials (for rotation)
+  rpc UpdateCredentials(FederationUpdateCredentialsRequest) returns (FederationUpdateCredentialsResponse);
+
+  // List all federated buckets
+  rpc ListFederatedBuckets(FederationListBucketsRequest) returns (FederationListBucketsResponse);
+}
+
+// Bucket mode for federation
+enum FederationBucketMode {
+  FEDERATION_BUCKET_MODE_UNSPECIFIED = 0;
+  FEDERATION_BUCKET_MODE_LOCAL = 1;       // Normal ZapFS bucket (no federation)
+  FEDERATION_BUCKET_MODE_PASSTHROUGH = 2; // Proxy to external S3, metadata local
+  FEDERATION_BUCKET_MODE_MIGRATING = 3;   // Ingesting from external S3 to local
+}
+
+// External S3 connection configuration
+message ExternalS3Config {
+  string endpoint = 1;           // e.g., "s3.amazonaws.com"
+  string region = 2;             // e.g., "us-east-1"
+  string access_key_id = 3;
+  string secret_access_key = 4;
+  string bucket = 5;             // Bucket name on external S3
+  bool path_style = 6;           // Use path-style addressing
+}
+
+// Request to register a bucket for federation
+message FederationRegisterBucketRequest {
+  string local_bucket = 1;           // Local bucket name (created if not exists)
+  FederationBucketMode mode = 2;     // PASSTHROUGH or MIGRATING
+  ExternalS3Config external = 3;     // External S3 connection details
+  bool start_active_migration = 4;   // If MIGRATING, start workers immediately
+}
+
+message FederationRegisterBucketResponse {
+  bool success = 1;
+  string error = 2;
+  int64 external_object_count = 3;   // Objects discovered in external bucket (if migrating)
+}
+
+// Request to unregister a federated bucket
+message FederationUnregisterBucketRequest {
+  string bucket = 1;
+  bool delete_external = 2;          // Also delete bucket on external S3
+  bool delete_local_data = 3;        // Delete locally ingested data
+}
+
+message FederationUnregisterBucketResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Request to get federation status
+message FederationGetBucketStatusRequest {
+  string bucket = 1;
+}
+
+message FederationGetBucketStatusResponse {
+  string bucket = 1;
+  FederationBucketMode mode = 2;
+  bool dual_write_enabled = 3;
+  bool migration_paused = 4;
+  int64 objects_discovered = 5;
+  int64 objects_synced = 6;
+  int64 bytes_synced = 7;
+  double progress_percent = 8;       // objects_synced / objects_discovered * 100
+  ExternalS3Config external = 9;     // Credentials redacted in response
+  int64 created_at = 10;             // Unix timestamp
+  int64 updated_at = 11;             // Unix timestamp
+}
+
+// Request to change bucket mode
+message FederationSetBucketModeRequest {
+  string bucket = 1;
+  FederationBucketMode mode = 2;
+  bool delete_external_on_complete = 3;  // Delete external data when transitioning to LOCAL
+}
+
+message FederationSetBucketModeResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Pause migration request
+message FederationPauseMigrationRequest {
+  string bucket = 1;
+}
+
+message FederationPauseMigrationResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Resume migration request
+message FederationResumeMigrationRequest {
+  string bucket = 1;
+}
+
+message FederationResumeMigrationResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Set dual-write request
+message FederationSetDualWriteRequest {
+  string bucket = 1;
+  bool enabled = 2;
+}
+
+message FederationSetDualWriteResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Update credentials request
+message FederationUpdateCredentialsRequest {
+  string bucket = 1;
+  string access_key_id = 2;
+  string secret_access_key = 3;
+}
+
+message FederationUpdateCredentialsResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// List federated buckets request
+message FederationListBucketsRequest {}
+
+message FederationListBucketsResponse {
+  repeated FederationGetBucketStatusResponse buckets = 1;
 }

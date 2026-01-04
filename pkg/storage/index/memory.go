@@ -15,7 +15,7 @@ type MemoryIndexer[K comparable, V any] struct {
 }
 
 // NewMemoryIndexer creates a new in-memory indexer
-func NewMemoryIndexer[K comparable, V any]() (*MemoryIndexer[K, V], error) {
+func NewMemoryIndexer[K comparable, V any]() (Indexer[K, V], error) {
 	return &MemoryIndexer[K, V]{
 		data: make(map[K]V),
 	}, nil

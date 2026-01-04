@@ -14,7 +14,7 @@ import (
 
 // UsageStore returns a usage.Store backed by PostgreSQL.
 func (p *Postgres) UsageStore() usage.Store {
-	return &postgresUsageStore{db: p.db}
+	return &postgresUsageStore{db: p.Store.DB()}
 }
 
 // postgresUsageStore implements usage.Store using PostgreSQL.

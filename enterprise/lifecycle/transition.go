@@ -20,6 +20,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
@@ -56,6 +57,7 @@ type TransitionDeps struct {
 	BackendManager *backend.Manager
 	Profiles       *types.ProfileSet
 	Pools          *types.PoolSet
+	Coordinator    *storage.Coordinator // For promotion: writes data back to file servers
 }
 
 // ExecuteTransition performs the storage class transition for an object.
@@ -242,4 +244,157 @@ func streamToTier(ctx context.Context, fileClient client.File, obj *types.Object
 		return readErr
 	}
 	return writeErr
+}
+
+// ExecutePromotion moves an object from tier storage back to hot storage.
+// This is triggered when an INTELLIGENT_TIERING object that was demoted to
+// cold tier storage is accessed - it should be promoted back to hot storage.
+//
+// The process:
+// 1. Read data from tier backend using TransitionedRef
+// 2. Write data back to file servers using Coordinator.WriteObject
+// 3. Update object metadata (new ChunkRefs, clear TransitionedRef)
+// 4. Delete the tier copy
+func ExecutePromotion(ctx context.Context, deps *TransitionDeps, payload taskqueue.LifecyclePayload) error {
+	// Check license
+	if !pkglicense.CheckLifecycle() {
+		return ErrLicenseRequired
+	}
+
+	// Validate dependencies
+	if deps.Coordinator == nil {
+		logger.Warn().
+			Str("bucket", payload.Bucket).
+			Str("key", payload.Key).
+			Msg("Coordinator not configured, skipping promotion")
+		return nil
+	}
+	if deps.BackendManager == nil {
+		return ErrNoBackendManager
+	}
+
+	// Get object metadata
+	obj, err := deps.DB.GetObject(ctx, payload.Bucket, payload.Key)
+	if err != nil {
+		if errors.Is(err, db.ErrObjectNotFound) {
+			logger.Debug().
+				Str("bucket", payload.Bucket).
+				Str("key", payload.Key).
+				Msg("Object not found, skipping promotion")
+			return nil
+		}
+		return fmt.Errorf("get object: %w", err)
+	}
+
+	// Skip if not transitioned (already in hot storage)
+	if obj.TransitionedRef == "" {
+		logger.Debug().
+			Str("bucket", payload.Bucket).
+			Str("key", payload.Key).
+			Msg("Object not transitioned, skipping promotion")
+		return nil
+	}
+
+	// Skip if not INTELLIGENT_TIERING
+	if obj.StorageClass != "INTELLIGENT_TIERING" {
+		logger.Debug().
+			Str("bucket", payload.Bucket).
+			Str("key", payload.Key).
+			Str("storage_class", obj.StorageClass).
+			Msg("Object not INTELLIGENT_TIERING, skipping promotion")
+		return nil
+	}
+
+	// Find the tier backend that holds this object
+	remoteKey := obj.TransitionedRef
+	var tierBackend types.BackendStorage
+
+	// Iterate through backends to find the one with this object
+	for _, id := range deps.BackendManager.List() {
+		b, ok := deps.BackendManager.Get(id)
+		if !ok {
+			continue
+		}
+		exists, _ := b.Exists(ctx, remoteKey)
+		if exists {
+			tierBackend = b
+			break
+		}
+	}
+
+	if tierBackend == nil {
+		logger.Warn().
+			Str("bucket", payload.Bucket).
+			Str("key", payload.Key).
+			Str("transitioned_ref", obj.TransitionedRef).
+			Msg("Tier backend not found for transitioned object, clearing transition ref")
+		// Clear the transitioned ref since we can't find the data
+		_ = deps.DB.UpdateObjectTransition(ctx, obj.ID.String(), "INTELLIGENT_TIERING", 0, "")
+		return nil
+	}
+
+	// Read from tier backend
+	reader, err := tierBackend.Read(ctx, remoteKey)
+	if err != nil {
+		return fmt.Errorf("read from tier backend: %w", err)
+	}
+	defer reader.Close()
+
+	// Write back to file servers using Coordinator
+	writeResult, err := deps.Coordinator.WriteObject(ctx, &storage.WriteRequest{
+		Bucket:   payload.Bucket,
+		ObjectID: obj.ID.String(),
+		Body:     reader,
+		Size:     obj.Size,
+	})
+	if err != nil {
+		return fmt.Errorf("write to file servers: %w", err)
+	}
+
+	// Update object metadata atomically - clear transitioned ref and update chunk refs
+	now := time.Now().UnixNano()
+	err = deps.DB.WithTx(ctx, func(tx db.TxStore) error {
+		// Get fresh copy in transaction
+		txObj, err := tx.GetObject(ctx, payload.Bucket, payload.Key)
+		if err != nil {
+			return err
+		}
+
+		// Verify object hasn't changed (still same version)
+		if txObj.ID != obj.ID {
+			return fmt.Errorf("object changed during promotion")
+		}
+
+		// Update object with new chunk refs and clear transitioned ref
+		txObj.ChunkRefs = writeResult.ChunkRefs
+		txObj.TransitionedRef = ""
+		txObj.TransitionedAt = 0
+		txObj.LastAccessedAt = now
+
+		return tx.PutObject(ctx, txObj)
+	})
+	if err != nil {
+		return fmt.Errorf("update object metadata: %w", err)
+	}
+
+	// Clean up tier storage (best effort)
+	if err := tierBackend.Delete(ctx, remoteKey); err != nil {
+		logger.Warn().
+			Err(err).
+			Str("remote_key", remoteKey).
+			Msg("Failed to delete tier copy after promotion")
+	}
+
+	// Record metrics
+	PromotionsTotal.WithLabelValues("success").Inc()
+	PromotionBytesTotal.Add(float64(obj.Size))
+
+	logger.Info().
+		Str("bucket", payload.Bucket).
+		Str("key", payload.Key).
+		Uint64("size", obj.Size).
+		Int("chunks", len(writeResult.ChunkRefs)).
+		Msg("Lifecycle: promoted object back to hot storage")
+
+	return nil
 }

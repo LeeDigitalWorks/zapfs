@@ -278,8 +278,11 @@ func (fs *FileServer) ReceiveChunk(stream file_pb.FileService_ReceiveChunkServer
 }
 
 // GetChunk streams raw chunk data by ID (used for migration).
+// Supports range reads via offset and length parameters.
 func (fs *FileServer) GetChunk(req *file_pb.GetChunkRequest, stream file_pb.FileService_GetChunkServer) error {
 	chunkID := types.ChunkID(req.GetChunkId())
+	offset := req.GetOffset()
+	length := req.GetLength()
 
 	// Get chunk info
 	chunk, err := fs.store.GetChunkInfo(chunkID)
@@ -287,12 +290,36 @@ func (fs *FileServer) GetChunk(req *file_pb.GetChunkRequest, stream file_pb.File
 		return fmt.Errorf("chunk not found: %w", err)
 	}
 
+	// Validate range parameters
+	if offset < 0 {
+		return fmt.Errorf("invalid offset: %d", offset)
+	}
+	if offset >= int64(chunk.Size) {
+		return fmt.Errorf("offset %d exceeds chunk size %d", offset, chunk.Size)
+	}
+
+	// Calculate actual size to return
+	actualSize := chunk.Size
+	if offset > 0 || length > 0 {
+		if length == 0 {
+			// Read from offset to end
+			actualSize = chunk.Size - uint64(offset)
+		} else {
+			// Read specified length
+			maxAvailable := int64(chunk.Size) - offset
+			if length > maxAvailable {
+				length = maxAvailable
+			}
+			actualSize = uint64(length)
+		}
+	}
+
 	// Send metadata first
 	if err := stream.Send(&file_pb.GetChunkResponse{
 		Payload: &file_pb.GetChunkResponse_Meta{
 			Meta: &file_pb.GetChunkMeta{
 				ChunkId:   string(chunkID),
-				Size:      chunk.Size,
+				Size:      actualSize,
 				Checksum:  chunk.Checksum,
 				BackendId: chunk.BackendID,
 			},
@@ -301,8 +328,13 @@ func (fs *FileServer) GetChunk(req *file_pb.GetChunkRequest, stream file_pb.File
 		return fmt.Errorf("failed to send metadata: %w", err)
 	}
 
-	// Stream chunk data
-	reader, err := fs.store.GetChunk(stream.Context(), chunkID)
+	// Stream chunk data (use range read if offset/length specified)
+	var reader io.ReadCloser
+	if offset > 0 || length > 0 {
+		reader, err = fs.store.GetChunkRange(stream.Context(), chunkID, offset, int64(actualSize))
+	} else {
+		reader, err = fs.store.GetChunk(stream.Context(), chunkID)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to read chunk: %w", err)
 	}

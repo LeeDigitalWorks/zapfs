@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS objects (
     size BIGINT UNSIGNED NOT NULL,
     version BIGINT UNSIGNED DEFAULT 1,
     etag VARCHAR(64) NOT NULL,
+    content_type VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream' COMMENT 'MIME type of the object',
     created_at BIGINT NOT NULL,
     deleted_at BIGINT DEFAULT 0,
     ttl INT UNSIGNED DEFAULT 0,
@@ -25,6 +26,15 @@ CREATE TABLE IF NOT EXISTS objects (
     sse_kms_key_id VARCHAR(255) DEFAULT '' COMMENT 'KMS key ID for SSE-KMS encryption',
     sse_kms_context TEXT COMMENT 'KMS encryption context for SSE-KMS',
 
+    -- Restore tracking for archive tiers (GLACIER, DEEP_ARCHIVE)
+    restore_status VARCHAR(20) NOT NULL DEFAULT '' COMMENT 'Restore status: empty, pending, in_progress, completed',
+    restore_expiry_date BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix nano when restored copy expires',
+    restore_tier VARCHAR(20) NOT NULL DEFAULT '' COMMENT 'Retrieval tier: Expedited, Standard, Bulk',
+    restore_requested_at BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix nano when restore was requested',
+
+    -- Intelligent tiering access tracking
+    last_accessed_at BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix nano of last GET request, 0 if never accessed (use created_at)',
+
     -- No unique constraint on (bucket, object_key) to allow multiple versions
     -- Use is_latest to identify current version
     INDEX idx_objects_bucket_key_latest (bucket, object_key(255), is_latest),
@@ -32,6 +42,8 @@ CREATE TABLE IF NOT EXISTS objects (
     INDEX idx_objects_deleted (deleted_at),
     INDEX idx_objects_bucket (bucket),
     INDEX idx_objects_storage_class (storage_class),
+    INDEX idx_objects_restore_expiry (restore_status, restore_expiry_date),
+    INDEX idx_objects_access_pattern (storage_class, last_accessed_at),
 
     CONSTRAINT fk_objects_bucket FOREIGN KEY (bucket)
         REFERENCES buckets(name) ON DELETE CASCADE

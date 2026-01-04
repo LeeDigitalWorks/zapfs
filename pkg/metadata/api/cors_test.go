@@ -397,14 +397,14 @@ func TestOptionsPreflightHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name               string
-		bucket             string
-		setupBucket        *types.BucketInfo
-		setupCORS          *s3types.CORSConfiguration
-		origin             string
-		requestMethod      string
-		requestHeaders     string
-		expectedStatus     int
+		name                string
+		bucket              string
+		setupBucket         *types.BucketInfo
+		setupCORS           *s3types.CORSConfiguration
+		origin              string
+		requestMethod       string
+		requestHeaders      string
+		expectedStatus      int
 		expectedAllowOrigin string
 	}{
 		{
@@ -422,8 +422,8 @@ func TestOptionsPreflightHandler(t *testing.T) {
 			expectedStatus: http.StatusForbidden,
 		},
 		{
-			name:           "no CORS config",
-			bucket:         "test-bucket",
+			name:   "no CORS config",
+			bucket: "test-bucket",
 			setupBucket: &types.BucketInfo{
 				ID:        uuid.New(),
 				Name:      "test-bucket",

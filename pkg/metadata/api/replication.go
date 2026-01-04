@@ -6,12 +6,14 @@ package api
 
 import (
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/license"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
@@ -28,23 +30,28 @@ func (s *MetadataServer) GetBucketReplicationHandler(d *data.Data, w http.Respon
 
 	bucket := d.S3Info.Bucket
 
-	// Get bucket info from local cache
-	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-	if !exists {
+	// Verify bucket exists
+	if _, exists := s.bucketStore.GetBucket(bucket); !exists {
 		writeXMLErrorResponse(w, d, s3err.ErrNoSuchBucket)
 		return
 	}
 
-	// Check if replication is configured
-	if bucketInfo.ReplicationConfig == nil {
-		writeXMLErrorResponse(w, d, s3err.ErrReplicationConfigurationNotFoundError)
+	// Get replication configuration from database
+	config, err := s.db.GetReplicationConfiguration(d.Req.Context(), bucket)
+	if err != nil {
+		if errors.Is(err, db.ErrReplicationNotFound) {
+			writeXMLErrorResponse(w, d, s3err.ErrReplicationConfigurationNotFoundError)
+			return
+		}
+		logger.Error().Err(err).Str("bucket", bucket).Msg("failed to get replication config")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return
 	}
 
 	// Return replication configuration
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(bucketInfo.ReplicationConfig)
+	xml.NewEncoder(w).Encode(config)
 }
 
 // PutBucketReplicationHandler sets the replication configuration for a bucket.
@@ -94,14 +101,16 @@ func (s *MetadataServer) PutBucketReplicationHandler(d *data.Data, w http.Respon
 		return
 	}
 
-	// Update bucket with replication config
+	// Persist to database
+	if err := s.db.SetReplicationConfiguration(d.Req.Context(), bucket, &config); err != nil {
+		logger.Error().Err(err).Str("bucket", bucket).Msg("failed to save replication config")
+		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+		return
+	}
+
+	// Update bucket cache with replication config
 	bucketInfo.ReplicationConfig = &config
-
-	// Store in local cache (will be persisted to DB)
 	s.bucketStore.SetBucket(bucket, bucketInfo)
-
-	// TODO: Persist to database
-	// Replication will be triggered by CRRHook on PutObject/DeleteObject (requires license)
 
 	logger.Info().
 		Str("bucket", bucket).
@@ -130,11 +139,18 @@ func (s *MetadataServer) DeleteBucketReplicationHandler(d *data.Data, w http.Res
 		return
 	}
 
-	// Remove replication config
+	// Delete from database (ignore not found - idempotent delete)
+	if err := s.db.DeleteReplicationConfiguration(d.Req.Context(), bucket); err != nil {
+		if !errors.Is(err, db.ErrReplicationNotFound) {
+			logger.Error().Err(err).Str("bucket", bucket).Msg("failed to delete replication config")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+			return
+		}
+	}
+
+	// Update bucket cache
 	bucketInfo.ReplicationConfig = nil
 	s.bucketStore.SetBucket(bucket, bucketInfo)
-
-	// TODO: Persist to database
 
 	logger.Info().Str("bucket", bucket).Msg("bucket replication configuration deleted")
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	dbsql "github.com/LeeDigitalWorks/zapfs/pkg/metadata/db/sql"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (also works with CockroachDB)
 )
@@ -44,81 +45,54 @@ func DefaultConfig(dsn string, driver db.Driver) Config {
 	}
 }
 
-// storageClass returns the storage class, defaulting to STANDARD if empty
-func storageClass(sc string) string {
-	if sc == "" {
-		return "STANDARD"
-	}
-	return sc
-}
-
 // Postgres implements db.DB using PostgreSQL/CockroachDB as the backing store
 type Postgres struct {
-	db     *sql.DB
-	config Config
+	*dbsql.Store // Embedded for shared object operations
+	config       Config
 }
 
 // NewPostgres creates a new PostgreSQL-backed database
 func NewPostgres(cfg Config) (db.DB, error) {
-	sqlDB, err := sql.Open("pgx", cfg.DSN)
+	// Convert to shared sql.Config
+	sqlCfg := dbsql.Config{
+		DSN:             cfg.DSN,
+		Driver:          cfg.Driver,
+		MaxOpenConns:    cfg.MaxOpenConns,
+		MaxIdleConns:    cfg.MaxIdleConns,
+		ConnMaxLifetime: cfg.ConnMaxLifetime,
+		ConnMaxIdleTime: cfg.ConnMaxIdleTime,
+	}
+
+	// Use shared Store.Open with PostgreSQL dialect
+	store, err := dbsql.Open("pgx", dbsql.PostgresDialect{}, sqlCfg)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-
-	// Configure connection pool
-	if cfg.MaxOpenConns > 0 {
-		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	} else {
-		sqlDB.SetMaxOpenConns(db.DefaultMaxOpenConns)
-	}
-	if cfg.MaxIdleConns > 0 {
-		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
-	} else {
-		sqlDB.SetMaxIdleConns(db.DefaultMaxIdleConns)
-	}
-	if cfg.ConnMaxLifetime > 0 {
-		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	} else {
-		sqlDB.SetConnMaxLifetime(time.Duration(db.DefaultConnMaxLifetime) * time.Second)
-	}
-	if cfg.ConnMaxIdleTime > 0 {
-		sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
-	} else {
-		sqlDB.SetConnMaxIdleTime(time.Duration(db.DefaultConnMaxIdleTime) * time.Second)
-	}
-
-	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := sqlDB.PingContext(ctx); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+		return nil, err
 	}
 
 	return &Postgres{
-		db:     sqlDB,
+		Store:  store,
 		config: cfg,
 	}, nil
 }
 
 // Close closes the database connection
 func (p *Postgres) Close() error {
-	return p.db.Close()
+	return p.Store.Close()
 }
 
 // SqlDB returns the underlying *sql.DB for use with taskqueue.DBQueue
 func (p *Postgres) SqlDB() *sql.DB {
-	return p.db
+	return p.Store.DB()
 }
 
 // WithTx executes fn within a database transaction.
 func (p *Postgres) WithTx(ctx context.Context, fn func(tx db.TxStore) error) error {
-	sqlTx, err := p.db.BeginTx(ctx, nil)
+	sqlTx, err := p.Store.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
-	txStore := &postgresTx{tx: sqlTx}
+	txStore := dbsql.NewTxStore(sqlTx, dbsql.PostgresDialect{})
 
 	if err := fn(txStore); err != nil {
 		if rbErr := sqlTx.Rollback(); rbErr != nil {

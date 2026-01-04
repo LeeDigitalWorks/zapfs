@@ -22,6 +22,9 @@ func init() {
 	})
 }
 
+// Compile-time interface verification
+var _ types.BackendStorage = (*MemoryStorage)(nil)
+
 // MemoryStorage is an in-memory backend for testing
 type MemoryStorage struct {
 	mu   sync.RWMutex
@@ -29,7 +32,7 @@ type MemoryStorage struct {
 }
 
 // NewMemoryStorage creates a new in-memory storage
-func NewMemoryStorage() *MemoryStorage {
+func NewMemoryStorage() types.BackendStorage {
 	return &MemoryStorage{
 		data: make(map[string][]byte),
 	}

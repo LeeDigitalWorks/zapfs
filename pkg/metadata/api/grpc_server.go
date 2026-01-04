@@ -12,64 +12,49 @@ import (
 )
 
 // gRPC service method implementations
-// These are called by the manager server for cluster coordination
+// These are defined in the proto for potential future cluster coordination use cases.
+// Currently, all S3 operations go through the HTTP handlers directly.
+// These stubs exist only to satisfy the gRPC interface - they are not used in production.
 
-// Ping is used for health checks
+// Ping is a placeholder for health checks. Not currently supported.
+// Health checks should use the HTTP /health endpoint instead.
 func (ms *MetadataServer) Ping(ctx context.Context, req *metadata_pb.PingRequest) (*metadata_pb.PingResponse, error) {
-	// TODO: Implement health check
-	// - Check database connectivity
-	// - Check manager client connection
-	// - Return server stats (uptime, request count, etc.)
 	return &metadata_pb.PingResponse{}, nil
 }
 
-// GetObject retrieves object metadata (internal gRPC, not S3 API)
+// GetObject is a placeholder. Not currently supported.
+// Use the S3 HTTP API (GET /{bucket}/{key}) instead.
 func (ms *MetadataServer) GetObject(ctx context.Context, req *metadata_pb.GetObjectRequest) (*metadata_pb.GetObjectResponse, error) {
-	// TODO: Implement metadata retrieval
-	// - Query database for object metadata
-	// - Return chunk locations for file server reads
 	return &metadata_pb.GetObjectResponse{}, nil
 }
 
-// DeleteObject removes object metadata (internal gRPC, not S3 API)
+// DeleteObject is a placeholder. Not currently supported.
+// Use the S3 HTTP API (DELETE /{bucket}/{key}) instead.
 func (ms *MetadataServer) DeleteObject(ctx context.Context, req *metadata_pb.DeleteObjectRequest) (*metadata_pb.DeleteObjectResponse, error) {
-	// TODO: Implement metadata deletion
-	// - Remove from database
-	// - Notify manager for cleanup scheduling
 	return &metadata_pb.DeleteObjectResponse{}, nil
 }
 
-// ListObjects lists object metadata (internal gRPC, not S3 API)
+// ListObjects is a placeholder. Not currently supported.
+// Use the S3 HTTP API (GET /{bucket}?list-type=2) instead.
 func (ms *MetadataServer) ListObjects(ctx context.Context, req *metadata_pb.ListObjectsRequest) (*metadata_pb.ListObjectsResponse, error) {
-	// TODO: Implement metadata listing
-	// - Query database with filters
-	// - Support pagination
 	return &metadata_pb.ListObjectsResponse{}, nil
 }
 
-// CreateCollection creates a new collection/bucket
+// CreateCollection is a placeholder. Not currently supported.
+// Use the S3 HTTP API (PUT /{bucket}) instead.
 func (ms *MetadataServer) CreateCollection(ctx context.Context, req *metadata_pb.CreateCollectionRequest) (*metadata_pb.CreateCollectionResponse, error) {
-	// TODO: Implement collection creation
-	// - Create in database
-	// - Sync to manager via Raft
-	// ms.collections[req.Name] = &manager_pb.Collection{...}
 	return &metadata_pb.CreateCollectionResponse{}, nil
 }
 
-// DeleteCollection deletes a collection/bucket
+// DeleteCollection is a placeholder. Not currently supported.
+// Use the S3 HTTP API (DELETE /{bucket}) instead.
 func (ms *MetadataServer) DeleteCollection(ctx context.Context, req *metadata_pb.DeleteCollectionRequest) (*metadata_pb.DeleteCollectionResponse, error) {
-	// TODO: Implement collection deletion
-	// - Remove from database (check empty first)
-	// - Sync to manager via Raft
-
-	// delete(ms.collections, req.Name)
 	return &metadata_pb.DeleteCollectionResponse{}, nil
 }
 
-// ListCollections lists all collections/buckets
+// ListCollections is a placeholder. Not currently supported.
+// Use the S3 HTTP API (GET /) instead.
 func (ms *MetadataServer) ListCollections(ctx context.Context, req *metadata_pb.ListCollectionsRequest) (*metadata_pb.ListCollectionsResponse, error) {
-	// TODO: Implement collection listing
-	// Return list from ms.collections
 	return &metadata_pb.ListCollectionsResponse{}, nil
 }
 
@@ -102,4 +87,31 @@ func (ms *MetadataServer) StreamChunksForServer(req *metadata_pb.StreamChunksFor
 
 	logger.Info().Str("server_id", serverID).Int("chunks_sent", len(chunkIDs)).Msg("finished streaming chunks for server")
 	return nil
+}
+
+// GetChunkReplicas returns the servers that have a copy of a specific chunk.
+// Used by Manager for re-replication of missing chunks.
+func (ms *MetadataServer) GetChunkReplicas(ctx context.Context, req *metadata_pb.GetChunkReplicasRequest) (*metadata_pb.GetChunkReplicasResponse, error) {
+	chunkID := req.GetChunkId()
+	if chunkID == "" {
+		return nil, fmt.Errorf("chunk_id is required")
+	}
+
+	replicas, err := ms.db.GetChunkReplicas(ctx, chunkID)
+	if err != nil {
+		logger.Error().Err(err).Str("chunk_id", chunkID).Msg("failed to get chunk replicas")
+		return nil, err
+	}
+
+	resp := &metadata_pb.GetChunkReplicasResponse{
+		Replicas: make([]*metadata_pb.ChunkReplicaInfo, len(replicas)),
+	}
+	for i, r := range replicas {
+		resp.Replicas[i] = &metadata_pb.ChunkReplicaInfo{
+			ServerId:  r.ServerID,
+			BackendId: r.BackendID,
+		}
+	}
+
+	return resp, nil
 }

@@ -336,8 +336,60 @@ func (s *ClickHouseStore) scanRows(rows driver.Rows) ([]AccessLogEvent, error) {
 }
 
 // maskDSN masks password in DSN for logging.
+// Supports formats:
+//   - clickhouse://user:password@host:port/db -> clickhouse://user:***@host:port/db
+//   - tcp://host:port?username=user&password=secret&database=db -> tcp://host:port?username=user&password=***&database=db
 func maskDSN(dsn string) string {
-	// Simple masking - replace password portion
-	// clickhouse://user:password@host:port/db -> clickhouse://user:***@host:port/db
-	return dsn // TODO: implement proper masking
+	// Pattern 1: URL-style password in userinfo (user:password@host)
+	// Match pattern: ://user:password@ and replace password with ***
+	// Note: Password may contain @ so we need to find the LAST @ before / or ?
+	if idx := strings.Index(dsn, "://"); idx != -1 {
+		afterScheme := dsn[idx+3:]
+
+		// Find the host separator (@ that is followed by host:port, not another @)
+		// The last @ before / or ? or end is the userinfo separator
+		hostStart := -1
+		for i := len(afterScheme) - 1; i >= 0; i-- {
+			if afterScheme[i] == '@' {
+				// Check if this could be start of host (followed by something like host:port)
+				rest := afterScheme[i+1:]
+				// If there's a path or query after this @, it's likely the userinfo separator
+				if strings.ContainsAny(rest, "/:?") || !strings.Contains(rest, "@") {
+					hostStart = i
+					break
+				}
+			}
+		}
+
+		if hostStart != -1 {
+			userInfo := afterScheme[:hostStart]
+			if colonIdx := strings.Index(userInfo, ":"); colonIdx != -1 {
+				// Has password in userinfo
+				user := userInfo[:colonIdx]
+				rest := afterScheme[hostStart:]
+				return dsn[:idx+3] + user + ":***" + rest
+			}
+		}
+	}
+
+	// Pattern 2: Query parameter password (?password=secret or &password=secret)
+	// Use regex-like manual replacement for password= parameter
+	lowerDSN := strings.ToLower(dsn)
+	for _, prefix := range []string{"password=", "passwd="} {
+		if idx := strings.Index(lowerDSN, prefix); idx != -1 {
+			// Find the actual case-sensitive position
+			paramStart := idx + len(prefix)
+			// Find end of parameter value (next & or end of string)
+			paramEnd := strings.Index(dsn[paramStart:], "&")
+			if paramEnd == -1 {
+				paramEnd = len(dsn)
+			} else {
+				paramEnd = paramStart + paramEnd
+			}
+			// Replace the password value
+			return dsn[:paramStart] + "***" + dsn[paramEnd:]
+		}
+	}
+
+	return dsn
 }

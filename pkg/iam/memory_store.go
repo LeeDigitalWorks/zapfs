@@ -10,6 +10,9 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
+// Compile-time interface verification
+var _ CredentialStore = (*MemoryStore)(nil)
+
 // MemoryStore is an in-memory implementation of CredentialStore
 type MemoryStore struct {
 	mu         sync.RWMutex
@@ -22,7 +25,7 @@ type MemoryStore struct {
 }
 
 // NewMemoryStore creates a new in-memory credential store
-func NewMemoryStore() *MemoryStore {
+func NewMemoryStore() CredentialStore {
 	return &MemoryStore{
 		users:          make(map[string]*Identity),
 		accessKeys:     make(map[string]string),

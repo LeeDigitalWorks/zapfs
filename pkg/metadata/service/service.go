@@ -187,6 +187,7 @@ func NewService(cfg Config) (*Service, error) {
 				BackendManager: cfg.BackendManager,
 				Profiles:       cfg.Profiles,
 				Pools:          cfg.Pools,
+				Coordinator:    storageCoord, // For promotion: writes data back to file servers
 			})
 		}
 

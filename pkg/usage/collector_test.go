@@ -4,33 +4,36 @@
 // Use of this source code is governed by the ZapFS Enterprise License
 // that can be found in the LICENSE.enterprise file.
 
-package usage
+package usage_test
 
 import (
 	"context"
 	"sync"
 	"testing"
 	"time"
+
+	usagemocks "github.com/LeeDigitalWorks/zapfs/mocks/usage"
+	"github.com/LeeDigitalWorks/zapfs/pkg/usage"
 )
 
 func TestEnterpriseCollector_New(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	if collector == nil {
 		t.Fatal("NewCollector() returned nil")
 	}
 }
 
 func TestEnterpriseCollector_StartStop(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
 	cfg.FlushInterval = 100 * time.Millisecond
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -46,13 +49,13 @@ func TestEnterpriseCollector_StartStop(t *testing.T) {
 }
 
 func TestEnterpriseCollector_RecordRequest(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
-	cfg.FlushSize = 10 // Small buffer for testing
+	cfg.FlushSize = 10                // Small buffer for testing
 	cfg.FlushInterval = 1 * time.Hour // Don't trigger time-based flush
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	ctx := context.Background()
 	collector.Start(ctx)
 	defer collector.Stop()
@@ -71,30 +74,30 @@ func TestEnterpriseCollector_RecordRequest(t *testing.T) {
 }
 
 func TestEnterpriseCollector_RecordBandwidth(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
 	cfg.FlushSize = 10
 	cfg.FlushInterval = 1 * time.Hour
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	ctx := context.Background()
 	collector.Start(ctx)
 
-	collector.RecordBandwidth("owner1", "bucket1", 1024, DirectionIngress)
-	collector.RecordBandwidth("owner1", "bucket1", 2048, DirectionEgress)
+	collector.RecordBandwidth("owner1", "bucket1", 1024, usage.DirectionIngress)
+	collector.RecordBandwidth("owner1", "bucket1", 2048, usage.DirectionEgress)
 
 	collector.Stop()
 }
 
 func TestEnterpriseCollector_RecordStorageDelta(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
 	cfg.FlushSize = 10
 	cfg.FlushInterval = 1 * time.Hour
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	ctx := context.Background()
 	collector.Start(ctx)
 
@@ -108,13 +111,13 @@ func TestEnterpriseCollector_RecordStorageDelta(t *testing.T) {
 }
 
 func TestEnterpriseCollector_Concurrent(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
 	cfg.FlushSize = 100
 	cfg.FlushInterval = 50 * time.Millisecond
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	ctx := context.Background()
 	collector.Start(ctx)
 
@@ -126,7 +129,7 @@ func TestEnterpriseCollector_Concurrent(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
 				collector.RecordRequest("owner1", "bucket1", "GetObject")
-				collector.RecordBandwidth("owner1", "bucket1", 100, DirectionEgress)
+				collector.RecordBandwidth("owner1", "bucket1", 100, usage.DirectionEgress)
 			}
 		}(i)
 	}
@@ -140,13 +143,13 @@ func TestEnterpriseCollector_Concurrent(t *testing.T) {
 }
 
 func TestEnterpriseCollector_FlushOnSize(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = true
 	cfg.FlushSize = 5 // Very small for testing
 	cfg.FlushInterval = 1 * time.Hour
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	ctx := context.Background()
 	collector.Start(ctx)
 	defer collector.Stop()
@@ -161,23 +164,18 @@ func TestEnterpriseCollector_FlushOnSize(t *testing.T) {
 }
 
 func TestEnterpriseCollector_DisabledConfig(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := usage.DefaultConfig()
 	cfg.Enabled = false // Disabled
-	store := NewMockStore()
+	store := usagemocks.NewMockStore(t)
 
-	collector := NewCollector(cfg, store)
+	collector := usage.NewCollector(cfg, store)
 	ctx := context.Background()
 	collector.Start(ctx)
 
 	// These should be no-ops when disabled
 	collector.RecordRequest("owner1", "bucket1", "GetObject")
-	collector.RecordBandwidth("owner1", "bucket1", 1024, DirectionEgress)
+	collector.RecordBandwidth("owner1", "bucket1", 1024, usage.DirectionEgress)
 	collector.RecordStorageDelta("owner1", "bucket1", 1024, 1, "STANDARD")
 
 	collector.Stop()
-
-	// Store should have no events
-	if len(store.events) != 0 {
-		t.Errorf("events = %d, want 0 (collector disabled)", len(store.events))
-	}
 }

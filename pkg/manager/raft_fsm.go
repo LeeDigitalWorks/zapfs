@@ -98,6 +98,21 @@ func (ms *ManagerServer) Apply(l *raft.Log) interface{} {
 		return ms.applyIAMCreatePolicy(cmd.Data)
 	case CommandIAMDeletePolicy:
 		return ms.applyIAMDeletePolicy(cmd.Data)
+	// Federation commands
+	case CommandRegisterFederation:
+		return ms.applyRegisterFederation(cmd.Data)
+	case CommandUnregisterFederation:
+		return ms.applyUnregisterFederation(cmd.Data)
+	case CommandSetFederationMode:
+		return ms.applySetFederationMode(cmd.Data)
+	case CommandPauseFederation:
+		return ms.applyPauseFederation(cmd.Data)
+	case CommandResumeFederation:
+		return ms.applyResumeFederation(cmd.Data)
+	case CommandSetFederationDualWrite:
+		return ms.applySetFederationDualWrite(cmd.Data)
+	case CommandUpdateFederationCredentials:
+		return ms.applyUpdateFederationCredentials(cmd.Data)
 	default:
 		return fmt.Errorf("unknown command type: %s", cmd.Type)
 	}
@@ -133,6 +148,7 @@ func (ms *ManagerServer) Restore(rc io.ReadCloser) error {
 		Int("collections", len(ms.state.Collections)).
 		Int("iam_users", len(ms.state.IAMUsers)).
 		Int("iam_policies", len(ms.state.IAMPolicies)).
+		Int("federation_configs", len(ms.state.FederationConfigs)).
 		Uint64("topology_version", ms.state.TopologyVersion).
 		Uint64("collections_version", ms.state.CollectionsVersion).
 		Uint64("iam_version", ms.state.IAMVersion).
@@ -682,6 +698,224 @@ func (ms *ManagerServer) applyIAMDeletePolicy(data json.RawMessage) interface{} 
 	return nil
 }
 
+// ===== FEDERATION APPLY HANDLERS =====
+
+func (ms *ManagerServer) applyRegisterFederation(data json.RawMessage) interface{} {
+	var req FederationRegistration
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	// Create or update collection with federation mode
+	col, exists := ms.state.Collections[req.LocalBucket]
+	if !exists {
+		// Create new collection for the federated bucket
+		col = &manager_pb.Collection{
+			Name:       req.LocalBucket,
+			BucketMode: req.Mode,
+			CreatedAt:  timestamppb.New(time.Unix(0, req.RegisteredAt)),
+		}
+		ms.state.Collections[req.LocalBucket] = col
+		ms.state.AddCollectionToIndexes(col)
+	} else {
+		// Update existing collection's mode
+		col.BucketMode = req.Mode
+	}
+
+	// Store federation config
+	ms.state.FederationConfigs[req.LocalBucket] = &FederationInfo{
+		External:          req.External,
+		ObjectsDiscovered: req.ObjectsDiscovered,
+		ObjectsSynced:     0,
+		BytesSynced:       0,
+		MigrationPaused:   false,
+		DualWriteEnabled:  false,
+		CreatedAt:         req.RegisteredAt,
+		UpdatedAt:         req.RegisteredAt,
+	}
+
+	ms.state.CollectionsVersion++
+
+	logger.Debug().
+		Str("bucket", req.LocalBucket).
+		Str("mode", req.Mode.String()).
+		Int64("objects_discovered", req.ObjectsDiscovered).
+		Uint64("collections_version", ms.state.CollectionsVersion).
+		Msg("Federation registered via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyUnregisterFederation(data json.RawMessage) interface{} {
+	var req FederationUnregistration
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	// Update collection mode back to local
+	col, exists := ms.state.Collections[req.Bucket]
+	if exists {
+		col.BucketMode = manager_pb.FederationBucketMode_FEDERATION_BUCKET_MODE_LOCAL
+	}
+
+	// Remove federation config
+	delete(ms.state.FederationConfigs, req.Bucket)
+
+	ms.state.CollectionsVersion++
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Bool("delete_external", req.DeleteExternal).
+		Bool("delete_local_data", req.DeleteLocalData).
+		Uint64("collections_version", ms.state.CollectionsVersion).
+		Msg("Federation unregistered via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applySetFederationMode(data json.RawMessage) interface{} {
+	var req FederationModeChange
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	col, exists := ms.state.Collections[req.Bucket]
+	if !exists {
+		return fmt.Errorf("bucket %s not found", req.Bucket)
+	}
+
+	oldMode := col.BucketMode
+	col.BucketMode = req.NewMode
+
+	// Update federation config if exists
+	if fedInfo, exists := ms.state.FederationConfigs[req.Bucket]; exists {
+		fedInfo.UpdatedAt = req.ChangedAt
+	}
+
+	// If transitioning to LOCAL mode, remove federation config
+	if req.NewMode == manager_pb.FederationBucketMode_FEDERATION_BUCKET_MODE_LOCAL {
+		delete(ms.state.FederationConfigs, req.Bucket)
+	}
+
+	ms.state.CollectionsVersion++
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Str("old_mode", oldMode.String()).
+		Str("new_mode", req.NewMode.String()).
+		Uint64("collections_version", ms.state.CollectionsVersion).
+		Msg("Federation mode changed via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyPauseFederation(data json.RawMessage) interface{} {
+	var req FederationPauseResume
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	fedInfo, exists := ms.state.FederationConfigs[req.Bucket]
+	if !exists {
+		return fmt.Errorf("bucket %s is not federated", req.Bucket)
+	}
+
+	fedInfo.MigrationPaused = true
+	fedInfo.UpdatedAt = req.ChangedAt
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Msg("Federation migration paused via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyResumeFederation(data json.RawMessage) interface{} {
+	var req FederationPauseResume
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	fedInfo, exists := ms.state.FederationConfigs[req.Bucket]
+	if !exists {
+		return fmt.Errorf("bucket %s is not federated", req.Bucket)
+	}
+
+	fedInfo.MigrationPaused = false
+	fedInfo.UpdatedAt = req.ChangedAt
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Msg("Federation migration resumed via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applySetFederationDualWrite(data json.RawMessage) interface{} {
+	var req FederationDualWrite
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	fedInfo, exists := ms.state.FederationConfigs[req.Bucket]
+	if !exists {
+		return fmt.Errorf("bucket %s is not federated", req.Bucket)
+	}
+
+	fedInfo.DualWriteEnabled = req.Enabled
+	fedInfo.UpdatedAt = req.ChangedAt
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Bool("dual_write", req.Enabled).
+		Msg("Federation dual-write changed via Raft")
+
+	return nil
+}
+
+func (ms *ManagerServer) applyUpdateFederationCredentials(data json.RawMessage) interface{} {
+	var req FederationCredentialsUpdate
+	if err := json.Unmarshal(data, &req); err != nil {
+		return err
+	}
+
+	ms.state.Lock()
+	defer ms.state.Unlock()
+
+	fedInfo, exists := ms.state.FederationConfigs[req.Bucket]
+	if !exists {
+		return fmt.Errorf("bucket %s is not federated", req.Bucket)
+	}
+
+	fedInfo.External.AccessKeyId = req.AccessKeyID
+	fedInfo.External.SecretAccessKey = req.SecretAccessKey
+	fedInfo.UpdatedAt = req.UpdatedAt
+
+	logger.Debug().
+		Str("bucket", req.Bucket).
+		Msg("Federation credentials updated via Raft")
+
+	return nil
+}
+
 // ===== HELPER: APPLY COMMAND THROUGH RAFT =====
 
 func (ms *ManagerServer) applyCommand(cmdType CommandType, data interface{}) error {
@@ -787,6 +1021,8 @@ type fsmSnapshot struct {
 	IAMUsers    map[string]*iam.Identity `json:"iam_users,omitempty"`
 	IAMPolicies map[string]*iam.Policy   `json:"iam_policies,omitempty"`
 	IAMVersion  uint64                   `json:"iam_version,omitempty"`
+	// Federation state
+	FederationConfigs map[string]*FederationInfo `json:"federation_configs,omitempty"`
 }
 
 func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {

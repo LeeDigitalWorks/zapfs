@@ -8,6 +8,12 @@ import (
 	"sync"
 )
 
+// Compile-time interface verification
+var (
+	_ PolicyStore = (*MemoryPolicyStore)(nil)
+	_ GroupStore  = (*MemoryPolicyStore)(nil)
+)
+
 // MemoryPolicyStore is an in-memory implementation of PolicyStore and GroupStore.
 // Useful for development, testing, or simple deployments.
 //
@@ -33,7 +39,9 @@ type MemoryPolicyStore struct {
 	userGroups map[string][]string
 }
 
-// NewMemoryPolicyStore creates a new in-memory policy store
+// NewMemoryPolicyStore creates a new in-memory policy store.
+// Returns concrete type to allow access to management methods (AttachUserPolicy, AddUserToGroup, etc.)
+// which are needed for test setup and simple deployments.
 func NewMemoryPolicyStore() *MemoryPolicyStore {
 	return &MemoryPolicyStore{
 		userPolicies:  make(map[string][]*Policy),
@@ -48,7 +56,7 @@ func NewMemoryPolicyStore() *MemoryPolicyStore {
 func (s *MemoryPolicyStore) GetUserPolicies(ctx context.Context, username string) ([]*Policy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	policies := s.userPolicies[username]
 	// Return a copy to prevent external modification
 	result := make([]*Policy, len(policies))
@@ -59,7 +67,7 @@ func (s *MemoryPolicyStore) GetUserPolicies(ctx context.Context, username string
 func (s *MemoryPolicyStore) GetGroupPolicies(ctx context.Context, groupName string) ([]*Policy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	policies := s.groupPolicies[groupName]
 	result := make([]*Policy, len(policies))
 	copy(result, policies)
@@ -69,7 +77,7 @@ func (s *MemoryPolicyStore) GetGroupPolicies(ctx context.Context, groupName stri
 func (s *MemoryPolicyStore) GetRolePolicies(ctx context.Context, roleName string) ([]*Policy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	policies := s.rolePolicies[roleName]
 	result := make([]*Policy, len(policies))
 	copy(result, policies)
@@ -81,7 +89,7 @@ func (s *MemoryPolicyStore) GetRolePolicies(ctx context.Context, roleName string
 func (s *MemoryPolicyStore) GetUserGroups(ctx context.Context, username string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	groups := s.userGroups[username]
 	result := make([]string, len(groups))
 	copy(result, groups)
@@ -101,7 +109,7 @@ func (s *MemoryPolicyStore) AttachUserPolicy(username string, policy *Policy) {
 func (s *MemoryPolicyStore) DetachUserPolicy(username, policyID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	policies := s.userPolicies[username]
 	for i, p := range policies {
 		if p.ID == policyID {
@@ -136,7 +144,7 @@ func (s *MemoryPolicyStore) AttachGroupPolicy(groupName string, policy *Policy) 
 func (s *MemoryPolicyStore) DetachGroupPolicy(groupName, policyID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	policies := s.groupPolicies[groupName]
 	for i, p := range policies {
 		if p.ID == policyID {
@@ -164,7 +172,7 @@ func (s *MemoryPolicyStore) AttachRolePolicy(roleName string, policy *Policy) {
 func (s *MemoryPolicyStore) AddUserToGroup(username, groupName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Check if already in group
 	for _, g := range s.userGroups[username] {
 		if g == groupName {
@@ -178,7 +186,7 @@ func (s *MemoryPolicyStore) AddUserToGroup(username, groupName string) {
 func (s *MemoryPolicyStore) RemoveUserFromGroup(username, groupName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	groups := s.userGroups[username]
 	for i, g := range groups {
 		if g == groupName {
@@ -209,7 +217,7 @@ func (s *MemoryPolicyStore) DeleteGroup(groupName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.groupPolicies, groupName)
-	
+
 	// Remove group from all users
 	for username, groups := range s.userGroups {
 		for i, g := range groups {
@@ -225,7 +233,7 @@ func (s *MemoryPolicyStore) DeleteGroup(groupName string) {
 func (s *MemoryPolicyStore) ListGroups() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	groups := make([]string, 0, len(s.groupPolicies))
 	for g := range s.groupPolicies {
 		groups = append(groups, g)
@@ -237,7 +245,7 @@ func (s *MemoryPolicyStore) ListGroups() []string {
 func (s *MemoryPolicyStore) ListGroupMembers(groupName string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	var members []string
 	for username, groups := range s.userGroups {
 		for _, g := range groups {

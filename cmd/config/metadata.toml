@@ -21,6 +21,12 @@ manager_addr = "localhost:8050"
 # S3 API
 s3_domains = ["localhost"]
 
+# Static Website Hosting
+# Domains listed here serve bucket content as static websites.
+# Requests to these domains only support GET/HEAD and return HTML errors.
+# Example: website_domains = ["s3-website.example.com"]
+website_domains = []
+
 # Regional
 region_id = "us-west"
 
@@ -93,3 +99,42 @@ lifecycle_max_tasks_per_scan = 10000  # Max tasks to enqueue per scan run
 # redis_password = ""
 # redis_db = 0
 # redis_channel = "s3:events"
+
+# =============================================================================
+# Federation Configuration (Community Feature)
+# =============================================================================
+# Enables S3 federation for connecting to external S3 buckets:
+#   - Passthrough mode: Proxy requests to external S3, store metadata locally
+#   - Migrating mode: Ingest data from external S3 into ZapFS (lazy + active)
+#
+# Use cases:
+#   - Migration from AWS S3 or other S3-compatible storage
+#   - Hybrid cloud with data spanning multiple S3 endpoints
+#   - Gradual migration with zero downtime
+#
+[federation]
+# Enable federation features (default: false)
+enabled = false
+
+# Instance mode determines what this metadata instance does:
+#   - "api": Serve HTTP API only, enqueue migration tasks but don't process them
+#   - "worker": Process migration tasks only, no HTTP API
+#   - "both": Serve API and process tasks (suitable for smaller deployments)
+mode = "both"
+
+# Migration worker settings (only used in worker/both mode)
+sync_batch_size = 1000      # Objects per batch when discovering from external S3
+sync_concurrency = 5        # Number of concurrent migration workers
+sync_rate_limit = 100       # Max objects/sec to sync (prevents external S3 throttling)
+
+# External S3 client settings
+external_timeout = "5m"           # Timeout for external S3 requests
+external_max_idle_conns = 100     # Max idle connections to external S3
+
+# Service features for federated buckets
+# All disabled by default - defer to external S3 as source of truth
+[federation.features]
+lifecycle_enabled = false       # Process lifecycle rules for federated buckets locally
+notifications_enabled = false   # Emit event notifications for federated buckets locally
+access_logging_enabled = false  # Write access logs for federated buckets locally
+metrics_enabled = false         # Collect metrics for federated buckets locally

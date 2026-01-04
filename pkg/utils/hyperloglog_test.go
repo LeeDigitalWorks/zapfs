@@ -109,10 +109,10 @@ func TestHyperLogLog_SizeBytes(t *testing.T) {
 		precision uint8
 		expected  int
 	}{
-		{10, 1024},   // 2^10
-		{12, 4096},   // 2^12
-		{14, 16384},  // 2^14
-		{16, 65536},  // 2^16
+		{10, 1024},  // 2^10
+		{12, 4096},  // 2^12
+		{14, 16384}, // 2^14
+		{16, 65536}, // 2^16
 	}
 
 	for _, tt := range tests {

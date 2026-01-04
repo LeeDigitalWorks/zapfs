@@ -223,10 +223,10 @@ func TestRegionConfig_GetCurrentPrimary(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		healthyFn     func(ctx context.Context, region string) bool
-		expected      string
-		expectError   bool
+		name        string
+		healthyFn   func(ctx context.Context, region string) bool
+		expected    string
+		expectError bool
 	}{
 		{
 			name: "first region healthy",

@@ -13,6 +13,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// Compile-time interface verification
+var (
+	_ DB      = (*MetricsDB)(nil)
+	_ TxStore = (*metricsTxStore)(nil)
+)
+
 // Metrics for database operations
 var (
 	dbQueryDuration = prometheus.NewHistogramVec(
@@ -99,7 +105,7 @@ type MetricsDB struct {
 }
 
 // NewMetricsDB creates a new metrics-instrumented DB wrapper
-func NewMetricsDB(db DB) *MetricsDB {
+func NewMetricsDB(db DB) DB {
 	return &MetricsDB{db: db}
 }
 
@@ -196,6 +202,55 @@ func (m *MetricsDB) UpdateObjectTransition(ctx context.Context, objectID string,
 	err := m.db.UpdateObjectTransition(ctx, objectID, storageClass, transitionedAt, transitionedRef)
 	recordMetric("update_object_transition", start, err)
 	return err
+}
+
+func (m *MetricsDB) UpdateRestoreStatus(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error {
+	start := time.Now()
+	err := m.db.UpdateRestoreStatus(ctx, objectID, status, tier, requestedAt)
+	recordMetric("update_restore_status", start, err)
+	return err
+}
+
+func (m *MetricsDB) UpdateRestoreExpiry(ctx context.Context, objectID string, expiryDate int64) error {
+	start := time.Now()
+	err := m.db.UpdateRestoreExpiry(ctx, objectID, expiryDate)
+	recordMetric("update_restore_expiry", start, err)
+	return err
+}
+
+func (m *MetricsDB) CompleteRestore(ctx context.Context, objectID string, expiryDate int64) error {
+	start := time.Now()
+	err := m.db.CompleteRestore(ctx, objectID, expiryDate)
+	recordMetric("complete_restore", start, err)
+	return err
+}
+
+func (m *MetricsDB) ResetRestoreStatus(ctx context.Context, objectID string) error {
+	start := time.Now()
+	err := m.db.ResetRestoreStatus(ctx, objectID)
+	recordMetric("reset_restore_status", start, err)
+	return err
+}
+
+func (m *MetricsDB) GetExpiredRestores(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error) {
+	start := time.Now()
+	objs, err := m.db.GetExpiredRestores(ctx, now, limit)
+	recordMetric("get_expired_restores", start, err)
+	return objs, err
+}
+
+func (m *MetricsDB) UpdateLastAccessedAt(ctx context.Context, objectID string, accessedAt int64) error {
+	start := time.Now()
+	err := m.db.UpdateLastAccessedAt(ctx, objectID, accessedAt)
+	recordMetric("update_last_accessed_at", start, err)
+	return err
+}
+
+func (m *MetricsDB) GetColdIntelligentTieringObjects(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error) {
+	start := time.Now()
+	objs, err := m.db.GetColdIntelligentTieringObjects(ctx, threshold, minSize, limit)
+	recordMetric("get_cold_intelligent_tiering_objects", start, err)
+	return objs, err
 }
 
 // ============================================================================
@@ -732,6 +787,91 @@ func (m *MetricsDB) DeleteNotificationConfiguration(ctx context.Context, bucket 
 }
 
 // ============================================================================
+// Replication Configuration (Enterprise)
+// ============================================================================
+
+func (m *MetricsDB) GetReplicationConfiguration(ctx context.Context, bucket string) (*s3types.ReplicationConfiguration, error) {
+	start := time.Now()
+	config, err := m.db.GetReplicationConfiguration(ctx, bucket)
+	recordMetric("get_replication_configuration", start, err)
+	return config, err
+}
+
+func (m *MetricsDB) SetReplicationConfiguration(ctx context.Context, bucket string, config *s3types.ReplicationConfiguration) error {
+	start := time.Now()
+	err := m.db.SetReplicationConfiguration(ctx, bucket, config)
+	recordMetric("set_replication_configuration", start, err)
+	return err
+}
+
+func (m *MetricsDB) DeleteReplicationConfiguration(ctx context.Context, bucket string) error {
+	start := time.Now()
+	err := m.db.DeleteReplicationConfiguration(ctx, bucket)
+	recordMetric("delete_replication_configuration", start, err)
+	return err
+}
+
+// ============================================================================
+// FederationStore implementation
+// ============================================================================
+
+func (m *MetricsDB) GetFederationConfig(ctx context.Context, bucket string) (*s3types.FederationConfig, error) {
+	start := time.Now()
+	config, err := m.db.GetFederationConfig(ctx, bucket)
+	recordMetric("get_federation_config", start, err)
+	return config, err
+}
+
+func (m *MetricsDB) SetFederationConfig(ctx context.Context, config *s3types.FederationConfig) error {
+	start := time.Now()
+	err := m.db.SetFederationConfig(ctx, config)
+	recordMetric("set_federation_config", start, err)
+	return err
+}
+
+func (m *MetricsDB) DeleteFederationConfig(ctx context.Context, bucket string) error {
+	start := time.Now()
+	err := m.db.DeleteFederationConfig(ctx, bucket)
+	recordMetric("delete_federation_config", start, err)
+	return err
+}
+
+func (m *MetricsDB) ListFederatedBuckets(ctx context.Context) ([]*s3types.FederationConfig, error) {
+	start := time.Now()
+	configs, err := m.db.ListFederatedBuckets(ctx)
+	recordMetric("list_federated_buckets", start, err)
+	return configs, err
+}
+
+func (m *MetricsDB) UpdateMigrationProgress(ctx context.Context, bucket string, objectsSynced, bytesSynced int64, lastSyncKey string) error {
+	start := time.Now()
+	err := m.db.UpdateMigrationProgress(ctx, bucket, objectsSynced, bytesSynced, lastSyncKey)
+	recordMetric("update_migration_progress", start, err)
+	return err
+}
+
+func (m *MetricsDB) SetMigrationPaused(ctx context.Context, bucket string, paused bool) error {
+	start := time.Now()
+	err := m.db.SetMigrationPaused(ctx, bucket, paused)
+	recordMetric("set_migration_paused", start, err)
+	return err
+}
+
+func (m *MetricsDB) SetDualWriteEnabled(ctx context.Context, bucket string, enabled bool) error {
+	start := time.Now()
+	err := m.db.SetDualWriteEnabled(ctx, bucket, enabled)
+	recordMetric("set_dual_write_enabled", start, err)
+	return err
+}
+
+func (m *MetricsDB) GetFederatedBucketsNeedingSync(ctx context.Context, limit int) ([]*s3types.FederationConfig, error) {
+	start := time.Now()
+	configs, err := m.db.GetFederatedBucketsNeedingSync(ctx, limit)
+	recordMetric("get_federated_buckets_needing_sync", start, err)
+	return configs, err
+}
+
+// ============================================================================
 // metricsTxStore wraps TxStore with metrics
 // ============================================================================
 
@@ -800,6 +940,55 @@ func (m *metricsTxStore) UpdateObjectTransition(ctx context.Context, objectID st
 	err := m.tx.UpdateObjectTransition(ctx, objectID, storageClass, transitionedAt, transitionedRef)
 	recordMetric("tx_update_object_transition", start, err)
 	return err
+}
+
+func (m *metricsTxStore) UpdateRestoreStatus(ctx context.Context, objectID string, status string, tier string, requestedAt int64) error {
+	start := time.Now()
+	err := m.tx.UpdateRestoreStatus(ctx, objectID, status, tier, requestedAt)
+	recordMetric("tx_update_restore_status", start, err)
+	return err
+}
+
+func (m *metricsTxStore) UpdateRestoreExpiry(ctx context.Context, objectID string, expiryDate int64) error {
+	start := time.Now()
+	err := m.tx.UpdateRestoreExpiry(ctx, objectID, expiryDate)
+	recordMetric("tx_update_restore_expiry", start, err)
+	return err
+}
+
+func (m *metricsTxStore) CompleteRestore(ctx context.Context, objectID string, expiryDate int64) error {
+	start := time.Now()
+	err := m.tx.CompleteRestore(ctx, objectID, expiryDate)
+	recordMetric("tx_complete_restore", start, err)
+	return err
+}
+
+func (m *metricsTxStore) ResetRestoreStatus(ctx context.Context, objectID string) error {
+	start := time.Now()
+	err := m.tx.ResetRestoreStatus(ctx, objectID)
+	recordMetric("tx_reset_restore_status", start, err)
+	return err
+}
+
+func (m *metricsTxStore) GetExpiredRestores(ctx context.Context, now int64, limit int) ([]*types.ObjectRef, error) {
+	start := time.Now()
+	objs, err := m.tx.GetExpiredRestores(ctx, now, limit)
+	recordMetric("tx_get_expired_restores", start, err)
+	return objs, err
+}
+
+func (m *metricsTxStore) UpdateLastAccessedAt(ctx context.Context, objectID string, accessedAt int64) error {
+	start := time.Now()
+	err := m.tx.UpdateLastAccessedAt(ctx, objectID, accessedAt)
+	recordMetric("tx_update_last_accessed_at", start, err)
+	return err
+}
+
+func (m *metricsTxStore) GetColdIntelligentTieringObjects(ctx context.Context, threshold int64, minSize int64, limit int) ([]*types.ObjectRef, error) {
+	start := time.Now()
+	objs, err := m.tx.GetColdIntelligentTieringObjects(ctx, threshold, minSize, limit)
+	recordMetric("tx_get_cold_intelligent_tiering_objects", start, err)
+	return objs, err
 }
 
 func (m *metricsTxStore) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
@@ -1060,4 +1249,36 @@ func (m *MetricsDB) DeleteChunkRegistry(ctx context.Context, chunkID string) err
 	err := m.db.DeleteChunkRegistry(ctx, chunkID)
 	recordMetric("delete_chunk_registry", start, err)
 	return err
+}
+
+// ============================================================================
+// IntelligentTieringStore implementation
+// ============================================================================
+
+func (m *MetricsDB) GetIntelligentTieringConfiguration(ctx context.Context, bucket string, configID string) (*s3types.IntelligentTieringConfiguration, error) {
+	start := time.Now()
+	config, err := m.db.GetIntelligentTieringConfiguration(ctx, bucket, configID)
+	recordMetric("get_intelligent_tiering_configuration", start, err)
+	return config, err
+}
+
+func (m *MetricsDB) PutIntelligentTieringConfiguration(ctx context.Context, bucket string, config *s3types.IntelligentTieringConfiguration) error {
+	start := time.Now()
+	err := m.db.PutIntelligentTieringConfiguration(ctx, bucket, config)
+	recordMetric("put_intelligent_tiering_configuration", start, err)
+	return err
+}
+
+func (m *MetricsDB) DeleteIntelligentTieringConfiguration(ctx context.Context, bucket string, configID string) error {
+	start := time.Now()
+	err := m.db.DeleteIntelligentTieringConfiguration(ctx, bucket, configID)
+	recordMetric("delete_intelligent_tiering_configuration", start, err)
+	return err
+}
+
+func (m *MetricsDB) ListIntelligentTieringConfigurations(ctx context.Context, bucket string) ([]*s3types.IntelligentTieringConfiguration, error) {
+	start := time.Now()
+	configs, err := m.db.ListIntelligentTieringConfigurations(ctx, bucket)
+	recordMetric("list_intelligent_tiering_configurations", start, err)
+	return configs, err
 }

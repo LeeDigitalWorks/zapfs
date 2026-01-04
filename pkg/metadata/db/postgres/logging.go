@@ -19,7 +19,7 @@ import (
 
 // GetBucketLogging retrieves the logging configuration for a bucket.
 func (p *Postgres) GetBucketLogging(ctx context.Context, bucket string) (*db.BucketLoggingConfig, error) {
-	row := p.db.QueryRowContext(ctx, `
+	row := p.Store.DB().QueryRowContext(ctx, `
 		SELECT id, source_bucket, target_bucket, target_prefix, created_at, updated_at
 		FROM bucket_logging
 		WHERE source_bucket = $1
@@ -64,7 +64,7 @@ func (p *Postgres) SetBucketLogging(ctx context.Context, config *db.BucketLoggin
 	}
 
 	// Upsert the configuration
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		INSERT INTO bucket_logging (id, source_bucket, target_bucket, target_prefix, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (source_bucket) DO UPDATE SET
@@ -78,7 +78,7 @@ func (p *Postgres) SetBucketLogging(ctx context.Context, config *db.BucketLoggin
 
 // DeleteBucketLogging removes the logging configuration for a bucket.
 func (p *Postgres) DeleteBucketLogging(ctx context.Context, bucket string) error {
-	_, err := p.db.ExecContext(ctx, `
+	_, err := p.Store.DB().ExecContext(ctx, `
 		DELETE FROM bucket_logging WHERE source_bucket = $1
 	`, bucket)
 	return err
@@ -86,7 +86,7 @@ func (p *Postgres) DeleteBucketLogging(ctx context.Context, bucket string) error
 
 // ListLoggingConfigs returns all bucket logging configurations.
 func (p *Postgres) ListLoggingConfigs(ctx context.Context) ([]*db.BucketLoggingConfig, error) {
-	rows, err := p.db.QueryContext(ctx, `
+	rows, err := p.Store.DB().QueryContext(ctx, `
 		SELECT id, source_bucket, target_bucket, target_prefix, created_at, updated_at
 		FROM bucket_logging
 		ORDER BY source_bucket

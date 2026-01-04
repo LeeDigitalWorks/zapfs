@@ -21,7 +21,7 @@ import (
 // Clears zero_ref_since if the chunk was previously at ref_count=0.
 func (v *Vitess) IncrementChunkRefCount(ctx context.Context, chunkID string, size int64) error {
 	now := time.Now().UnixNano()
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		INSERT INTO chunk_registry (chunk_id, size, ref_count, created_at, zero_ref_since)
 		VALUES (?, ?, 1, ?, 0)
 		ON DUPLICATE KEY UPDATE
@@ -38,7 +38,7 @@ func (v *Vitess) IncrementChunkRefCount(ctx context.Context, chunkID string, siz
 // If ref_count reaches 0, sets zero_ref_since to current time for GC grace period.
 func (v *Vitess) DecrementChunkRefCount(ctx context.Context, chunkID string) error {
 	now := time.Now().UnixNano()
-	result, err := v.db.ExecContext(ctx, `
+	result, err := v.Store.DB().ExecContext(ctx, `
 		UPDATE chunk_registry
 		SET ref_count = ref_count - 1,
 		    zero_ref_since = CASE WHEN ref_count = 1 THEN ? ELSE zero_ref_since END
@@ -98,7 +98,7 @@ func (v *Vitess) DecrementChunkRefCountBatch(ctx context.Context, chunkIDs []str
 // Used by GC to re-check ref count within a transaction before deleting.
 func (v *Vitess) GetChunkRefCount(ctx context.Context, chunkID string) (int, error) {
 	var refCount int
-	err := v.db.QueryRowContext(ctx, `
+	err := v.Store.DB().QueryRowContext(ctx, `
 		SELECT ref_count FROM chunk_registry WHERE chunk_id = ?
 	`, chunkID).Scan(&refCount)
 	if err == sql.ErrNoRows {
@@ -117,7 +117,7 @@ func (v *Vitess) GetChunkRefCount(ctx context.Context, chunkID string) (int, err
 // AddChunkReplica records that a chunk exists on a specific file server.
 func (v *Vitess) AddChunkReplica(ctx context.Context, chunkID, serverID, backendID string) error {
 	now := time.Now().UnixNano()
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		INSERT IGNORE INTO chunk_replicas (chunk_id, server_id, backend_id, verified_at)
 		VALUES (?, ?, ?, ?)
 	`, chunkID, serverID, backendID, now)
@@ -129,7 +129,7 @@ func (v *Vitess) AddChunkReplica(ctx context.Context, chunkID, serverID, backend
 
 // RemoveChunkReplica removes the record of a chunk on a file server.
 func (v *Vitess) RemoveChunkReplica(ctx context.Context, chunkID, serverID string) error {
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		DELETE FROM chunk_replicas WHERE chunk_id = ? AND server_id = ?
 	`, chunkID, serverID)
 	if err != nil {
@@ -140,7 +140,7 @@ func (v *Vitess) RemoveChunkReplica(ctx context.Context, chunkID, serverID strin
 
 // GetChunkReplicas returns all replica locations for a chunk.
 func (v *Vitess) GetChunkReplicas(ctx context.Context, chunkID string) ([]db.ReplicaInfo, error) {
-	rows, err := v.db.QueryContext(ctx, `
+	rows, err := v.Store.DB().QueryContext(ctx, `
 		SELECT server_id, backend_id, verified_at
 		FROM chunk_replicas
 		WHERE chunk_id = ?
@@ -164,7 +164,7 @@ func (v *Vitess) GetChunkReplicas(ctx context.Context, chunkID string) ([]db.Rep
 // GetChunksByServer returns all chunk IDs stored on a specific server.
 // Used for server decommissioning and rebalancing.
 func (v *Vitess) GetChunksByServer(ctx context.Context, serverID string) ([]string, error) {
-	rows, err := v.db.QueryContext(ctx, `
+	rows, err := v.Store.DB().QueryContext(ctx, `
 		SELECT chunk_id FROM chunk_replicas WHERE server_id = ?
 	`, serverID)
 	if err != nil {
@@ -192,7 +192,7 @@ func (v *Vitess) GetChunksByServer(ctx context.Context, serverID string) ([]stri
 func (v *Vitess) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limit int) ([]db.ZeroRefChunk, error) {
 	cutoff := olderThan.UnixNano()
 
-	rows, err := v.db.QueryContext(ctx, `
+	rows, err := v.Store.DB().QueryContext(ctx, `
 		SELECT cr.chunk_id, cr.size, rep.server_id, rep.backend_id
 		FROM chunk_registry cr
 		LEFT JOIN chunk_replicas rep ON cr.chunk_id = rep.chunk_id
@@ -254,7 +254,7 @@ func (v *Vitess) GetZeroRefChunks(ctx context.Context, olderThan time.Time, limi
 // DeleteChunkRegistry removes a chunk from the registry.
 // The chunk_replicas entries are automatically deleted via CASCADE.
 func (v *Vitess) DeleteChunkRegistry(ctx context.Context, chunkID string) error {
-	_, err := v.db.ExecContext(ctx, `
+	_, err := v.Store.DB().ExecContext(ctx, `
 		DELETE FROM chunk_registry WHERE chunk_id = ?
 	`, chunkID)
 	if err != nil {

@@ -44,7 +44,7 @@ func TestAggregator_StartStop(t *testing.T) {
 
 func TestAggregator_RunNow(t *testing.T) {
 	cfg := DefaultConfig()
-	store := NewMockStore()
+	store := NewMemoryStore()
 
 	agg := NewAggregator(cfg, store)
 
@@ -59,7 +59,7 @@ func TestAggregator_RunNow(t *testing.T) {
 
 func TestAggregator_AggregateDay(t *testing.T) {
 	cfg := DefaultConfig()
-	store := NewMockStore()
+	store := NewMemoryStore()
 
 	// Add some events
 	now := time.Now().UTC()
@@ -147,7 +147,7 @@ func TestAggregator_Retention(t *testing.T) {
 	}
 	cfg.Validate()
 
-	store := NewMockStore()
+	store := NewMemoryStore()
 
 	// Add old and new events
 	now := time.Now().UTC()
@@ -165,8 +165,8 @@ func TestAggregator_Retention(t *testing.T) {
 		t.Fatalf("InsertEvents() error = %v", err)
 	}
 
-	if len(store.events) != 3 {
-		t.Fatalf("events count = %d, want 3", len(store.events))
+	if len(store.Events()) != 3 {
+		t.Fatalf("events count = %d, want 3", len(store.Events()))
 	}
 
 	agg := NewAggregator(cfg, store)
@@ -181,14 +181,14 @@ func TestAggregator_Retention(t *testing.T) {
 		t.Errorf("deleted = %d, want 2", deleted)
 	}
 
-	if len(store.events) != 1 {
-		t.Errorf("remaining events = %d, want 1", len(store.events))
+	if len(store.Events()) != 1 {
+		t.Errorf("remaining events = %d, want 1", len(store.Events()))
 	}
 }
 
 func TestAggregator_MultipleBuckets(t *testing.T) {
 	cfg := DefaultConfig()
-	store := NewMockStore()
+	store := NewMemoryStore()
 
 	now := time.Now().UTC()
 	yesterday := now.AddDate(0, 0, -1)
@@ -230,7 +230,7 @@ func TestAggregator_MultipleBuckets(t *testing.T) {
 
 func TestAggregator_CumulativeStorage(t *testing.T) {
 	cfg := DefaultConfig()
-	store := NewMockStore()
+	store := NewMemoryStore()
 
 	now := time.Now().UTC()
 	twoDaysAgo := now.AddDate(0, 0, -2)

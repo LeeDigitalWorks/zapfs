@@ -17,7 +17,7 @@ import (
 func TestAggregator_RunNow_Synctest(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := DefaultConfig()
-		store := NewMockStore()
+		store := NewMemoryStore()
 
 		// Synctest starts at 2000-01-01 00:00:00 UTC
 		now := time.Now().UTC()
@@ -39,11 +39,11 @@ func TestAggregator_RunNow_Synctest(t *testing.T) {
 				StorageClass: "STANDARD",
 			},
 			{
-				EventTime:  dayStart.Add(2 * time.Hour),
-				OwnerID:    "owner1",
-				Bucket:     "bucket1",
-				EventType:  EventTypeRequest,
-				Operation:  "GetObject",
+				EventTime: dayStart.Add(2 * time.Hour),
+				OwnerID:   "owner1",
+				Bucket:    "bucket1",
+				EventType: EventTypeRequest,
+				Operation: "GetObject",
 			},
 		}
 		_ = store.InsertEvents(context.Background(), events)
@@ -62,7 +62,7 @@ func TestAggregator_Retention_Synctest(t *testing.T) {
 		cfg := Config{RetentionDays: 7}
 		cfg.Validate()
 
-		store := NewMockStore()
+		store := NewMemoryStore()
 
 		// Synctest time starts at 2000-01-01 00:00:00 UTC
 		now := time.Now().UTC()
@@ -76,7 +76,7 @@ func TestAggregator_Retention_Synctest(t *testing.T) {
 		}
 		_ = store.InsertEvents(context.Background(), events)
 
-		assert.Equal(t, 3, len(store.events))
+		assert.Equal(t, 3, len(store.Events()))
 
 		agg := NewAggregator(cfg, store)
 
@@ -85,7 +85,7 @@ func TestAggregator_Retention_Synctest(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, int64(2), deleted)
-		assert.Equal(t, 1, len(store.events))
+		assert.Equal(t, 1, len(store.Events()))
 	})
 }
 
@@ -93,7 +93,7 @@ func TestAggregator_Retention_Synctest(t *testing.T) {
 func TestAggregator_AggregateDay_Synctest(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := DefaultConfig()
-		store := NewMockStore()
+		store := NewMemoryStore()
 
 		// Synctest time starts at 2000-01-01 00:00:00 UTC
 		now := time.Now().UTC()
@@ -151,7 +151,7 @@ func TestAggregator_AggregateDay_Synctest(t *testing.T) {
 func TestAggregator_CumulativeStorage_Synctest(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := DefaultConfig()
-		store := NewMockStore()
+		store := NewMemoryStore()
 
 		now := time.Now().UTC()
 		twoDaysAgo := now.AddDate(0, 0, -2)

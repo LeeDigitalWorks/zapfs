@@ -657,7 +657,217 @@ func TestRouter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rt := filter.NewRouter("s3.example.com", "static.example.com")
+			rt := filter.NewRouter([]string{"s3.example.com", "static.example.com"}, nil)
+			urlStr := fmt.Sprintf("http://%s%s", tt.host, tt.path)
+			if tt.query != "" {
+				urlStr += "?" + tt.query
+			}
+			req, err := http.NewRequest(tt.method, urlStr, nil)
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+			req.Header = tt.headers
+
+			match, ok := rt.MatchRequest(req)
+			if ok != tt.expectedResult {
+				t.Errorf("Expected result %v, got %v", tt.expectedResult, ok)
+			}
+			if ok {
+				if !cmp.Equal(tt.expectedMatch, match) {
+					t.Errorf("Expected match %+v, got %+v\nDiff: %s", tt.expectedMatch, match, cmp.Diff(tt.expectedMatch, match))
+				}
+			}
+		})
+	}
+}
+
+func TestWebsiteEndpoints(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		method  string
+		host    string
+		path    string
+		query   string
+		headers http.Header
+
+		expectedResult bool
+		expectedMatch  filter.Match
+	}{
+		// Website endpoint - virtual-hosted style
+		{
+			name:           "Website GET root (index document)",
+			method:         http.MethodGet,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "",
+				Action:           s3action.GetObject,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website GET object",
+			method:         http.MethodGet,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/index.html",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "index.html",
+				Action:           s3action.GetObject,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website GET nested path",
+			method:         http.MethodGet,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/assets/css/style.css",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "assets/css/style.css",
+				Action:           s3action.GetObject,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website HEAD object",
+			method:         http.MethodHead,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.HeadObject,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website PUT rejected (returns Unknown action)",
+			method:         http.MethodPut,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.Unknown,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website DELETE rejected (returns Unknown action)",
+			method:         http.MethodDelete,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.Unknown,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website POST rejected (returns Unknown action)",
+			method:         http.MethodPost,
+			host:           "mybucket.s3-website.example.com",
+			path:           "/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.Unknown,
+				IsWebsiteRequest: true,
+			},
+		},
+
+		// Website endpoint - path-style
+		{
+			name:           "Website path-style GET object",
+			method:         http.MethodGet,
+			host:           "s3-website.example.com",
+			path:           "/mybucket/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.GetObject,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website path-style HEAD object",
+			method:         http.MethodHead,
+			host:           "s3-website.example.com",
+			path:           "/mybucket/subdir/file.html",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "subdir/file.html",
+				Action:           s3action.HeadObject,
+				IsWebsiteRequest: true,
+			},
+		},
+		{
+			name:           "Website path-style PUT rejected (returns Unknown action)",
+			method:         http.MethodPut,
+			host:           "s3-website.example.com",
+			path:           "/mybucket/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.Unknown,
+				IsWebsiteRequest: true,
+			},
+		},
+
+		// API endpoints should NOT have IsWebsiteRequest set
+		{
+			name:           "API GET object (not website)",
+			method:         http.MethodGet,
+			host:           "mybucket.s3.example.com",
+			path:           "/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.GetObject,
+				IsWebsiteRequest: false,
+			},
+		},
+		{
+			name:           "API PUT object allowed (not website)",
+			method:         http.MethodPut,
+			host:           "mybucket.s3.example.com",
+			path:           "/file.txt",
+			expectedResult: true,
+			expectedMatch: filter.Match{
+				Bucket:           "mybucket",
+				Key:              "file.txt",
+				Action:           s3action.PutObject,
+				IsWebsiteRequest: false,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create router with both API and website domains
+			rt := filter.NewRouter(
+				[]string{"s3.example.com"},         // API domains
+				[]string{"s3-website.example.com"}, // Website domains
+			)
+
 			urlStr := fmt.Sprintf("http://%s%s", tt.host, tt.path)
 			if tt.query != "" {
 				urlStr += "?" + tt.query

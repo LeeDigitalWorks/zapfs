@@ -10,6 +10,7 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3action"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 type Data struct {
@@ -23,6 +24,22 @@ type Data struct {
 	// chunk-signature-verified data. The original request body is wrapped
 	// in a ChunkReader that verifies each chunk's signature.
 	VerifiedBody io.Reader
+
+	// IsWebsiteRequest indicates this request is for static website hosting.
+	// When true, errors should be returned as HTML instead of XML.
+	IsWebsiteRequest bool
+
+	// ResponseWriter allows filters to write HTTP responses directly.
+	// Set by the server before invoking the filter chain.
+	ResponseWriter http.ResponseWriter
+
+	// Federation fields - set by FederationFilter when bucket is federated.
+	// FederationConfig contains the external S3 connection details.
+	FederationConfig *s3types.FederationConfig
+
+	// FederationExtConfig is the client pool config derived from FederationConfig.
+	// Used by handlers for lazy migration fetches.
+	FederationExtConfig interface{}
 }
 
 func NewData(ctx context.Context, req *http.Request) *Data {

@@ -295,8 +295,8 @@ func runBackupRestore(cmd *cobra.Command, args []string) {
 	// The backup is the FSM state serialized as JSON
 	sink, err := snapshotStore.Create(
 		raft.SnapshotVersionMax,
-		1,        // Last applied index (doesn't matter for restore)
-		1,        // Last applied term
+		1,                    // Last applied index (doesn't matter for restore)
+		1,                    // Last applied term
 		raft.Configuration{}, // Empty config, will be bootstrapped
 		0,                    // Config index
 		nil,                  // Transport (not needed for file sink)

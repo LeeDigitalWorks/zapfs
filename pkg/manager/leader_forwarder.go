@@ -54,10 +54,11 @@ var (
 // LeaderForwarder manages gRPC connections to the leader for request forwarding.
 // It caches the leader connection and refreshes it when the leader changes.
 type LeaderForwarder struct {
-	mu         sync.RWMutex
-	leaderAddr string
-	conn       *grpc.ClientConn
-	client     manager_pb.ManagerServiceClient
+	mu               sync.RWMutex
+	leaderAddr       string
+	conn             *grpc.ClientConn
+	client           manager_pb.ManagerServiceClient
+	federationClient manager_pb.FederationServiceClient
 
 	dialTimeout time.Duration
 }
@@ -94,6 +95,7 @@ func (lf *LeaderForwarder) getClient(leaderAddr string) (manager_pb.ManagerServi
 		lf.conn.Close()
 		lf.conn = nil
 		lf.client = nil
+		lf.federationClient = nil
 	}
 
 	// Create new connection to leader
@@ -116,6 +118,7 @@ func (lf *LeaderForwarder) getClient(leaderAddr string) (manager_pb.ManagerServi
 
 	lf.conn = conn
 	lf.client = manager_pb.NewManagerServiceClient(conn)
+	lf.federationClient = manager_pb.NewFederationServiceClient(conn)
 	lf.leaderAddr = leaderAddr
 
 	logger.Info().
@@ -123,6 +126,21 @@ func (lf *LeaderForwarder) getClient(leaderAddr string) (manager_pb.ManagerServi
 		Msg("Connected to leader for forwarding")
 
 	return lf.client, nil
+}
+
+// getFederationClient returns a FederationServiceClient connected to the given leader address.
+func (lf *LeaderForwarder) getFederationClient(leaderAddr string) (manager_pb.FederationServiceClient, error) {
+	// First ensure we have a connection (reuse getClient logic)
+	_, err := lf.getClient(leaderAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	lf.mu.RLock()
+	client := lf.federationClient
+	lf.mu.RUnlock()
+
+	return client, nil
 }
 
 // waitForConnReady waits for the connection to become ready or the context to be done
@@ -308,4 +326,175 @@ func forwardOrError(raftNode *RaftNode) (string, error) {
 	}
 
 	return leaderAddr, nil
+}
+
+// ForwardTriggerReconciliation forwards a TriggerReconciliation request to the leader
+func (lf *LeaderForwarder) ForwardTriggerReconciliation(ctx context.Context, leaderAddr string, req *manager_pb.TriggerReconciliationRequest) (*manager_pb.TriggerReconciliationResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("TriggerReconciliation").Inc()
+
+	client, err := lf.getClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("TriggerReconciliation", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.TriggerReconciliation(ctx, req)
+
+	forwardedRequestsDuration.WithLabelValues("TriggerReconciliation").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("TriggerReconciliation", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ===== FEDERATION SERVICE FORWARDERS =====
+
+// ForwardFederationRegisterBucket forwards a RegisterBucket request to the leader
+func (lf *LeaderForwarder) ForwardFederationRegisterBucket(ctx context.Context, leaderAddr string, req *manager_pb.FederationRegisterBucketRequest) (*manager_pb.FederationRegisterBucketResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationRegisterBucket").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationRegisterBucket", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.RegisterBucket(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationRegisterBucket").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationRegisterBucket", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ForwardFederationUnregisterBucket forwards an UnregisterBucket request to the leader
+func (lf *LeaderForwarder) ForwardFederationUnregisterBucket(ctx context.Context, leaderAddr string, req *manager_pb.FederationUnregisterBucketRequest) (*manager_pb.FederationUnregisterBucketResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationUnregisterBucket").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationUnregisterBucket", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.UnregisterBucket(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationUnregisterBucket").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationUnregisterBucket", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ForwardFederationSetBucketMode forwards a SetBucketMode request to the leader
+func (lf *LeaderForwarder) ForwardFederationSetBucketMode(ctx context.Context, leaderAddr string, req *manager_pb.FederationSetBucketModeRequest) (*manager_pb.FederationSetBucketModeResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationSetBucketMode").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationSetBucketMode", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.SetBucketMode(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationSetBucketMode").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationSetBucketMode", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ForwardFederationPauseMigration forwards a PauseMigration request to the leader
+func (lf *LeaderForwarder) ForwardFederationPauseMigration(ctx context.Context, leaderAddr string, req *manager_pb.FederationPauseMigrationRequest) (*manager_pb.FederationPauseMigrationResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationPauseMigration").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationPauseMigration", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.PauseMigration(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationPauseMigration").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationPauseMigration", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ForwardFederationResumeMigration forwards a ResumeMigration request to the leader
+func (lf *LeaderForwarder) ForwardFederationResumeMigration(ctx context.Context, leaderAddr string, req *manager_pb.FederationResumeMigrationRequest) (*manager_pb.FederationResumeMigrationResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationResumeMigration").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationResumeMigration", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.ResumeMigration(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationResumeMigration").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationResumeMigration", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ForwardFederationSetDualWrite forwards a SetDualWrite request to the leader
+func (lf *LeaderForwarder) ForwardFederationSetDualWrite(ctx context.Context, leaderAddr string, req *manager_pb.FederationSetDualWriteRequest) (*manager_pb.FederationSetDualWriteResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationSetDualWrite").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationSetDualWrite", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.SetDualWrite(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationSetDualWrite").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationSetDualWrite", "rpc").Inc()
+	}
+
+	return resp, err
+}
+
+// ForwardFederationUpdateCredentials forwards an UpdateCredentials request to the leader
+func (lf *LeaderForwarder) ForwardFederationUpdateCredentials(ctx context.Context, leaderAddr string, req *manager_pb.FederationUpdateCredentialsRequest) (*manager_pb.FederationUpdateCredentialsResponse, error) {
+	start := time.Now()
+	forwardedRequestsTotal.WithLabelValues("FederationUpdateCredentials").Inc()
+
+	client, err := lf.getFederationClient(leaderAddr)
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationUpdateCredentials", "connection").Inc()
+		return nil, err
+	}
+
+	resp, err := client.UpdateCredentials(ctx, req)
+	forwardedRequestsDuration.WithLabelValues("FederationUpdateCredentials").Observe(time.Since(start).Seconds())
+
+	if err != nil {
+		forwardedRequestsErrors.WithLabelValues("FederationUpdateCredentials", "rpc").Inc()
+	}
+
+	return resp, err
 }

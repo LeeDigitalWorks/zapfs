@@ -51,6 +51,9 @@ type FSMState struct {
 
 	// Derived IAM indexes - rebuilt on restore
 	IAMCredentialIndex map[string]string // accessKey -> userName (for fast lookup)
+
+	// Federation state - stores external S3 connection configs for federated buckets
+	FederationConfigs map[string]*FederationInfo // bucket -> federation config
 }
 
 // collectionTimeItem implements btree.Item for time-ordered collection indexing.
@@ -96,6 +99,8 @@ func NewFSMState(regionID string, defaultNumReplicas uint32) *FSMState {
 		IAMPolicies:        make(map[string]*iam.Policy),
 		IAMVersion:         1,
 		IAMCredentialIndex: make(map[string]string),
+		// Federation state
+		FederationConfigs: make(map[string]*FederationInfo),
 	}
 }
 
@@ -171,6 +176,14 @@ func (s *FSMState) Snapshot() *fsmSnapshot {
 	// Deep copy IAM policies
 	for k, v := range s.IAMPolicies {
 		snapshot.IAMPolicies[k] = copyPolicy(v)
+	}
+
+	// Deep copy federation configs
+	if len(s.FederationConfigs) > 0 {
+		snapshot.FederationConfigs = make(map[string]*FederationInfo)
+		for k, v := range s.FederationConfigs {
+			snapshot.FederationConfigs[k] = copyFederationInfo(v)
+		}
 	}
 
 	return snapshot
@@ -258,6 +271,33 @@ func copyCondition(c iam.Condition) iam.Condition {
 	return condCopy
 }
 
+// copyFederationInfo creates a deep copy of a FederationInfo.
+func copyFederationInfo(f *FederationInfo) *FederationInfo {
+	if f == nil {
+		return nil
+	}
+	copy := &FederationInfo{
+		ObjectsDiscovered: f.ObjectsDiscovered,
+		ObjectsSynced:     f.ObjectsSynced,
+		BytesSynced:       f.BytesSynced,
+		MigrationPaused:   f.MigrationPaused,
+		DualWriteEnabled:  f.DualWriteEnabled,
+		CreatedAt:         f.CreatedAt,
+		UpdatedAt:         f.UpdatedAt,
+	}
+	if f.External != nil {
+		copy.External = &manager_pb.ExternalS3Config{
+			Endpoint:        f.External.Endpoint,
+			Region:          f.External.Region,
+			AccessKeyId:     f.External.AccessKeyId,
+			SecretAccessKey: f.External.SecretAccessKey,
+			Bucket:          f.External.Bucket,
+			PathStyle:       f.External.PathStyle,
+		}
+	}
+	return copy
+}
+
 // Restore restores state from a snapshot.
 // Must be called with the write lock held.
 func (s *FSMState) Restore(snapshot *fsmSnapshot) {
@@ -279,6 +319,12 @@ func (s *FSMState) Restore(snapshot *fsmSnapshot) {
 		s.IAMPolicies = make(map[string]*iam.Policy)
 	}
 	s.IAMVersion = snapshot.IAMVersion
+
+	// Restore federation state
+	s.FederationConfigs = snapshot.FederationConfigs
+	if s.FederationConfigs == nil {
+		s.FederationConfigs = make(map[string]*FederationInfo)
+	}
 
 	// Rebuild derived indexes from restored collections and IAM
 	s.rebuildIndexes()

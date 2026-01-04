@@ -53,7 +53,8 @@ func GetDefaultTiers() map[string]RateLimitTier {
 type TierConfig struct {
 	DefaultTier     string
 	Tiers           map[string]RateLimitTier
-	CollectionTiers map[string]string // collection -> tier overrides
+	CollectionTiers map[string]string // collection (bucket) -> tier overrides
+	UserTiers       map[string]string // user ID -> tier overrides
 }
 
 // LoadTierConfig loads tier configuration from tiers.toml
@@ -64,6 +65,7 @@ func LoadTierConfig() *TierConfig {
 		DefaultTier:     RateLimitTierStandard,
 		Tiers:           GetDefaultTiers(),
 		CollectionTiers: make(map[string]string),
+		UserTiers:       make(map[string]string),
 	}
 
 	// Load tiers.toml separately
@@ -112,10 +114,20 @@ func LoadTierConfig() *TierConfig {
 			Msg("Loaded collection tier overrides")
 	}
 
+	// Load user-to-tier overrides
+	userTiers := viper.GetStringMapString("user_tiers")
+	if len(userTiers) > 0 {
+		config.UserTiers = userTiers
+		logger.Info().
+			Int("count", len(userTiers)).
+			Msg("Loaded user tier overrides")
+	}
+
 	logger.Info().
 		Str("default_tier", config.DefaultTier).
 		Int("tier_count", len(config.Tiers)).
-		Int("override_count", len(config.CollectionTiers)).
+		Int("collection_overrides", len(config.CollectionTiers)).
+		Int("user_overrides", len(config.UserTiers)).
 		Msg("Tier configuration loaded")
 
 	return config

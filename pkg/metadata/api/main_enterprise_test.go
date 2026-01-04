@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m,
 		// Ignore the shared time ticker goroutine in filter_ratelimit.go
 		// This is an intentional package-level goroutine that updates cached time
-		goleak.IgnoreTopFunction("github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter.init.0.func1"),
+		goleak.IgnoreTopFunction("github.com/LeeDigitalWorks/zapfs/pkg/metadata/filter.init.1.func1"),
 	)
 }
 
@@ -39,11 +39,11 @@ func initTestLicense() {
 	}
 
 	licenseKey, err := generator.Generate(license.LicenseRequest{
-		CustomerID:    "test_customer",
-		CustomerName:  "ZapFS Test Suite",
-		Features:      license.AllFeatures(),
-		Tier:          "enterprise",
-		ValidDays:     365,
+		CustomerID:   "test_customer",
+		CustomerName: "ZapFS Test Suite",
+		Features:     license.AllFeatures(),
+		Tier:         "enterprise",
+		ValidDays:    365,
 	})
 	if err != nil {
 		panic("failed to generate test license: " + err.Error())

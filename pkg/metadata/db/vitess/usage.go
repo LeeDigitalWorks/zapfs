@@ -14,7 +14,7 @@ import (
 
 // UsageStore returns a usage.Store backed by Vitess.
 func (v *Vitess) UsageStore() usage.Store {
-	return &vitessUsageStore{db: v.db}
+	return &vitessUsageStore{db: v.Store.DB()}
 }
 
 // vitessUsageStore implements usage.Store using Vitess.

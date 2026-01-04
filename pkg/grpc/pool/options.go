@@ -29,9 +29,9 @@ const (
 	DefaultBackoffJitter  = 0.2 // 20% jitter
 
 	// Transport-level retry configuration (go-grpc-middleware)
-	DefaultTransportRetries    = 3
-	DefaultPerRetryTimeout     = 5 * time.Second
-	DefaultTransportBackoff    = 100 * time.Millisecond
+	DefaultTransportRetries = 3
+	DefaultPerRetryTimeout  = 5 * time.Second
+	DefaultTransportBackoff = 100 * time.Millisecond
 
 	// KeepAlive settings matching proto/grpc.go
 	KeepAliveTime    = 60 * time.Second
@@ -43,7 +43,7 @@ const (
 
 // DefaultRetryableCodes are gRPC status codes that should trigger a retry
 var DefaultRetryableCodes = []codes.Code{
-	codes.Unavailable,      // Server temporarily unavailable
+	codes.Unavailable,       // Server temporarily unavailable
 	codes.ResourceExhausted, // Rate limiting, resource limits
 	codes.DeadlineExceeded,  // Timeout (may succeed on retry)
 	codes.Aborted,           // Operation aborted (often retryable)

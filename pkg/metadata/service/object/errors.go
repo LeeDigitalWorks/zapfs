@@ -26,6 +26,7 @@ const (
 	ErrCodeInvalidEncryption
 	ErrCodeKMSError
 	ErrCodeKMSKeyNotFound
+	ErrCodeInvalidObjectState // Object is archived and requires restore
 	ErrCodeInternalError
 )
 
@@ -74,6 +75,8 @@ func (e *Error) ToS3Error() s3err.ErrorCode {
 		return s3err.ErrKMSAccessDenied
 	case ErrCodeKMSKeyNotFound:
 		return s3err.ErrKMSKeyNotFound
+	case ErrCodeInvalidObjectState:
+		return s3err.ErrInvalidObjectState
 	default:
 		return s3err.ErrInternalError
 	}
@@ -100,6 +103,13 @@ func newInternalError(err error) *Error {
 		Code:    ErrCodeInternalError,
 		Message: "internal error",
 		Err:     err,
+	}
+}
+
+func newInvalidObjectStateError(msg string) *Error {
+	return &Error{
+		Code:    ErrCodeInvalidObjectState,
+		Message: msg,
 	}
 }
 

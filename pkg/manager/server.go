@@ -68,10 +68,10 @@ type ManagerServer struct {
 	clusterCapacityMu sync.RWMutex
 
 	// IAM - centralized credential management
-	iamService    *iam.Service            // Legacy service for TOML/config-based credentials
-	raftCredStore *RaftCredentialStore    // Raft-backed credential store (primary)
-	iamVersion    atomic.Uint64           // Unix timestamp in nanos
-	iamSubsMu     sync.RWMutex            // Protects subscribers
+	iamService    *iam.Service                            // Legacy service for TOML/config-based credentials
+	raftCredStore *RaftCredentialStore                    // Raft-backed credential store (primary)
+	iamVersion    atomic.Uint64                           // Unix timestamp in nanos
+	iamSubsMu     sync.RWMutex                            // Protects subscribers
 	iamSubs       map[uint64]chan *iam_pb.CredentialEvent // Subscriber channels
 	iamNextSubID  atomic.Uint64
 
@@ -134,14 +134,14 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 
 	ms := &ManagerServer{
 		state:              NewFSMState(regionID, defaultNumReplicas),
-		leaderForwarder:   NewLeaderForwarder(),
-		iamService:        iamService,
-		licenseChecker:    licenseChecker,
-		iamSubs:           make(map[uint64]chan *iam_pb.CredentialEvent),
-		topoSubs:          make(map[uint64]chan *manager_pb.TopologyEvent),
-		colSubs:           make(map[uint64]chan *manager_pb.CollectionEvent),
+		leaderForwarder:    NewLeaderForwarder(),
+		iamService:         iamService,
+		licenseChecker:     licenseChecker,
+		iamSubs:            make(map[uint64]chan *iam_pb.CredentialEvent),
+		topoSubs:           make(map[uint64]chan *manager_pb.TopologyEvent),
+		colSubs:            make(map[uint64]chan *manager_pb.CollectionEvent),
 		metadataClientPool: pool.NewPool(metadataClientFactory),
-		shutdownCh:        make(chan struct{}),
+		shutdownCh:         make(chan struct{}),
 	}
 
 	// Initialize IAM version to current timestamp (nanoseconds)

@@ -9,6 +9,8 @@
 package taskqueue
 
 import (
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
+	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 )
 
@@ -29,6 +31,12 @@ type Dependencies struct {
 
 	// ReplicationCredentials for authenticating to remote regions
 	ReplicationCredentials ReplicationCredentials
+
+	// DB is the metadata database (for restore handler)
+	DB db.DB
+
+	// BackendManager for accessing tier storage backends (for restore handler)
+	BackendManager *backend.Manager
 }
 
 // EnterpriseHandlers returns all enterprise task handlers.
@@ -42,6 +50,14 @@ func EnterpriseHandlers(deps Dependencies) []taskqueue.Handler {
 			ObjectReader: deps.ObjectReader,
 			Endpoints:    deps.RegionEndpoints,
 			Credentials:  deps.ReplicationCredentials,
+		}))
+	}
+
+	// Add restore handler if DB is configured
+	if deps.DB != nil {
+		handlers = append(handlers, NewRestoreHandler(RestoreHandlerConfig{
+			DB:             deps.DB,
+			BackendManager: deps.BackendManager,
 		}))
 	}
 

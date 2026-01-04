@@ -27,10 +27,10 @@ import (
 
 // Default configuration values
 const (
-	DefaultPollInterval       = time.Second
-	DefaultConcurrency        = 5
-	DefaultVisibilityTimeout  = 5 * time.Minute
-	DefaultMaxRetries         = 3
+	DefaultPollInterval      = time.Second
+	DefaultConcurrency       = 5
+	DefaultVisibilityTimeout = 5 * time.Minute
+	DefaultMaxRetries        = 3
 )
 
 // TaskType identifies the type of task for routing to handlers.
@@ -41,6 +41,11 @@ const (
 	TaskTypeCleanup   TaskType = "cleanup"   // Object/version cleanup
 	TaskTypeLifecycle TaskType = "lifecycle" // Lifecycle transitions
 	TaskTypeEvent     TaskType = "event"     // S3 event notification
+	TaskTypeRestore   TaskType = "restore"   // Object restore from archive
+
+	// Federation task types (S3 passthrough/migration)
+	TaskTypeFederationIngest    TaskType = "federation_ingest"    // Ingest object from external S3 to local
+	TaskTypeFederationDiscovery TaskType = "federation_discovery" // Discover objects in external S3 bucket
 )
 
 // LifecyclePayload is the payload for TaskTypeLifecycle tasks.
@@ -73,6 +78,7 @@ const (
 	LifecycleActionDeleteVersion = "delete_version"
 	LifecycleActionTransition    = "transition"
 	LifecycleActionAbortMPU      = "abort_mpu"
+	LifecycleActionPromote       = "promote" // Intelligent tiering auto-promotion on access
 )
 
 // EventPayload is the payload for TaskTypeEvent tasks.
@@ -113,6 +119,78 @@ type EventPayload struct {
 
 	// UserAgent is the client's user agent string.
 	UserAgent string `json:"user_agent,omitempty"`
+}
+
+// RestorePayload is the payload for TaskTypeRestore tasks.
+// Contains metadata for restoring an archived object.
+type RestorePayload struct {
+	// Object identification
+	ObjectID  string `json:"object_id"`            // UUID of the object
+	Bucket    string `json:"bucket"`               // Bucket name
+	Key       string `json:"key"`                  // Object key
+	VersionID string `json:"version_id,omitempty"` // Version ID if versioned
+
+	// Restore configuration
+	Days int    `json:"days"` // Number of days to keep restored copy
+	Tier string `json:"tier"` // Retrieval tier: "Expedited", "Standard", "Bulk"
+
+	// Source location
+	StorageClass    string `json:"storage_class"`              // Current storage class (GLACIER, DEEP_ARCHIVE)
+	TransitionedRef string `json:"transitioned_ref,omitempty"` // Reference to archived data
+
+	// Tracking
+	RequestedAt int64  `json:"requested_at"` // Unix nano when restore was initiated
+	RequestID   string `json:"request_id"`   // Original S3 request ID
+}
+
+// Restore tier constants (match AWS retrieval tiers)
+const (
+	RestoreTierExpedited = "Expedited" // 1-5 minutes (only Glacier)
+	RestoreTierStandard  = "Standard"  // 3-5 hours (Glacier), 12 hours (Deep Archive)
+	RestoreTierBulk      = "Bulk"      // 5-12 hours (Glacier), 48 hours (Deep Archive)
+)
+
+// FederationIngestPayload is the payload for TaskTypeFederationIngest tasks.
+// Contains metadata for ingesting an object from external S3 to local storage.
+type FederationIngestPayload struct {
+	// Local bucket name (where the object will be stored)
+	Bucket string `json:"bucket"`
+
+	// Object key
+	Key string `json:"key"`
+
+	// Version ID from external S3 (empty for non-versioned)
+	VersionID string `json:"version_id,omitempty"`
+
+	// Object metadata from external S3
+	Size         int64  `json:"size"`
+	ETag         string `json:"etag"`
+	ContentType  string `json:"content_type,omitempty"`
+	StorageClass string `json:"storage_class,omitempty"`
+	LastModified int64  `json:"last_modified"` // Unix timestamp (nanos)
+
+	// Tracking
+	DiscoveredAt int64 `json:"discovered_at"` // Unix timestamp (nanos) when object was discovered
+}
+
+// FederationDiscoveryPayload is the payload for TaskTypeFederationDiscovery tasks.
+// Contains metadata for discovering objects in an external S3 bucket.
+type FederationDiscoveryPayload struct {
+	// Local bucket name (federated bucket)
+	Bucket string `json:"bucket"`
+
+	// Pagination state for resuming discovery
+	StartAfter string `json:"start_after,omitempty"` // Continue from this key
+	Prefix     string `json:"prefix,omitempty"`      // Optional prefix filter
+
+	// Batch configuration
+	BatchSize int `json:"batch_size"` // Max objects per batch (default: 1000)
+
+	// Versioning
+	IncludeVersions bool `json:"include_versions"` // Discover all versions (for versioned buckets)
+
+	// Tracking
+	StartedAt int64 `json:"started_at"` // Unix timestamp (nanos) when discovery started
 }
 
 // TaskStatus represents the current state of a task.

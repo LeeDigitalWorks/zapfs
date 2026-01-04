@@ -137,7 +137,7 @@ const (
 	XAmzAbortRuleID = "x-amz-abort-rule-id"
 
 	// --- Object ownership ---
-	XAmzObjectOwnership          = "x-amz-object-ownership"
+	XAmzObjectOwnership           = "x-amz-object-ownership"
 	XAmzSourceExpectedBucketOwner = "x-amz-source-expected-bucket-owner"
 )
 
@@ -155,8 +155,8 @@ const (
 
 // SSE algorithm values
 const (
-	SSEAlgorithmAES256 = "AES256"
-	SSEAlgorithmKMS    = "aws:kms"
+	SSEAlgorithmAES256  = "AES256"
+	SSEAlgorithmKMS     = "aws:kms"
 	SSEAlgorithmKMSDSSE = "aws:kms:dsse"
 )
 

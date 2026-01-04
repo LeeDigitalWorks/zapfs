@@ -16,6 +16,7 @@ import (
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/federation"
 	"github.com/LeeDigitalWorks/zapfs/pkg/taskqueue"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
@@ -31,6 +32,9 @@ type Coordinator struct {
 	defaultProfile string
 	targetCache    *TargetCache
 	taskQueue      taskqueue.Queue // Optional: for queueing failed decrements
+
+	// Federation support (optional)
+	federationClientPool *federation.ClientPool
 }
 
 // CoordinatorConfig holds configuration for the storage coordinator
@@ -41,6 +45,9 @@ type CoordinatorConfig struct {
 	DefaultProfile string
 	CacheConfig    *TargetCacheConfig // Optional, uses defaults if nil
 	TaskQueue      taskqueue.Queue    // Optional: for queueing failed decrements
+
+	// FederationClientPool is optional. When set, enables dual-write to external S3.
+	FederationClientPool *federation.ClientPool
 }
 
 // NewCoordinator creates a new storage coordinator
@@ -52,12 +59,13 @@ func NewCoordinator(cfg CoordinatorConfig) *Coordinator {
 	}
 
 	return &Coordinator{
-		managerClient:  cfg.ManagerClient,
-		fileClientPool: cfg.FileClientPool,
-		profiles:       cfg.Profiles,
-		defaultProfile: cfg.DefaultProfile,
-		targetCache:    NewTargetCache(cacheConfig),
-		taskQueue:      cfg.TaskQueue,
+		managerClient:        cfg.ManagerClient,
+		fileClientPool:       cfg.FileClientPool,
+		profiles:             cfg.Profiles,
+		defaultProfile:       cfg.DefaultProfile,
+		targetCache:          NewTargetCache(cacheConfig),
+		taskQueue:            cfg.TaskQueue,
+		federationClientPool: cfg.FederationClientPool,
 	}
 }
 
@@ -606,3 +614,128 @@ func (c *Coordinator) CacheStats() *CacheStats {
 	return &stats
 }
 
+// WriteWithFederation writes to both local storage and external S3 simultaneously.
+// This is used for dual-write when a bucket is in MIGRATING mode with dual-write enabled.
+// Local write must succeed; external write failure is logged but not fatal.
+//
+// The method uses io.MultiWriter to tee data to both destinations:
+//   - Local: streams to file servers via the standard WriteObject path
+//   - External: streams to external S3 via the federation client pool
+//
+// Returns FederatedWriteResult which includes both local and external results.
+func (c *Coordinator) WriteWithFederation(ctx context.Context, req *FederatedWriteRequest) (*FederatedWriteResult, error) {
+	if c.federationClientPool == nil {
+		return nil, fmt.Errorf("federation client pool not configured")
+	}
+
+	// Build external S3 config
+	extConfig := &federation.ExternalS3Config{
+		Endpoint:        req.ExternalEndpoint,
+		Region:          req.ExternalRegion,
+		AccessKeyID:     req.ExternalAccessKeyID,
+		SecretAccessKey: req.ExternalSecretAccessKey,
+		Bucket:          req.ExternalBucket,
+		PathStyle:       req.ExternalPathStyle,
+	}
+
+	// Create external writer and start async upload
+	extWriter := NewExternalWriter(c.federationClientPool)
+	extReq := &ExternalWriteRequest{
+		Config:      extConfig,
+		Key:         req.Key,
+		Size:        int64(req.Size),
+		ContentType: req.ContentType,
+	}
+	extPipeWriter, extResultCh := extWriter.WriteAsync(ctx, extReq)
+
+	// Create a pipe for local storage
+	localPR, localPW := io.Pipe()
+
+	// Use MultiWriter to tee data to both local and external
+	multiWriter := io.MultiWriter(localPW, extPipeWriter)
+
+	// Track results
+	var wg sync.WaitGroup
+	var localResult *WriteResult
+	var localErr error
+
+	// Start local write in goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer localPR.Close()
+
+		localResult, localErr = c.WriteObject(ctx, &WriteRequest{
+			Bucket:      req.Bucket,
+			ObjectID:    req.ObjectID,
+			Body:        localPR,
+			Size:        req.Size,
+			ProfileName: req.ProfileName,
+			Replication: req.Replication,
+		})
+	}()
+
+	// Copy input to both destinations
+	buf := make([]byte, 64*1024) // 64KB buffer
+	copyErr := func() error {
+		defer localPW.Close()
+		defer extPipeWriter.Close()
+
+		for {
+			n, err := req.Body.Read(buf)
+			if n > 0 {
+				if _, writeErr := multiWriter.Write(buf[:n]); writeErr != nil {
+					return fmt.Errorf("multi-write: %w", writeErr)
+				}
+			}
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("read input: %w", err)
+			}
+		}
+	}()
+
+	// Wait for local write to complete
+	wg.Wait()
+
+	// Wait for external write result
+	extResult := <-extResultCh
+
+	// If copy failed, return error
+	if copyErr != nil {
+		return nil, copyErr
+	}
+
+	// If local write failed, return error (this is required to succeed)
+	if localErr != nil {
+		return nil, localErr
+	}
+
+	// Build result
+	result := &FederatedWriteResult{
+		WriteResult: *localResult,
+	}
+
+	// External write is optional - log errors but don't fail
+	if extResult.Err != nil {
+		result.ExternalError = extResult.Err
+		logger.Warn().
+			Err(extResult.Err).
+			Str("bucket", req.Bucket).
+			Str("key", req.Key).
+			Str("external_bucket", req.ExternalBucket).
+			Msg("External S3 write failed during dual-write (local succeeded)")
+	} else {
+		result.ExternalETag = extResult.ETag
+		result.ExternalVersionID = extResult.VersionID
+	}
+
+	return result, nil
+}
+
+// HasFederationSupport returns true if the coordinator has federation enabled.
+func (c *Coordinator) HasFederationSupport() bool {
+	return c.federationClientPool != nil
+}

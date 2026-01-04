@@ -45,14 +45,18 @@ fi
 # Check 2: go vet
 # -----------------------------------------------------------------------------
 echo -n "Running go vet... "
-# Get unique packages from staged files
-PACKAGES=$(echo "$STAGED_GO_FILES" | xargs -I{} dirname {} | sort -u | sed 's|^|./|')
-# Use -tags enterprise to include enterprise packages with build constraints
-if ! echo "$PACKAGES" | xargs go vet -tags enterprise 2>/dev/null; then
-    echo -e "${RED}FAILED${NC}"
-    FAILED=1
+# Get unique packages from staged files, excluding integration tests (they have different build tags)
+PACKAGES=$(echo "$STAGED_GO_FILES" | grep -v '^integration/' | xargs -I{} dirname {} | sort -u | sed 's|^|./|')
+if [ -n "$PACKAGES" ]; then
+    # Use -tags enterprise to include enterprise packages with build constraints
+    if ! echo "$PACKAGES" | xargs go vet -tags enterprise 2>/dev/null; then
+        echo -e "${RED}FAILED${NC}"
+        FAILED=1
+    else
+        echo -e "${GREEN}OK${NC}"
+    fi
 else
-    echo -e "${GREEN}OK${NC}"
+    echo -e "${GREEN}OK (no non-integration packages)${NC}"
 fi
 
 # -----------------------------------------------------------------------------
@@ -60,16 +64,20 @@ fi
 # -----------------------------------------------------------------------------
 if command -v staticcheck &> /dev/null; then
     echo -n "Running staticcheck... "
-    # Run staticcheck with enterprise tags, excluding:
-    # - Proto generated files (proto/*_pb/)
-    # - Build constraint messages (lines starting with "-:")
-    STATICCHECK_OUT=$(echo "$PACKAGES" | xargs staticcheck -tags enterprise 2>&1 | grep -v -E '^proto/.*_pb/|^-:' || true)
-    if [ -n "$STATICCHECK_OUT" ]; then
-        echo -e "${RED}FAILED${NC}"
-        echo "$STATICCHECK_OUT"
-        FAILED=1
+    if [ -n "$PACKAGES" ]; then
+        # Run staticcheck with enterprise tags, excluding:
+        # - Proto generated files (proto/*_pb/)
+        # - Build constraint messages (lines starting with "-:")
+        STATICCHECK_OUT=$(echo "$PACKAGES" | xargs staticcheck -tags enterprise 2>&1 | grep -v -E '^proto/.*_pb/|^-:' || true)
+        if [ -n "$STATICCHECK_OUT" ]; then
+            echo -e "${RED}FAILED${NC}"
+            echo "$STATICCHECK_OUT"
+            FAILED=1
+        else
+            echo -e "${GREEN}OK${NC}"
+        fi
     else
-        echo -e "${GREEN}OK${NC}"
+        echo -e "${GREEN}OK (no packages to check)${NC}"
     fi
 else
     echo -e "${YELLOW}Skipping staticcheck (not installed)${NC}"

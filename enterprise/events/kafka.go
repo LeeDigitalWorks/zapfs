@@ -234,8 +234,8 @@ func (p *KafkaPublisher) Close() error {
 
 // scramClient implements the sarama.SCRAMClient interface for SCRAM authentication.
 type scramClient struct {
-	mechanism     scram.HashGeneratorFcn
-	conversation  *scram.ClientConversation
+	mechanism    scram.HashGeneratorFcn
+	conversation *scram.ClientConversation
 }
 
 func (c *scramClient) Begin(userName, password, authzID string) error {

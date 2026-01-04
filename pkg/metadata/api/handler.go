@@ -64,21 +64,21 @@ func (s *MetadataServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	_, err := s.chain.Run(d)
+	filterName, err := s.chain.Run(d)
 	if err != nil {
-		// TODO: Check if response should be HTML or XML based on bucket website
+		logger.Debug().Err(err).Str("filter", filterName).Str("action", d.S3Info.Action.String()).Msg("filter chain error")
 		var httpErr s3err.ErrorCode
 		if errors.As(err, &httpErr) {
-			writeXMLErrorResponse(wrappedWriter, d, httpErr)
+			writeErrorResponse(wrappedWriter, d, httpErr)
 		} else {
-			writeXMLErrorResponse(wrappedWriter, d, s3err.ErrInternalError)
+			writeErrorResponse(wrappedWriter, d, s3err.ErrInternalError)
 		}
 		return
 	}
 
 	handler, exists := s.handlers[d.S3Info.Action]
 	if !exists {
-		writeXMLErrorResponse(wrappedWriter, d, s3err.ErrNotImplemented)
+		writeErrorResponse(wrappedWriter, d, s3err.ErrNotImplemented)
 		return
 	}
 
@@ -99,7 +99,7 @@ func (s *MetadataServer) handleObjectError(w http.ResponseWriter, d *data.Data, 
 
 	if objErr, ok := err.(objectError); ok {
 		errCode := objErr.ToS3Error()
-		// Special case for HEAD requests - use status code instead of XML
+		// Special case for HEAD requests - use status code instead of body
 		if d.Req.Method == http.MethodHead {
 			switch errCode {
 			case s3err.ErrNoSuchKey:
@@ -111,7 +111,7 @@ func (s *MetadataServer) handleObjectError(w http.ResponseWriter, d *data.Data, 
 			}
 			return
 		}
-		writeXMLErrorResponse(w, d, errCode)
+		writeErrorResponse(w, d, errCode)
 		return
 	}
 
@@ -121,5 +121,5 @@ func (s *MetadataServer) handleObjectError(w http.ResponseWriter, d *data.Data, 
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	writeErrorResponse(w, d, s3err.ErrInternalError)
 }

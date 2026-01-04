@@ -10,6 +10,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/cache"
 	"github.com/LeeDigitalWorks/zapfs/pkg/events"
 	"github.com/LeeDigitalWorks/zapfs/pkg/iam"
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/manager"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/client"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
@@ -89,6 +90,9 @@ type MetadataServer struct {
 
 	// Access log collector (enterprise: FeatureAccessLog)
 	accessLogCollector AccessLogCollector
+
+	// Task queue for background operations (lifecycle, restore, etc.)
+	taskQueue taskqueue.Queue
 }
 
 // ServerConfig holds configuration for creating a MetadataServer
@@ -104,18 +108,18 @@ type ServerConfig struct {
 	DB                db.DB
 	DefaultProfile    string
 	FileClientPool    client.File
-	CRRHook           *CRRHook        // Enterprise: cross-region replication hook
-	IAMService        *iam.Service    // IAM service for KMS operations (enterprise feature)
+	CRRHook           *CRRHook               // Enterprise: cross-region replication hook
+	IAMService        *iam.Service           // IAM service for KMS operations (enterprise feature)
 	KMSProvider       encryption.KMSProvider // External KMS provider (enterprise: AWS KMS, Vault)
-	TaskQueue          taskqueue.Queue      // Optional: for GC decrement retry and background tasks
+	TaskQueue         taskqueue.Queue        // Optional: for GC decrement retry and background tasks
 
 	// Cross-region replication configuration (enterprise: FeatureMultiRegion)
-	RegionConfig           *RegionConfig           // For getting S3 endpoints per region
-	ReplicationCredentials ReplicationCredentials  // For authenticating to remote regions
-	UsageConfig        usage.Config         // Usage reporting configuration
-	UsageStore         usage.Store          // Usage data store (nil = use NopStore)
-	AccessLogCollector AccessLogCollector   // Access log collector (enterprise: FeatureAccessLog)
-	Emitter            *events.Emitter      // Event emitter for S3 notifications (enterprise: FeatureEvents)
+	RegionConfig           *RegionConfig          // For getting S3 endpoints per region
+	ReplicationCredentials ReplicationCredentials // For authenticating to remote regions
+	UsageConfig            usage.Config           // Usage reporting configuration
+	UsageStore             usage.Store            // Usage data store (nil = use NopStore)
+	AccessLogCollector     AccessLogCollector     // Access log collector (enterprise: FeatureAccessLog)
+	Emitter                *events.Emitter        // Event emitter for S3 notifications (enterprise: FeatureEvents)
 
 	// Lifecycle scanner configuration (community feature)
 	LifecycleScannerEnabled  bool
@@ -170,8 +174,8 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 
 	svc, err := service.NewService(svcCfg)
 	if err != nil {
-		// Log error but don't fail - service layer is optional during migration
-		// Handlers will fall back to direct implementation
+		// Log error - this is critical since handlers need the service
+		logger.Error().Err(err).Msg("failed to create service layer - some handlers will return InternalError")
 		svc = nil
 	}
 
@@ -218,6 +222,7 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		usageCollector:  usageCollector,
 		usageAggregator: usageAggregator,
 		usageReporter:   usageReporter,
+		taskQueue:       cfg.TaskQueue,
 	}
 
 	// Set CRR hook if provided
@@ -368,8 +373,8 @@ func NewMetadataServer(ctx context.Context, cfg ServerConfig) *MetadataServer {
 		// =====================================================================
 		// bucket_config.go - Logging, payment, acceleration, notifications
 		// =====================================================================
-		s3action.GetBucketLogging:                   ms.GetBucketLoggingHandler,    // Enterprise: FeatureAccessLog
-		s3action.PutBucketLogging:                   ms.PutBucketLoggingHandler,    // Enterprise: FeatureAccessLog
+		s3action.GetBucketLogging:                   ms.GetBucketLoggingHandler, // Enterprise: FeatureAccessLog
+		s3action.PutBucketLogging:                   ms.PutBucketLoggingHandler, // Enterprise: FeatureAccessLog
 		s3action.GetBucketRequestPayment:            ms.GetBucketRequestPaymentHandler,
 		s3action.PutBucketRequestPayment:            ms.PutBucketRequestPaymentHandler,
 		s3action.GetBucketAccelerateConfiguration:   ms.GetBucketAccelerateConfigurationHandler,

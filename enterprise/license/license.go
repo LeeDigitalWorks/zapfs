@@ -365,7 +365,6 @@ func (m *Manager) RequireFeature(feature Feature) {
 	}
 }
 
-
 // Info returns license information as a JSON-serializable map.
 // Useful for API endpoints that display license status.
 // This method is lock-free and safe for concurrent access.
