@@ -615,14 +615,15 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 		}
 
 		obj := &types.ObjectRef{
-			ID:          uuid.New(),
-			Bucket:      req.Bucket,
-			Key:         req.Key,
-			Size:        uint64(totalSize),
-			ETag:        finalETag,
-			ContentType: contentType,
-			CreatedAt:   time.Now().UnixNano(),
-			ChunkRefs:   allChunkRefs,
+			ID:           uuid.New(),
+			Bucket:       req.Bucket,
+			Key:          req.Key,
+			Size:         uint64(totalSize),
+			ETag:         finalETag,
+			ContentType:  contentType,
+			CreatedAt:    time.Now().UnixNano(),
+			ChunkRefs:    allChunkRefs,
+			StorageClass: upload.StorageClass,
 		}
 
 		// Copy SSE metadata from upload to final object

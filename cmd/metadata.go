@@ -710,7 +710,10 @@ func initializeStorage(opts MetadataServerOpts) (*types.PoolSet, *types.ProfileS
 		if poolList := pools.List(); len(poolList) > 0 {
 			defaultProfile := types.StandardProfile(poolList[0].ID)
 			profiles.Add(defaultProfile)
-			logger.Info().Str("profile", defaultProfile.Name).Msg("created default storage profile")
+			// Add INTELLIGENT_TIERING profile for S3 compatibility
+			intelligentTieringProfile := types.IntelligentTieringProfile(poolList[0].ID)
+			profiles.Add(intelligentTieringProfile)
+			logger.Info().Int("count", len(profiles.List())).Msg("created default storage profiles")
 		}
 	}
 

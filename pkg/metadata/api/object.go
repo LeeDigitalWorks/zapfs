@@ -705,6 +705,9 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 		taggingDirective = "COPY"
 	}
 
+	// Parse storage class for destination
+	storageClass := d.Req.Header.Get(s3consts.XAmzStorageClass)
+
 	// Parse conditional headers
 	var copySourceIfMatch, copySourceIfNoneMatch string
 	var copySourceIfModifiedSince, copySourceIfUnmodifiedSince *time.Time
@@ -755,6 +758,7 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 		DestKey:                     destKey,
 		MetadataDirective:           metadataDirective,
 		TaggingDirective:            taggingDirective,
+		StorageClass:                storageClass,
 		CopySourceIfMatch:           copySourceIfMatch,
 		CopySourceIfNoneMatch:       copySourceIfNoneMatch,
 		CopySourceIfModifiedSince:   copySourceIfModifiedSince,

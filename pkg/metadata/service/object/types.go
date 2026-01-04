@@ -143,6 +143,10 @@ type CopyObjectRequest struct {
 	MetadataDirective string // "COPY" or "REPLACE"
 	TaggingDirective  string // "COPY" or "REPLACE"
 
+	// Storage class for destination object (optional)
+	// If not specified, inherits from source object
+	StorageClass string
+
 	// Conditional headers for source
 	CopySourceIfMatch           string
 	CopySourceIfNoneMatch       string

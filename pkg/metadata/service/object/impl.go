@@ -1116,6 +1116,23 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 		ProfileID:   srcObj.ProfileID,
 	}
 
+	// Handle storage class: use requested or inherit from source
+	if req.StorageClass != "" {
+		// Validate storage class against profiles
+		profile, exists := s.profiles.Get(req.StorageClass)
+		if !exists {
+			return nil, &Error{
+				Code:    ErrCodeInvalidStorageClass,
+				Message: "The storage class you specified is not valid.",
+			}
+		}
+		newObjRef.StorageClass = req.StorageClass
+		newObjRef.ProfileID = profile.ID.String()
+	} else {
+		// Inherit from source
+		newObjRef.StorageClass = srcObj.StorageClass
+	}
+
 	result := &CopyObjectResult{
 		ETag:         srcObj.ETag,
 		LastModified: now,

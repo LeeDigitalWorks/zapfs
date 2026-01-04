@@ -74,6 +74,18 @@ func StandardProfile(poolID uuid.UUID) *StorageProfile {
 	}
 }
 
+// IntelligentTieringProfile returns a profile for S3 INTELLIGENT_TIERING storage class
+func IntelligentTieringProfile(poolID uuid.UUID) *StorageProfile {
+	return &StorageProfile{
+		ID:          uuid.New(),
+		Name:        "INTELLIGENT_TIERING",
+		Description: "Intelligent tiering with access-based tier transitions",
+		Pools:       []PoolTarget{{PoolID: poolID}},
+		Replication: 1,
+		Compression: "lz4",
+	}
+}
+
 // ReplicatedProfile returns a profile with replication across pools
 func ReplicatedProfile(name string, poolIDs []uuid.UUID, replication int) *StorageProfile {
 	targets := make([]PoolTarget, len(poolIDs))
