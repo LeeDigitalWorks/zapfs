@@ -153,6 +153,12 @@ func (s *MetadataServer) PutBucketOwnershipControlsHandler(d *data.Data, w http.
 		return
 	}
 
+	// Update bucket cache
+	if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists {
+		bucketInfo.OwnershipControls = &controls
+		s.bucketStore.SetBucket(bucket, bucketInfo)
+	}
+
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
 }
@@ -166,6 +172,12 @@ func (s *MetadataServer) DeleteBucketOwnershipControlsHandler(d *data.Data, w ht
 	if err != nil && err != db.ErrOwnershipControlsNotFound {
 		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
 		return
+	}
+
+	// Update bucket cache
+	if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists {
+		bucketInfo.OwnershipControls = nil
+		s.bucketStore.SetBucket(bucket, bucketInfo)
 	}
 
 	// Success - return 204 No Content
