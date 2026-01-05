@@ -288,15 +288,9 @@ func TestGetBucketOwnershipControlsHandler(t *testing.T) {
 		expectedStatus int
 	}{
 		{
-			name:   "controls not found",
+			name:   "bucket not found in bucket store",
 			bucket: "test-bucket",
-			setupBucket: &types.BucketInfo{
-				ID:        uuid.New(),
-				Name:      "test-bucket",
-				OwnerID:   "test-owner",
-				CreatedAt: time.Now().UnixNano(),
-			},
-			// Per AWS S3 spec, returns OwnershipControlsNotFoundError (404)
+			// Not setting up bucket in bucket store - should return 404
 			expectedStatus: http.StatusNotFound,
 		},
 		{
@@ -324,21 +318,16 @@ func TestGetBucketOwnershipControlsHandler(t *testing.T) {
 			srv := newTestServer(t)
 			ctx := context.Background()
 
-			// Setup bucket
+			// Setup bucket in bucket store with ownership controls
 			if tc.setupBucket != nil {
 				err := srv.db.CreateBucket(ctx, tc.setupBucket)
 				require.NoError(t, err)
 				srv.bucketStore.SetBucket(tc.bucket, s3types.Bucket{
-					Name:       tc.setupBucket.Name,
-					OwnerID:    tc.setupBucket.OwnerID,
-					CreateTime: time.Unix(0, tc.setupBucket.CreatedAt),
+					Name:              tc.setupBucket.Name,
+					OwnerID:           tc.setupBucket.OwnerID,
+					CreateTime:        time.Unix(0, tc.setupBucket.CreatedAt),
+					OwnershipControls: tc.setupControls,
 				})
-			}
-
-			// Setup controls
-			if tc.setupControls != nil {
-				err := srv.db.SetOwnershipControls(ctx, tc.bucket, tc.setupControls)
-				require.NoError(t, err)
 			}
 
 			// Create request
@@ -454,6 +443,26 @@ func TestPutBucketOwnershipControlsHandler(t *testing.T) {
 			},
 			requestBody: `<?xml version="1.0" encoding="UTF-8"?>
 <OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+</OwnershipControls>`,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "multiple rules not allowed",
+			bucket: "test-bucket",
+			setupBucket: &types.BucketInfo{
+				ID:        uuid.New(),
+				Name:      "test-bucket",
+				OwnerID:   "test-owner",
+				CreatedAt: time.Now().UnixNano(),
+			},
+			requestBody: `<?xml version="1.0" encoding="UTF-8"?>
+<OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+	<Rule>
+		<ObjectOwnership>BucketOwnerEnforced</ObjectOwnership>
+	</Rule>
+	<Rule>
+		<ObjectOwnership>ObjectWriter</ObjectOwnership>
+	</Rule>
 </OwnershipControls>`,
 			expectedStatus: http.StatusBadRequest,
 		},

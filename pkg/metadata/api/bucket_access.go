@@ -99,20 +99,16 @@ func (s *MetadataServer) DeletePublicAccessBlockHandler(d *data.Data, w http.Res
 func (s *MetadataServer) GetBucketOwnershipControlsHandler(d *data.Data, w http.ResponseWriter) {
 	bucket := d.S3Info.Bucket
 
-	controls, err := s.db.GetOwnershipControls(d.Ctx, bucket)
-	if err != nil {
-		if err == db.ErrOwnershipControlsNotFound {
-			writeXMLErrorResponse(w, d, s3err.ErrOwnershipControlsNotFoundError)
-			return
-		}
-		writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
+	if !exists {
+		writeXMLErrorResponse(w, d, s3err.ErrOwnershipControlsNotFoundError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 	w.WriteHeader(http.StatusOK)
-	xml.NewEncoder(w).Encode(controls)
+	xml.NewEncoder(w).Encode(bucketInfo.OwnershipControls)
 }
 
 // PutBucketOwnershipControlsHandler sets bucket ownership controls.
@@ -134,8 +130,8 @@ func (s *MetadataServer) PutBucketOwnershipControlsHandler(d *data.Data, w http.
 	}
 
 	// Validate rules
-	if len(controls.Rules) == 0 {
-		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+	if len(controls.Rules) == 0 || len(controls.Rules) > 1 {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
 		return
 	}
 
@@ -147,7 +143,7 @@ func (s *MetadataServer) PutBucketOwnershipControlsHandler(d *data.Data, w http.
 		s3types.ObjectOwnershipBucketOwnerEnforced:
 		// Valid values
 	default:
-		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
 		return
 	}
 
