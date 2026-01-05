@@ -277,7 +277,7 @@ func (fs *FileServer) GetObjectRange(req *file_pb.GetObjectRangeRequest, stream 
 
 	for _, chunkRef := range obj.ChunkRefs {
 		chunkStart := currentOffset
-		chunkEnd := currentOffset + chunkRef.Size
+		chunkEnd := currentOffset + chunkRef.GetOriginalSize()
 
 		// Skip chunks before the range
 		if chunkEnd <= offset {
@@ -296,7 +296,7 @@ func (fs *FileServer) GetObjectRange(req *file_pb.GetObjectRangeRequest, stream 
 			readStart = int64(offset - chunkStart)
 		}
 
-		readLen := int64(chunkRef.Size) - readStart
+		readLen := int64(chunkRef.GetOriginalSize()) - readStart
 		if uint64(readLen) > bytesRemaining {
 			readLen = int64(bytesRemaining)
 		}

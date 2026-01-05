@@ -274,7 +274,7 @@ func TestCompression_LocalChunkInfo(t *testing.T) {
 
 	assert.Equal(t, chunkID, chunkInfo.ChunkId)
 	assert.Equal(t, "zstd", chunkInfo.Compression)
-	assert.Greater(t, chunkInfo.OriginalSize, uint64(0))
+	assert.Greater(t, chunkInfo.OriginalSize, int64(0))
 	assert.Less(t, chunkInfo.Size, chunkInfo.OriginalSize)
 
 	client.DeleteObject(objectID)

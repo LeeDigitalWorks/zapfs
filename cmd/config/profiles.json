@@ -56,6 +56,21 @@
       "compression": "zstd"
     },
     {
+      "id": "00000000-0000-0000-0000-000000000015",
+      "name": "INTELLIGENT_TIERING",
+      "description": "Automatic tiering based on access patterns",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000001"
+        },
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000002"
+        }
+      ],
+      "replication": 1,
+      "compression": "lz4"
+    },
+    {
       "id": "00000000-0000-0000-0000-000000000013",
       "name": "COLD",
       "description": "Infrequent access storage on S3",

@@ -14,6 +14,10 @@ services:
       - --db_driver=postgres
       - --db_dsn=postgres://zapfs:zapfs@postgres:5432/zapfs?sslmode=disable
       - --manager_addr=manager:8050
+      - --s3_domains=localhost,s3.localhost
+      - --website_domains=s3-website.localhost
+      - --pools_config=/config/pools.json
+      - --profiles_config=/config/profiles.json
     depends_on: !override
       postgres:
         condition: service_healthy

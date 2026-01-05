@@ -198,6 +198,8 @@ services:
       - --manager_addr=manager-1:8050
       - --s3_domains=localhost,s3.localhost
       - --website_domains=s3-website.localhost
+      - --pools_config=/config/pools.json
+      - --profiles_config=/config/profiles.json
       # IAM mode: "remote" syncs from manager, "local" uses config file
       # - --iam_mode=remote
     environment:
@@ -249,6 +251,8 @@ services:
       - --db_driver=mysql
       - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
       - --manager_addr=manager-1:8050
+      - --pools_config=/config/pools.json
+      - --profiles_config=/config/profiles.json
       - --federation.enabled=true
       - --federation.mode=worker
       - --federation.sync_concurrency=10

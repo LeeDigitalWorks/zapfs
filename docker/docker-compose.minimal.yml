@@ -20,6 +20,7 @@ services:
       - --raft_addr=manager:8051
       - --bootstrap
       - --node_id=manager
+      - --allow_dev_credentials  # Dev only: uses iam.toml from /etc/zapfs
     environment:
       ZAPFS_IAM_MASTER_KEY: ${ZAPFS_IAM_MASTER_KEY:-c2VjcmV0LW1hc3Rlci1rZXktZm9yLWRldi1vbmx5IQ==}
     ports:
@@ -50,6 +51,8 @@ services:
       - --manager_addr=manager:8050
       - --s3_domains=localhost,s3.localhost
       - --website_domains=s3-website.localhost
+      - --pools_config=/config/pools.json
+      - --profiles_config=/config/profiles.json
     ports:
       - "8082:8082"  # S3 API endpoint
       - "8085:8085"  # Metrics

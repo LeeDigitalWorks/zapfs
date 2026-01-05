@@ -127,6 +127,8 @@ services:
       - --db_driver=mysql
       - --db_dsn=zapfs:zapfs@tcp(mysql:3306)/zapfs?parseTime=true
       - --manager_addr=manager-1:8050
+      - --pools_config=/etc/zapfs/pools.json
+      - --profiles_config=/etc/zapfs/profiles.json
     environment:
       LOG_LEVEL: debug
     volumes:
