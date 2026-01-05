@@ -62,30 +62,6 @@ func NewStorageProfile(name string) *StorageProfile {
 	}
 }
 
-// StandardProfile returns a basic profile for general-purpose storage
-func StandardProfile(poolID uuid.UUID) *StorageProfile {
-	return &StorageProfile{
-		ID:          uuid.New(),
-		Name:        "STANDARD",
-		Description: "General-purpose storage with balanced performance",
-		Pools:       []PoolTarget{{PoolID: poolID}},
-		Replication: 1,
-		Compression: "lz4",
-	}
-}
-
-// IntelligentTieringProfile returns a profile for S3 INTELLIGENT_TIERING storage class
-func IntelligentTieringProfile(poolID uuid.UUID) *StorageProfile {
-	return &StorageProfile{
-		ID:          uuid.New(),
-		Name:        "INTELLIGENT_TIERING",
-		Description: "Intelligent tiering with access-based tier transitions",
-		Pools:       []PoolTarget{{PoolID: poolID}},
-		Replication: 1,
-		Compression: "lz4",
-	}
-}
-
 // ReplicatedProfile returns a profile with replication across pools
 func ReplicatedProfile(name string, poolIDs []uuid.UUID, replication int) *StorageProfile {
 	targets := make([]PoolTarget, len(poolIDs))
@@ -116,30 +92,6 @@ func ECProfile(name string, poolIDs []uuid.UUID, dataShards, parityShards int) *
 			DataShards:   dataShards,
 			ParityShards: parityShards,
 		},
-	}
-}
-
-// ColdProfile returns a profile suitable for infrequent access data
-func ColdProfile(poolID uuid.UUID) *StorageProfile {
-	return &StorageProfile{
-		ID:          uuid.New(),
-		Name:        "COLD",
-		Description: "Infrequent access storage with high compression",
-		Pools:       []PoolTarget{{PoolID: poolID}},
-		Replication: 2,
-		Compression: "zstd",
-	}
-}
-
-// ArchiveProfile returns a profile for long-term archival storage
-func ArchiveProfile(poolID uuid.UUID) *StorageProfile {
-	return &StorageProfile{
-		ID:          uuid.New(),
-		Name:        "ARCHIVE",
-		Description: "Long-term archival storage",
-		Pools:       []PoolTarget{{PoolID: poolID}},
-		Replication: 1,
-		Compression: "zstd",
 	}
 }
 

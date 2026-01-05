@@ -683,39 +683,35 @@ func initializeStorage(opts MetadataServerOpts) (*types.PoolSet, *types.ProfileS
 	var profiles *types.ProfileSet
 	var err error
 
-	// Load or create pools
-	if opts.PoolsConfig != "" {
-		pools, err = types.LoadPoolsFromFile(opts.PoolsConfig)
-		if err != nil {
-			logger.Fatal().Err(err).Str("path", opts.PoolsConfig).Msg("failed to load pools config")
-		}
-		logger.Info().Str("path", opts.PoolsConfig).Int("count", len(pools.List())).Msg("loaded storage pools")
-	} else {
-		pools = types.NewPoolSet()
-		defaultPool := types.NewStoragePool("default", types.StorageTypeLocal, 1.0)
-		defaultPool.Backends = []string{opts.DataDir}
-		pools.Add(defaultPool)
-		logger.Info().Str("data_dir", opts.DataDir).Msg("created default local storage pool")
+	// Load pools from config file (required)
+	if opts.PoolsConfig == "" {
+		logger.Fatal().Msg("--pools-config is required: storage pools must be defined in a configuration file")
 	}
+	pools, err = types.LoadPoolsFromFile(opts.PoolsConfig)
+	if err != nil {
+		logger.Fatal().Err(err).Str("path", opts.PoolsConfig).Msg("failed to load pools config")
+	}
+	if len(pools.List()) == 0 {
+		logger.Fatal().Str("path", opts.PoolsConfig).Msg("pools config must define at least one storage pool")
+	}
+	logger.Info().Str("path", opts.PoolsConfig).Int("count", len(pools.List())).Msg("loaded storage pools")
 
-	// Load or create profiles
-	if opts.ProfilesConfig != "" {
-		profiles, err = types.LoadProfilesFromFile(opts.ProfilesConfig, pools)
-		if err != nil {
-			logger.Fatal().Err(err).Str("path", opts.ProfilesConfig).Msg("failed to load profiles config")
-		}
-		logger.Info().Str("path", opts.ProfilesConfig).Int("count", len(profiles.List())).Msg("loaded storage profiles")
-	} else {
-		profiles = types.NewProfileSet()
-		if poolList := pools.List(); len(poolList) > 0 {
-			defaultProfile := types.StandardProfile(poolList[0].ID)
-			profiles.Add(defaultProfile)
-			// Add INTELLIGENT_TIERING profile for S3 compatibility
-			intelligentTieringProfile := types.IntelligentTieringProfile(poolList[0].ID)
-			profiles.Add(intelligentTieringProfile)
-			logger.Info().Int("count", len(profiles.List())).Msg("created default storage profiles")
-		}
+	// Load profiles from config file (required)
+	if opts.ProfilesConfig == "" {
+		logger.Fatal().Msg("--profiles-config is required: storage profiles must be defined in a configuration file")
 	}
+	profiles, err = types.LoadProfilesFromFile(opts.ProfilesConfig, pools)
+	if err != nil {
+		logger.Fatal().Err(err).Str("path", opts.ProfilesConfig).Msg("failed to load profiles config")
+	}
+	if len(profiles.List()) == 0 {
+		logger.Fatal().Str("path", opts.ProfilesConfig).Msg("profiles config must define at least one storage profile")
+	}
+	// Validate that STANDARD profile exists (required for S3 compatibility)
+	if _, exists := profiles.Get("STANDARD"); !exists {
+		logger.Fatal().Msg("profiles config must include a 'STANDARD' profile for S3 compatibility")
+	}
+	logger.Info().Str("path", opts.ProfilesConfig).Int("count", len(profiles.List())).Msg("loaded storage profiles")
 
 	// Initialize backend manager
 	backendManager := backend.NewManager()
