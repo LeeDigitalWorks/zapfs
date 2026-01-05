@@ -80,7 +80,7 @@ func NewTargetCache(cfg TargetCacheConfig) *TargetCache {
 	c := cache.New[string, *CachedFileServer](
 		context.Background(),
 		cache.WithExpiry[string, *CachedFileServer](cfg.StaleThreshold),
-		cache.WithNumShards[string, *CachedFileServer](16), // Fewer shards since we have fewer file servers
+		cache.WithNumShards[string, *CachedFileServer](64),
 	)
 
 	return &TargetCache{

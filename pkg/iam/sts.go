@@ -63,7 +63,7 @@ func DefaultSTSConfig() STSConfig {
 type STSService struct {
 	config   STSConfig
 	iamMgr   *Manager
-	sessions *utils.ShardedMap[*SessionCredential] // sessionToken -> *SessionCredential
+	sessions *utils.LockFreeMap[string, *SessionCredential] // sessionToken -> *SessionCredential
 }
 
 // NewSTSService creates a new STS service
@@ -71,7 +71,7 @@ func NewSTSService(iamMgr *Manager, config STSConfig) *STSService {
 	sts := &STSService{
 		config:   config,
 		iamMgr:   iamMgr,
-		sessions: utils.NewShardedMap[*SessionCredential](),
+		sessions: utils.NewLockFreeMap[string, *SessionCredential](),
 	}
 
 	// Start cleanup goroutine

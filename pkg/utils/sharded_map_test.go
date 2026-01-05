@@ -12,7 +12,7 @@ import (
 )
 
 func TestShardedMap_BasicOperations(t *testing.T) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 
 	// Test Store and Load
 	sm.Store("key1", 100)
@@ -41,7 +41,7 @@ func TestShardedMap_BasicOperations(t *testing.T) {
 }
 
 func TestShardedMap_LoadOrStore(t *testing.T) {
-	sm := NewShardedMap[string]()
+	sm := NewShardedMap[string, string]()
 
 	// First call should store
 	v1, loaded1 := sm.LoadOrStore("key", "value1")
@@ -55,7 +55,7 @@ func TestShardedMap_LoadOrStore(t *testing.T) {
 }
 
 func TestShardedMap_Range(t *testing.T) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 
 	for i := 0; i < 100; i++ {
 		sm.Store(fmt.Sprintf("key%d", i), i)
@@ -78,7 +78,7 @@ func TestShardedMap_Range(t *testing.T) {
 }
 
 func TestShardedMap_DeleteIf(t *testing.T) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 
 	for i := 0; i < 100; i++ {
 		sm.Store(fmt.Sprintf("key%d", i), i)
@@ -100,7 +100,7 @@ func TestShardedMap_DeleteIf(t *testing.T) {
 }
 
 func TestShardedMap_Clear(t *testing.T) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 
 	for i := 0; i < 100; i++ {
 		sm.Store(fmt.Sprintf("key%d", i), i)
@@ -112,7 +112,7 @@ func TestShardedMap_Clear(t *testing.T) {
 }
 
 func TestShardedMap_Keys(t *testing.T) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 
 	sm.Store("a", 1)
 	sm.Store("b", 2)
@@ -124,7 +124,7 @@ func TestShardedMap_Keys(t *testing.T) {
 }
 
 func TestShardedMap_Concurrent(t *testing.T) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 	var wg sync.WaitGroup
 
 	// Concurrent writes
@@ -165,7 +165,7 @@ func TestShardedMap_Concurrent(t *testing.T) {
 }
 
 func BenchmarkShardedMap_Store(b *testing.B) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -178,7 +178,7 @@ func BenchmarkShardedMap_Store(b *testing.B) {
 }
 
 func BenchmarkShardedMap_Load(b *testing.B) {
-	sm := NewShardedMap[int]()
+	sm := NewShardedMap[string, int]()
 	for i := 0; i < 10000; i++ {
 		sm.Store(fmt.Sprintf("key%d", i), i)
 	}

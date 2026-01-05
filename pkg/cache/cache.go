@@ -5,27 +5,21 @@ package cache
 
 import (
 	"context"
-	"fmt"
-	"hash/maphash"
 	"iter"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 // Default number of shards for lock striping
-const defaultShardCount = 64
+const defaultShardCount = 256
 
 // entry wraps a value with access time for LRU eviction and TTL expiry
 type entry[V any] struct {
 	value      V
 	lastAccess atomic.Int64 // Unix nano timestamp
-}
-
-// shard is a single partition of the cache with its own lock
-type shard[K comparable, V any] struct {
-	mu   sync.RWMutex
-	data map[K]*entry[V]
 }
 
 // Cache is a high-performance concurrent cache with lock striping.
@@ -52,17 +46,20 @@ type shard[K comparable, V any] struct {
 type Cache[K comparable, V any] struct {
 	ctx context.Context
 
-	shards    []*shard[K, V]
-	numShards uint64
-	seed      maphash.Seed
+	// Use ShardedMap for the underlying storage
+	store     *utils.ShardedMap[K, *entry[V]]
+	numShards int
+
+	// Shard-level locks for LRU eviction (need write access to evict)
+	shardLocks []sync.Mutex
 
 	// Optional load function for cache misses
 	loadFunc func(ctx context.Context, key K) (V, error)
 
 	hasLoaded atomic.Bool
 
-	// Max size per shard (0 = unlimited)
-	maxSizePerShard int
+	// Max size (0 = unlimited)
+	maxSize int
 
 	// TTL expiry (0 = no expiry)
 	expiry time.Duration
@@ -76,14 +73,10 @@ type Cache[K comparable, V any] struct {
 type Option[K comparable, V any] func(*Cache[K, V])
 
 // WithMaxSize sets the maximum total number of entries in the cache.
-// The limit is distributed across shards. When a shard exceeds its limit,
-// the least recently accessed entry in that shard is evicted.
+// When capacity is reached, the least recently accessed entry is evicted.
 func WithMaxSize[K comparable, V any](maxSize int) Option[K, V] {
 	return func(c *Cache[K, V]) {
-		c.maxSizePerShard = maxSize / int(c.numShards)
-		if c.maxSizePerShard < 1 && maxSize > 0 {
-			c.maxSizePerShard = 1
-		}
+		c.maxSize = maxSize
 	}
 }
 
@@ -98,19 +91,17 @@ func WithExpiry[K comparable, V any](expiry time.Duration) Option[K, V] {
 
 // WithNumShards sets the number of shards for lock striping.
 // More shards = less contention but slightly more memory overhead.
-// Default is 32 shards.
+// Default is 64 shards.
 func WithNumShards[K comparable, V any](numShards int) Option[K, V] {
 	return func(c *Cache[K, V]) {
 		if numShards < 1 {
 			numShards = 1
 		}
-		c.numShards = uint64(numShards)
-		c.shards = make([]*shard[K, V], numShards)
-		for i := range c.shards {
-			c.shards[i] = &shard[K, V]{
-				data: make(map[K]*entry[V]),
-			}
-		}
+		c.numShards = numShards
+		c.shardLocks = make([]sync.Mutex, numShards)
+		c.store = utils.NewShardedMap[K, *entry[V]](
+			utils.WithShardCount[K, *entry[V]](numShards),
+		)
 	}
 }
 
@@ -128,17 +119,14 @@ func New[K comparable, V any](ctx context.Context, opts ...Option[K, V]) *Cache[
 	c := &Cache[K, V]{
 		ctx:         ctx,
 		numShards:   defaultShardCount,
-		seed:        maphash.MakeSeed(),
 		cleanupStop: make(chan struct{}),
 	}
 
-	// Initialize default shards
-	c.shards = make([]*shard[K, V], c.numShards)
-	for i := range c.shards {
-		c.shards[i] = &shard[K, V]{
-			data: make(map[K]*entry[V]),
-		}
-	}
+	// Initialize default store
+	c.shardLocks = make([]sync.Mutex, c.numShards)
+	c.store = utils.NewShardedMap[K, *entry[V]](
+		utils.WithShardCount[K, *entry[V]](c.numShards),
+	)
 
 	// Apply options (may override numShards)
 	for _, opt := range opts {
@@ -176,15 +164,9 @@ func (c *Cache[K, V]) cleanup() {
 	now := time.Now().UnixNano()
 	expiryNanos := c.expiry.Nanoseconds()
 
-	for _, s := range c.shards {
-		s.mu.Lock()
-		for key, e := range s.data {
-			if now-e.lastAccess.Load() > expiryNanos {
-				delete(s.data, key)
-			}
-		}
-		s.mu.Unlock()
-	}
+	c.store.DeleteIf(func(_ K, e *entry[V]) bool {
+		return now-e.lastAccess.Load() > expiryNanos
+	})
 }
 
 // Stop stops the cleanup goroutine. Call this when the cache is no longer needed.
@@ -195,32 +177,10 @@ func (c *Cache[K, V]) Stop() {
 	}
 }
 
-// getShard returns the shard for a given key using consistent hashing
-func (c *Cache[K, V]) getShard(key K) *shard[K, V] {
-	var h maphash.Hash
-	h.SetSeed(c.seed)
-
-	switch k := any(key).(type) {
-	case string:
-		h.WriteString(k)
-	case []byte:
-		h.Write(k)
-	default:
-		h.WriteString(fmt.Sprint(key))
-	}
-
-	return c.shards[h.Sum64()%c.numShards]
-}
-
 // Get retrieves a value from the cache.
 // Returns the value and true if found (and not expired), or zero value and false otherwise.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
-	s := c.getShard(key)
-
-	s.mu.RLock()
-	e, exists := s.data[key]
-	s.mu.RUnlock()
-
+	e, exists := c.store.Load(key)
 	if !exists {
 		var zero V
 		return zero, false
@@ -267,71 +227,55 @@ func (c *Cache[K, V]) GetOrLoad(ctx context.Context, key K) (V, error) {
 
 // Set adds or updates a value in the cache.
 func (c *Cache[K, V]) Set(key K, value V) {
-	s := c.getShard(key)
+	e := &entry[V]{value: value}
+	e.lastAccess.Store(time.Now().UnixNano())
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Check if we need to evict before adding (per-shard limit)
-	if c.maxSizePerShard > 0 && len(s.data) >= c.maxSizePerShard {
-		if _, exists := s.data[key]; !exists {
-			c.evictOldestInShard(s)
+	// Check if we need to evict before storing (avoid deadlock by checking size outside lock)
+	if c.maxSize > 0 {
+		// Check size before acquiring lock to avoid deadlock
+		currentSize := c.store.Len()
+		if currentSize >= c.maxSize {
+			c.evictOldest()
 		}
 	}
 
-	e := &entry[V]{value: value}
-	e.lastAccess.Store(time.Now().UnixNano())
-	s.data[key] = e
+	c.store.Store(key, e)
 }
 
-// evictOldestInShard removes the least recently accessed entry from a shard.
-// Caller must hold the shard's write lock.
-func (c *Cache[K, V]) evictOldestInShard(s *shard[K, V]) {
+// evictOldest removes the least recently accessed entry from the cache.
+func (c *Cache[K, V]) evictOldest() {
 	var oldestKey K
 	var oldestTime int64 = 0
 	first := true
 
-	for k, e := range s.data {
+	c.store.Range(func(k K, e *entry[V]) bool {
 		accessTime := e.lastAccess.Load()
 		if first || accessTime < oldestTime {
 			oldestKey = k
 			oldestTime = accessTime
 			first = false
 		}
-	}
+		return true
+	})
 
 	if !first {
-		delete(s.data, oldestKey)
+		c.store.Delete(oldestKey)
 	}
 }
 
 // Delete removes a key from the cache.
 func (c *Cache[K, V]) Delete(key K) {
-	s := c.getShard(key)
-
-	s.mu.Lock()
-	delete(s.data, key)
-	s.mu.Unlock()
+	c.store.Delete(key)
 }
 
 // Size returns the current number of entries across all shards.
 func (c *Cache[K, V]) Size() int {
-	total := 0
-	for _, s := range c.shards {
-		s.mu.RLock()
-		total += len(s.data)
-		s.mu.RUnlock()
-	}
-	return total
+	return c.store.Len()
 }
 
 // Clear removes all entries from the cache.
 func (c *Cache[K, V]) Clear() {
-	for _, s := range c.shards {
-		s.mu.Lock()
-		s.data = make(map[K]*entry[V])
-		s.mu.Unlock()
-	}
+	c.store.Clear()
 }
 
 // Entity represents a cache entry for bulk loading
@@ -346,6 +290,7 @@ type Entity[K, V any] struct {
 func (c *Cache[K, V]) Load(seq iter.Seq2[Entity[K, V], error]) error {
 	const batchSize = 1000
 
+	now := time.Now().UnixNano()
 	var batch []Entity[K, V]
 	for entity, err := range seq {
 		if err != nil {
@@ -353,47 +298,28 @@ func (c *Cache[K, V]) Load(seq iter.Seq2[Entity[K, V], error]) error {
 		}
 		batch = append(batch, entity)
 		if len(batch) >= batchSize {
-			c.applyBatch(batch)
+			c.applyBatch(batch, now)
 			batch = batch[:0]
 		}
 	}
 
 	if len(batch) > 0 {
-		c.applyBatch(batch)
+		c.applyBatch(batch, now)
 	}
 
 	c.hasLoaded.Store(true)
 	return nil
 }
 
-func (c *Cache[K, V]) applyBatch(batch []Entity[K, V]) {
-	// Group entities by shard to minimize lock acquisitions
-	shardBatches := make(map[*shard[K, V]][]Entity[K, V])
-
+func (c *Cache[K, V]) applyBatch(batch []Entity[K, V], now int64) {
 	for _, entity := range batch {
-		s := c.getShard(entity.Key)
-		shardBatches[s] = append(shardBatches[s], entity)
-	}
-
-	// Apply each shard's batch with a single lock acquisition
-	now := time.Now().UnixNano()
-	for s, entities := range shardBatches {
-		s.mu.Lock()
-		for _, entity := range entities {
-			if entity.IsDeleted {
-				delete(s.data, entity.Key)
-			} else {
-				if c.maxSizePerShard > 0 && len(s.data) >= c.maxSizePerShard {
-					if _, exists := s.data[entity.Key]; !exists {
-						c.evictOldestInShard(s)
-					}
-				}
-				e := &entry[V]{value: entity.Value}
-				e.lastAccess.Store(now)
-				s.data[entity.Key] = e
-			}
+		if entity.IsDeleted {
+			c.store.Delete(entity.Key)
+		} else {
+			e := &entry[V]{value: entity.Value}
+			e.lastAccess.Store(now)
+			c.store.Store(entity.Key, e)
 		}
-		s.mu.Unlock()
 	}
 }
 
@@ -416,23 +342,12 @@ func (c *Cache[K, V]) Iter() iter.Seq2[K, V] {
 		now := time.Now().UnixNano()
 		expiryNanos := c.expiry.Nanoseconds()
 
-		for _, s := range c.shards {
-			s.mu.RLock()
-			for key, e := range s.data {
-				// Skip expired entries
-				if c.expiry > 0 && now-e.lastAccess.Load() > expiryNanos {
-					continue
-				}
-				// Must unlock before calling yield to avoid deadlock
-				val := e.value
-				s.mu.RUnlock()
-
-				if !yield(key, val) {
-					return
-				}
-				s.mu.RLock()
+		c.store.Range(func(key K, e *entry[V]) bool {
+			// Skip expired entries
+			if c.expiry > 0 && now-e.lastAccess.Load() > expiryNanos {
+				return true // continue
 			}
-			s.mu.RUnlock()
-		}
+			return yield(key, e.value)
+		})
 	}
 }

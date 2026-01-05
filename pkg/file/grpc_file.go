@@ -55,7 +55,8 @@ func putStreamBuffer(buf *[]byte) {
 
 // uuidCache caches objectID -> UUID mappings to avoid repeated SHA-1 hashing.
 // UUID v5 uses SHA-1 which is ~200ns per call; caching reduces this to ~35ns.
-var uuidCache = utils.NewShardedMap[uuid.UUID]()
+// Uses LockFreeMap with GrowOnly since this cache only grows (never shrinks).
+var uuidCache = utils.NewLockFreeMap[string, uuid.UUID](utils.WithLockFreeGrowOnly[string, uuid.UUID]())
 
 // objectIDToUUID converts a string object ID to a deterministic UUID.
 // Uses UUID v5 (SHA-1 based) to ensure the same objectID always maps to the same UUID.

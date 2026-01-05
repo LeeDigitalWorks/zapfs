@@ -61,10 +61,10 @@ type RateLimitFilter struct {
 	globalReadBWLimiter  *TokenBucket
 	globalWriteBWLimiter *TokenBucket
 
-	// Per-key limiters using sharded maps for better performance
-	bucketLimiters *utils.ShardedMap[*tieredLimiters] // bucket -> *tieredLimiters
-	userLimiters   *utils.ShardedMap[*tieredLimiters] // userID -> *tieredLimiters
-	ipLimiters     *utils.ShardedMap[*limiters]       // IP -> *limiters
+	// Per-key limiters using lock-free maps for better performance
+	bucketLimiters *utils.LockFreeMap[string, *tieredLimiters] // bucket -> *tieredLimiters
+	userLimiters   *utils.LockFreeMap[string, *tieredLimiters] // userID -> *tieredLimiters
+	ipLimiters     *utils.LockFreeMap[string, *limiters]       // IP -> *limiters
 
 	// Redis limiter for distributed rate limiting (optional)
 	redisLimiter *RedisRateLimiter
@@ -161,9 +161,9 @@ func NewRateLimitFilter(config RateLimitConfig, tierConfig *utils.TierConfig) *R
 	f := &RateLimitFilter{
 		config:         config,
 		tierConfig:     tierConfig,
-		bucketLimiters: utils.NewShardedMap[*tieredLimiters](),
-		userLimiters:   utils.NewShardedMap[*tieredLimiters](),
-		ipLimiters:     utils.NewShardedMap[*limiters](),
+		bucketLimiters: utils.NewLockFreeMap[string, *tieredLimiters](),
+		userLimiters:   utils.NewLockFreeMap[string, *tieredLimiters](),
+		ipLimiters:     utils.NewLockFreeMap[string, *limiters](),
 	}
 
 	burst := config.BurstMultiplier
@@ -536,7 +536,7 @@ func (f *RateLimitFilter) checkIPLimits(clientIP string, opType s3action.Operati
 }
 
 // getOrCreateTieredLimiters gets or creates tiered limiters for a key
-func (f *RateLimitFilter) getOrCreateTieredLimiters(m *utils.ShardedMap[*tieredLimiters], key, tierName string) *tieredLimiters {
+func (f *RateLimitFilter) getOrCreateTieredLimiters(m *utils.LockFreeMap[string, *tieredLimiters], key, tierName string) *tieredLimiters {
 	if tl, ok := m.Load(key); ok {
 		tl.lastUsed.Store(time.Now().Unix())
 
