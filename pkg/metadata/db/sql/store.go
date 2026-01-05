@@ -142,6 +142,15 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+// Querier is the interface for executing SQL queries.
+// Both Store and TxStore implement this interface, allowing shared query logic.
+type Querier interface {
+	Query(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRow(ctx context.Context, query string, args ...any) *sql.Row
+	Exec(ctx context.Context, query string, args ...any) (sql.Result, error)
+	Dialect() Dialect
+}
+
 // ============================================================================
 // Transaction Support
 // ============================================================================

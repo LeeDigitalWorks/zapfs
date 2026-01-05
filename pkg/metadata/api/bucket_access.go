@@ -100,7 +100,7 @@ func (s *MetadataServer) GetBucketOwnershipControlsHandler(d *data.Data, w http.
 	bucket := d.S3Info.Bucket
 
 	bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-	if !exists {
+	if !exists || bucketInfo.OwnershipControls == nil {
 		writeXMLErrorResponse(w, d, s3err.ErrOwnershipControlsNotFoundError)
 		return
 	}

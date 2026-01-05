@@ -6,7 +6,6 @@ package store
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -15,9 +14,6 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
-
-// ErrChunkNotFound is returned when a chunk doesn't exist
-var ErrChunkNotFound = errors.New("chunk not found")
 
 // PutObject stores an object, chunking the data and writing to backends without compression.
 func (fs *FileStore) PutObject(ctx context.Context, obj *types.ObjectRef, reader io.Reader) error {

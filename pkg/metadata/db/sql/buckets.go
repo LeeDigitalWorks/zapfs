@@ -12,18 +12,72 @@ import (
 )
 
 // ============================================================================
-// Bucket Operations
+// Bucket Operations - Store
 // ============================================================================
 
-// CreateBucket creates a new bucket, ignoring if it already exists.
 func (s *Store) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
-	// Use dialect-specific insert ignore syntax
+	return createBucket(ctx, s, bucket)
+}
+
+func (s *Store) GetBucket(ctx context.Context, name string) (*types.BucketInfo, error) {
+	return getBucket(ctx, s, name)
+}
+
+func (s *Store) DeleteBucket(ctx context.Context, name string) error {
+	return deleteBucket(ctx, s, name, true)
+}
+
+func (s *Store) ListBuckets(ctx context.Context, params *db.ListBucketsParams) (*db.ListBucketsResult, error) {
+	return listBuckets(ctx, s, params)
+}
+
+func (s *Store) UpdateBucketVersioning(ctx context.Context, bucket string, versioning string) error {
+	return updateBucketVersioning(ctx, s, bucket, versioning)
+}
+
+func (s *Store) CountBuckets(ctx context.Context) (int64, error) {
+	return countBuckets(ctx, s)
+}
+
+// ============================================================================
+// Bucket Operations - TxStore
+// ============================================================================
+
+func (t *TxStore) CreateBucket(ctx context.Context, bucket *types.BucketInfo) error {
+	return createBucket(ctx, t, bucket)
+}
+
+func (t *TxStore) GetBucket(ctx context.Context, name string) (*types.BucketInfo, error) {
+	return getBucket(ctx, t, name)
+}
+
+func (t *TxStore) DeleteBucket(ctx context.Context, name string) error {
+	return deleteBucket(ctx, t, name, false) // TxStore doesn't check rows affected
+}
+
+func (t *TxStore) ListBuckets(ctx context.Context, params *db.ListBucketsParams) (*db.ListBucketsResult, error) {
+	return listBuckets(ctx, t, params)
+}
+
+func (t *TxStore) UpdateBucketVersioning(ctx context.Context, bucket string, versioning string) error {
+	return updateBucketVersioning(ctx, t, bucket, versioning)
+}
+
+func (t *TxStore) CountBuckets(ctx context.Context) (int64, error) {
+	return countBuckets(ctx, t)
+}
+
+// ============================================================================
+// Shared Implementations
+// ============================================================================
+
+func createBucket(ctx context.Context, q Querier, bucket *types.BucketInfo) error {
 	query := fmt.Sprintf(`
 		INSERT %sINTO buckets (id, name, owner_id, region, created_at, default_profile_id, versioning)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)%s
-	`, s.dialect.InsertIgnorePrefix(), s.dialect.InsertIgnoreSuffix("name"))
+	`, q.Dialect().InsertIgnorePrefix(), q.Dialect().InsertIgnoreSuffix("name"))
 
-	_, err := s.Exec(ctx, query,
+	_, err := q.Exec(ctx, query,
 		bucket.ID.String(),
 		bucket.Name,
 		bucket.OwnerID,
@@ -38,34 +92,32 @@ func (s *Store) CreateBucket(ctx context.Context, bucket *types.BucketInfo) erro
 	return nil
 }
 
-// GetBucket retrieves a bucket by name.
-func (s *Store) GetBucket(ctx context.Context, name string) (*types.BucketInfo, error) {
+func getBucket(ctx context.Context, q Querier, name string) (*types.BucketInfo, error) {
 	query := `SELECT ` + BucketColumns + ` FROM buckets WHERE name = $1`
-	row := s.QueryRow(ctx, query, name)
-	return ScanBucket(row, s.dialect)
+	row := q.QueryRow(ctx, query, name)
+	return ScanBucket(row, q.Dialect())
 }
 
-// DeleteBucket deletes a bucket by name.
-func (s *Store) DeleteBucket(ctx context.Context, name string) error {
-	result, err := s.Exec(ctx, `DELETE FROM buckets WHERE name = $1`, name)
+func deleteBucket(ctx context.Context, q Querier, name string, checkAffected bool) error {
+	result, err := q.Exec(ctx, `DELETE FROM buckets WHERE name = $1`, name)
 	if err != nil {
 		return fmt.Errorf("delete bucket: %w", err)
 	}
 
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		return db.ErrBucketNotFound
+	if checkAffected {
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			return db.ErrBucketNotFound
+		}
 	}
 	return nil
 }
 
-// ListBuckets returns buckets matching the given parameters.
-func (s *Store) ListBuckets(ctx context.Context, params *db.ListBucketsParams) (*db.ListBucketsResult, error) {
+func listBuckets(ctx context.Context, q Querier, params *db.ListBucketsParams) (*db.ListBucketsResult, error) {
 	maxBuckets := params.MaxBuckets
 	if maxBuckets <= 0 || maxBuckets > 10000 {
 		maxBuckets = 1000
 	}
-
 	fetchLimit := maxBuckets + 1
 
 	query := `SELECT ` + BucketColumns + ` FROM buckets WHERE 1=1`
@@ -97,13 +149,13 @@ func (s *Store) ListBuckets(ctx context.Context, params *db.ListBucketsParams) (
 	query += fmt.Sprintf(" LIMIT $%d", argIdx)
 	args = append(args, fetchLimit)
 
-	rows, err := s.Query(ctx, query, args...)
+	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list buckets: %w", err)
 	}
 	defer rows.Close()
 
-	buckets, err := ScanBuckets(rows, s.dialect)
+	buckets, err := ScanBuckets(rows, q.Dialect())
 	if err != nil {
 		return nil, err
 	}
@@ -123,19 +175,17 @@ func (s *Store) ListBuckets(ctx context.Context, params *db.ListBucketsParams) (
 	return result, nil
 }
 
-// UpdateBucketVersioning updates the versioning status for a bucket.
-func (s *Store) UpdateBucketVersioning(ctx context.Context, bucket string, versioning string) error {
-	_, err := s.Exec(ctx, `UPDATE buckets SET versioning = $1 WHERE name = $2`, versioning, bucket)
+func updateBucketVersioning(ctx context.Context, q Querier, bucket string, versioning string) error {
+	_, err := q.Exec(ctx, `UPDATE buckets SET versioning = $1 WHERE name = $2`, versioning, bucket)
 	if err != nil {
 		return fmt.Errorf("update bucket versioning: %w", err)
 	}
 	return nil
 }
 
-// CountBuckets returns the total number of buckets.
-func (s *Store) CountBuckets(ctx context.Context) (int64, error) {
+func countBuckets(ctx context.Context, q Querier) (int64, error) {
 	var count int64
-	err := s.QueryRow(ctx, `SELECT COUNT(*) FROM buckets`).Scan(&count)
+	err := q.QueryRow(ctx, `SELECT COUNT(*) FROM buckets`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count buckets: %w", err)
 	}
