@@ -77,20 +77,20 @@ func TestPutGetObject_ZSTDCompression(t *testing.T) {
 	client.DeleteObject(objectID)
 }
 
-func TestPutGetObject_SnappyCompression(t *testing.T) {
+func TestPutGetObject_S2Compression(t *testing.T) {
 	t.Parallel()
 
 	client := newFileClient(t, fileServer1Addr)
-	objectID := testutil.UniqueID("test-snappy")
+	objectID := testutil.UniqueID("test-s2")
 
-	data := bytes.Repeat([]byte("snappy is fast for real-time compression "), 10000)
+	data := bytes.Repeat([]byte("s2 is fast for real-time compression "), 10000)
 
-	resp := client.PutObject(objectID, data, testutil.WithCompression("snappy"))
+	resp := client.PutObject(objectID, data, testutil.WithCompression("s2"))
 	assert.Equal(t, uint64(len(data)), resp.Size)
 
 	require.NotEmpty(t, resp.Chunks)
 	for _, chunk := range resp.Chunks {
-		assert.Equal(t, "snappy", chunk.Compression)
+		assert.Equal(t, "s2", chunk.Compression)
 		assert.Less(t, chunk.Size, chunk.OriginalSize)
 	}
 

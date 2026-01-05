@@ -703,17 +703,17 @@ func TestFileStore_PutObjectWithCompression_ZSTD(t *testing.T) {
 	assert.Equal(t, testData, data)
 }
 
-func TestFileStore_PutObjectWithCompression_Snappy(t *testing.T) {
+func TestFileStore_PutObjectWithCompression_S2(t *testing.T) {
 	t.Parallel()
 
 	fs, _ := newTestFileStore(t)
 	ctx := context.Background()
 
 	objID := uuid.New()
-	testData := bytes.Repeat([]byte("snappy is fast "), 1000)
+	testData := bytes.Repeat([]byte("s2 is fast "), 1000)
 
 	obj := &types.ObjectRef{ID: objID}
-	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.Snappy)
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.S2)
 	require.NoError(t, err)
 
 	retrieved, err := fs.GetObject(ctx, objID)
@@ -721,7 +721,7 @@ func TestFileStore_PutObjectWithCompression_Snappy(t *testing.T) {
 	require.NotEmpty(t, retrieved.ChunkRefs)
 
 	chunkRef := retrieved.ChunkRefs[0]
-	assert.Equal(t, "snappy", chunkRef.Compression)
+	assert.Equal(t, "s2", chunkRef.Compression)
 	assert.Less(t, chunkRef.Size, chunkRef.OriginalSize)
 
 	// Verify decompression
@@ -850,7 +850,7 @@ func TestFileStore_ConcurrentPutObjectWithCompression(t *testing.T) {
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	algos := []compression.Algorithm{compression.LZ4, compression.ZSTD, compression.Snappy, compression.None}
+	algos := []compression.Algorithm{compression.LZ4, compression.ZSTD, compression.S2, compression.None}
 
 	for i := 0; i < 20; i++ {
 		wg.Add(1)

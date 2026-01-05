@@ -16,14 +16,14 @@ const (
 	LZ4 Algorithm = "lz4"
 	// ZSTD uses the Zstandard compression algorithm (balanced speed/ratio)
 	ZSTD Algorithm = "zstd"
-	// Snappy uses the Snappy compression algorithm (very fast, lower ratio)
-	Snappy Algorithm = "snappy"
+	// S2 uses klauspost's S2 compression (faster than Snappy, better ratio)
+	S2 Algorithm = "s2"
 )
 
 // IsValid returns true if the algorithm is recognized
 func (a Algorithm) IsValid() bool {
 	switch a {
-	case None, LZ4, ZSTD, Snappy:
+	case None, LZ4, ZSTD, S2:
 		return true
 	default:
 		return false

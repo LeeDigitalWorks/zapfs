@@ -4,10 +4,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/compression"
+	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/google/uuid"
 )
 
@@ -148,4 +151,143 @@ func (m *multiReadCloser) Close() error {
 		}
 	}
 	return nil
+}
+
+// =============================================================================
+// Chunk Read Operations
+// =============================================================================
+
+// GetObject retrieves object metadata by ID.
+func (fs *FileStore) GetObject(ctx context.Context, id uuid.UUID) (*types.ObjectRef, error) {
+	obj, err := fs.objectIdx.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+// GetChunk reads a chunk from storage, decompressing if needed.
+// Returns the original (uncompressed) data.
+func (fs *FileStore) GetChunk(ctx context.Context, id types.ChunkID) (io.ReadCloser, error) {
+	chunk, err := fs.chunkIdx.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	store, ok := fs.manager.Get(chunk.BackendID)
+	if !ok {
+		return nil, fmt.Errorf("backend %s not found", chunk.BackendID)
+	}
+
+	reader, err := store.Read(ctx, chunk.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	// If not compressed, return directly
+	if !chunk.IsCompressed() {
+		return reader, nil
+	}
+
+	// Read and decompress
+	return fs.readAndDecompress(reader, chunk.Compression, id)
+}
+
+// GetChunkRange reads a range from a chunk, decompressing if needed.
+// For compressed chunks, the entire chunk must be decompressed first.
+func (fs *FileStore) GetChunkRange(ctx context.Context, id types.ChunkID, offset, length int64) (io.ReadCloser, error) {
+	chunk, err := fs.chunkIdx.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	store, ok := fs.manager.Get(chunk.BackendID)
+	if !ok {
+		return nil, fmt.Errorf("backend %s not found", chunk.BackendID)
+	}
+
+	// If not compressed, use efficient range read from backend
+	if !chunk.IsCompressed() {
+		return store.ReadRange(ctx, chunk.Path, offset, length)
+	}
+
+	// For compressed chunks, read and decompress entire chunk, then extract range
+	reader, err := store.Read(ctx, chunk.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	decompressed, err := fs.readAndDecompressBytes(reader, chunk.Compression, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract requested range
+	dataLen := int64(len(decompressed))
+	if offset >= dataLen {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	end := min(offset+length, dataLen)
+
+	return io.NopCloser(bytes.NewReader(decompressed[offset:end])), nil
+}
+
+// GetChunkData reads a chunk and returns the decompressed data as bytes.
+func (fs *FileStore) GetChunkData(ctx context.Context, id types.ChunkID) ([]byte, error) {
+	reader, err := fs.GetChunk(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+// GetChunkDataRange reads a range from a chunk and returns the data as bytes.
+func (fs *FileStore) GetChunkDataRange(ctx context.Context, id types.ChunkID, offset, length int64) ([]byte, error) {
+	reader, err := fs.GetChunkRange(ctx, id, offset, length)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+// GetChunkInfo returns chunk metadata by ID.
+func (fs *FileStore) GetChunkInfo(id types.ChunkID) (*types.Chunk, error) {
+	chunk, err := fs.chunkIdx.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return &chunk, nil
+}
+
+// =============================================================================
+// Decompression Helpers
+// =============================================================================
+
+// readAndDecompress reads compressed data and returns a decompressed ReadCloser.
+func (fs *FileStore) readAndDecompress(reader io.ReadCloser, algo string, id types.ChunkID) (io.ReadCloser, error) {
+	decompressed, err := fs.readAndDecompressBytes(reader, algo, id)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(decompressed)), nil
+}
+
+// readAndDecompressBytes reads compressed data and returns decompressed bytes.
+func (fs *FileStore) readAndDecompressBytes(reader io.ReadCloser, algo string, id types.ChunkID) ([]byte, error) {
+	compressedData, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read compressed chunk: %w", err)
+	}
+
+	algorithm := compression.ParseAlgorithm(algo)
+	decompressed, err := compression.Decompress(algorithm, compressedData)
+	if err != nil {
+		return nil, fmt.Errorf("decompress chunk %s: %w", id, err)
+	}
+
+	compression.RecordDecompression(algorithm, len(compressedData), len(decompressed))
+	return decompressed, nil
 }

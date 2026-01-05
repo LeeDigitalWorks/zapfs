@@ -76,64 +76,82 @@ func (fs *FileStore) PutObjectWithCompression(ctx context.Context, obj *types.Ob
 // The chunk ID is computed from the ORIGINAL (uncompressed) data to preserve deduplication.
 // Compression is applied after hashing, before storage.
 func (fs *FileStore) writeChunkWithCompression(ctx context.Context, data []byte, algo compression.Algorithm) (*types.ChunkRef, error) {
-	// 1. Compute chunk ID from ORIGINAL data (preserves deduplication)
+	// Compute chunk ID from ORIGINAL data (preserves deduplication)
 	chunkID := types.ChunkIDFromBytes(data)
-	originalSize := uint64(len(data))
 
-	// 2. Check if chunk already exists (local deduplication)
-	if existing, err := fs.chunkIdx.Get(chunkID); err == nil {
-		// Chunk exists locally - reuse it
+	// Check if chunk already exists (local deduplication)
+	if ref := fs.getExistingChunkRef(chunkID); ref != nil {
 		ChunkDedupeHits.Inc()
 		ChunkOperations.WithLabelValues("deduplicate").Inc()
-
-		return &types.ChunkRef{
-			ChunkID:      chunkID,
-			Size:         existing.Size,
-			OriginalSize: existing.GetOriginalSize(),
-			Compression:  existing.Compression,
-			BackendID:    existing.BackendID,
-		}, nil
+		return ref, nil
 	}
 
-	// 3. Compress data if algorithm specified
-	var dataToWrite []byte
-	var usedAlgo compression.Algorithm
-	var err error
-
-	if algo != compression.None && algo != "" && algo.IsValid() {
-		dataToWrite, usedAlgo, err = compression.CompressIfBeneficial(algo, data)
-		if err != nil {
-			return nil, fmt.Errorf("compress chunk: %w", err)
-		}
-		// Record compression metrics
-		if usedAlgo == compression.None {
-			compression.CompressionSkipped.WithLabelValues(algo.String()).Inc()
-		} else {
-			compression.RecordCompression(usedAlgo, int(originalSize), len(dataToWrite), false)
-		}
-	} else {
-		dataToWrite = data
-		usedAlgo = compression.None
-	}
-
-	// 4. Select backend
-	backend, err := fs.placer.SelectBackend(ctx, uint64(len(dataToWrite)), "")
+	// Select backend
+	backend, err := fs.placer.SelectBackend(ctx, uint64(len(data)), "")
 	if err != nil {
 		return nil, err
 	}
 
+	// Store chunk data with compression
+	ref, err := fs.storeChunkData(ctx, chunkID, data, backend, algo)
+	if err != nil {
+		return nil, err
+	}
+
+	ChunkOperations.WithLabelValues("create").Inc()
+	return ref, nil
+}
+
+// WriteChunk writes a chunk directly to storage (no compression).
+// Used by migration to receive chunks from peer servers.
+// The chunkID is provided by the caller (already known from source).
+func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data []byte, backendID string) (*types.ChunkRef, error) {
+	// Check if chunk already exists (idempotent for migration)
+	if ref := fs.getExistingChunkRef(chunkID); ref != nil {
+		return ref, nil
+	}
+
+	// Get backend (use provided or fall back to placer)
+	backend, ok := fs.backends[backendID]
+	if !ok {
+		var err error
+		backend, err = fs.placer.SelectBackend(ctx, uint64(len(data)), "")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Store chunk data without compression (migration preserves original format)
+	ref, err := fs.storeChunkData(ctx, chunkID, data, backend, compression.None)
+	if err != nil {
+		return nil, err
+	}
+
+	ChunkOperations.WithLabelValues("receive").Inc()
+	return ref, nil
+}
+
+// storeChunkData handles the common logic for compressing, writing, and indexing a chunk.
+// Used by writeChunkWithCompression (PutObject flow) and WriteChunk (migration).
+func (fs *FileStore) storeChunkData(ctx context.Context, chunkID types.ChunkID, data []byte, backend *types.Backend, algo compression.Algorithm) (*types.ChunkRef, error) {
+	originalSize := uint64(len(data))
+
+	// Compress data if algorithm specified
+	dataToWrite, usedAlgo := fs.compressData(data, algo, originalSize)
+
+	// Get backend store
 	store, ok := fs.manager.Get(backend.ID)
 	if !ok {
 		return nil, fmt.Errorf("backend %s not found", backend.ID)
 	}
 
-	// 5. Write to backend
+	// Write to backend
 	path := chunkID.FullPath("")
 	if err := store.Write(ctx, path, bytes.NewReader(dataToWrite), int64(len(dataToWrite))); err != nil {
 		return nil, err
 	}
 
-	// 6. Determine sizes for index
+	// Determine sizes for index
 	compressedSize := uint64(len(dataToWrite))
 	storedOriginalSize := uint64(0)
 	storedCompression := ""
@@ -142,7 +160,7 @@ func (fs *FileStore) writeChunkWithCompression(ctx context.Context, data []byte,
 		storedCompression = usedAlgo.String()
 	}
 
-	// 7. Index chunk locally (RefCount managed centrally in chunk_registry)
+	// Index chunk locally
 	chunk := types.Chunk{
 		ID:           chunkID,
 		BackendID:    backend.ID,
@@ -156,10 +174,9 @@ func (fs *FileStore) writeChunkWithCompression(ctx context.Context, data []byte,
 		return nil, err
 	}
 
-	// 8. Update metrics for new chunk
+	// Update metrics
 	ChunkTotalCount.Inc()
 	ChunkTotalBytes.Add(float64(compressedSize))
-	ChunkOperations.WithLabelValues("create").Inc()
 
 	return &types.ChunkRef{
 		ChunkID:      chunkID,
@@ -168,4 +185,42 @@ func (fs *FileStore) writeChunkWithCompression(ctx context.Context, data []byte,
 		Compression:  storedCompression,
 		BackendID:    backend.ID,
 	}, nil
+}
+
+// compressData compresses data using the specified algorithm if beneficial.
+// Returns the data to write and the algorithm that was actually used.
+func (fs *FileStore) compressData(data []byte, algo compression.Algorithm, originalSize uint64) ([]byte, compression.Algorithm) {
+	if algo == compression.None || algo == "" || !algo.IsValid() {
+		return data, compression.None
+	}
+
+	dataToWrite, usedAlgo, err := compression.CompressIfBeneficial(algo, data)
+	if err != nil {
+		// On compression error, fall back to uncompressed
+		return data, compression.None
+	}
+
+	// Record compression metrics
+	if usedAlgo == compression.None {
+		compression.CompressionSkipped.WithLabelValues(algo.String()).Inc()
+	} else {
+		compression.RecordCompression(usedAlgo, int(originalSize), len(dataToWrite), false)
+	}
+
+	return dataToWrite, usedAlgo
+}
+
+// getExistingChunkRef returns a ChunkRef if the chunk already exists in the index, nil otherwise.
+func (fs *FileStore) getExistingChunkRef(chunkID types.ChunkID) *types.ChunkRef {
+	existing, err := fs.chunkIdx.Get(chunkID)
+	if err != nil {
+		return nil
+	}
+	return &types.ChunkRef{
+		ChunkID:      chunkID,
+		Size:         existing.Size,
+		OriginalSize: existing.GetOriginalSize(),
+		Compression:  existing.Compression,
+		BackendID:    existing.BackendID,
+	}
 }

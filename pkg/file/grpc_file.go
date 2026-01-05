@@ -69,21 +69,28 @@ func objectIDToUUID(objectID string) uuid.UUID {
 	return id
 }
 
-// streamReader wraps the gRPC stream as an io.Reader.
-// This allows streaming data directly to storage without buffering the entire file.
-type streamReader struct {
-	stream      file_pb.FileService_PutObjectServer
+// grpcStreamReader wraps any gRPC stream as an io.Reader.
+// This allows streaming data directly to storage without buffering the entire payload.
+type grpcStreamReader struct {
+	recvFunc    func() ([]byte, error) // Function to receive next chunk of bytes
 	currentData []byte
 	done        bool
 }
 
-func newStreamReader(stream file_pb.FileService_PutObjectServer) *streamReader {
-	return &streamReader{
-		stream: stream,
+// newPutObjectStreamReader creates a stream reader for PutObject requests.
+func newPutObjectStreamReader(stream file_pb.FileService_PutObjectServer) *grpcStreamReader {
+	return &grpcStreamReader{
+		recvFunc: func() ([]byte, error) {
+			msg, err := stream.Recv()
+			if err != nil {
+				return nil, err
+			}
+			return msg.GetChunk(), nil
+		},
 	}
 }
 
-func (r *streamReader) Read(p []byte) (n int, err error) {
+func (r *grpcStreamReader) Read(p []byte) (n int, err error) {
 	// If we have leftover data from a previous chunk, use it first
 	if len(r.currentData) > 0 {
 		n = copy(p, r.currentData)
@@ -97,7 +104,7 @@ func (r *streamReader) Read(p []byte) (n int, err error) {
 	}
 
 	// Receive next chunk from stream
-	msg, err := r.stream.Recv()
+	chunk, err := r.recvFunc()
 	if err == io.EOF {
 		r.done = true
 		return 0, io.EOF
@@ -106,7 +113,6 @@ func (r *streamReader) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 
-	chunk := msg.GetChunk()
 	if chunk == nil {
 		// Empty message, try again
 		return r.Read(p)
@@ -158,7 +164,7 @@ func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) erro
 	}
 
 	// Create stream reader - wraps gRPC stream as io.Reader
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 
 	// Use chunk-based storage with optional compression:
 	// - Data is split into 64MB chunks
@@ -386,7 +392,3 @@ func (fs *FileServer) BatchDeleteObjects(ctx context.Context, req *file_pb.Batch
 		Results: results,
 	}, nil
 }
-
-// Note: DecrementRefCount and DecrementRefCountBatch RPCs have been removed.
-// RefCount is now managed centrally in the metadata DB's chunk_registry table,
-// not on individual file servers. See workspace/plans/chunk-registry-redesign.md.

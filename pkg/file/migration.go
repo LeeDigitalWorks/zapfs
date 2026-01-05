@@ -217,8 +217,8 @@ func (fs *FileServer) ReceiveChunk(stream file_pb.FileService_ReceiveChunkServer
 		backendID = defaultBackend.ID
 	}
 
-	// Collect all data
-	var data []byte
+	// Pre-allocate buffer to avoid append() reallocations
+	data := make([]byte, 0, expectedSize)
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -255,8 +255,8 @@ func (fs *FileServer) ReceiveChunk(stream file_pb.FileService_ReceiveChunkServer
 		}
 	}
 
-	// Write chunk to storage
-	if _, err := fs.store.WriteChunk(context.Background(), chunkID, data, backendID); err != nil {
+	// Write chunk to storage using existing WriteChunk
+	if _, err := fs.store.WriteChunk(stream.Context(), chunkID, data, backendID); err != nil {
 		logger.Error().Err(err).Str("chunk_id", string(chunkID)).Msg("Failed to write migrated chunk")
 		return stream.SendAndClose(&file_pb.ReceiveChunkResponse{
 			Success: false,

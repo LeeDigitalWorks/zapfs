@@ -122,7 +122,7 @@ func TestStreamReader_SingleChunk(t *testing.T) {
 		chunks: [][]byte{testData},
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 	result, err := io.ReadAll(reader)
 
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestStreamReader_MultipleChunks(t *testing.T) {
 		chunks: chunks,
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 	result, err := io.ReadAll(reader)
 
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestStreamReader_EmptyChunks(t *testing.T) {
 		chunks: [][]byte{},
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 	result, err := io.ReadAll(reader)
 
 	require.NoError(t, err)
@@ -171,7 +171,7 @@ func TestStreamReader_SmallBuffer(t *testing.T) {
 		chunks: [][]byte{testData},
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 
 	// Read with a small buffer to test leftover data handling
 	buf := make([]byte, 5)
@@ -201,7 +201,7 @@ func TestStreamReader_MultipleChunks_SmallBuffer(t *testing.T) {
 		chunks: chunks,
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 
 	// Read with a buffer smaller than chunk size
 	buf := make([]byte, 4)
@@ -241,7 +241,7 @@ func TestStreamReader_RecvError(t *testing.T) {
 	testErr := errors.New("stream error")
 	stream := &mockStreamWithError{err: testErr}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 	_, err := io.ReadAll(reader)
 
 	assert.ErrorIs(t, err, testErr)
@@ -467,7 +467,7 @@ func TestStreamReader_ReadExactlyBufferSize(t *testing.T) {
 		chunks: [][]byte{testData},
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 	buf := make([]byte, chunkSize)
 
 	n, err := reader.Read(buf)
@@ -490,7 +490,7 @@ func TestStreamReader_LargerBuffer(t *testing.T) {
 		chunks: [][]byte{testData},
 	}
 
-	reader := newStreamReader(stream)
+	reader := newPutObjectStreamReader(stream)
 	buf := make([]byte, 1024)
 
 	n, err := reader.Read(buf)
