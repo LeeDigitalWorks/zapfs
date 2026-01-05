@@ -138,6 +138,9 @@ func init() {
 	f.StringSlice("oidc_required_groups", nil, "Required OIDC groups for access")
 	f.StringSlice("oidc_allowed_domains", nil, "Allowed email domains for OIDC users")
 
+	// IAM configuration
+	f.Bool("allow_dev_credentials", false, "Allow insecure dev credentials when no IAM config is provided (NEVER use in production)")
+
 	// Federation (S3 passthrough/migration)
 	f.Bool("federation.enabled", false, "Enable S3 federation features")
 	f.Duration("federation.external_timeout", 5*time.Minute, "Timeout for external S3 requests")
@@ -322,8 +325,14 @@ func loadManagerOpts(cmd *cobra.Command) ManagerServerOpts {
 
 	// Set defaults
 	if opts.NodeID == "" {
-		hostname, _ := os.Hostname()
+		hostname, err := os.Hostname()
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to get hostname for node_id, using 'unknown'")
+			hostname = "unknown"
+		}
 		opts.NodeID = hostname
+		logger.Warn().Str("node_id", opts.NodeID).Msg("node_id not set, using hostname. " +
+			"In container environments, set --node_id explicitly for stable cluster identity")
 	}
 	if opts.RaftBindAddr == "" {
 		opts.RaftBindAddr = fmt.Sprintf("%s:%d", opts.IP, opts.GRPCPort+1)
@@ -367,8 +376,15 @@ func initializeManagerIAM() (*iam.Service, http.Handler, error) {
 		return svc, nil, err
 	}
 
-	// Fall back to defaults
-	logger.Warn().Msg("no IAM config found, using defaults (test credentials)")
+	// No IAM config found - check if dev credentials are explicitly allowed
+	if !viper.GetBool("allow_dev_credentials") {
+		return nil, nil, fmt.Errorf("no IAM configuration found (checked: [iam] in config file, LDAP, OIDC). " +
+			"IAM must be configured explicitly. To use insecure dev credentials for testing, " +
+			"set --allow-dev-credentials flag (NEVER use in production)")
+	}
+
+	// Fall back to defaults (only when explicitly allowed)
+	logger.Warn().Msg("SECURITY WARNING: using dev credentials (test-access-key/test-secret-key) - do NOT use in production")
 	svc, err := iam.NewServiceWithDefaults()
 	return svc, nil, err
 }

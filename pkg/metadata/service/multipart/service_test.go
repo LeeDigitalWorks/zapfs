@@ -64,24 +64,26 @@ func TestNewService(t *testing.T) {
 			name: "valid config succeeds",
 			setupConfig: func(t *testing.T) multipart.Config {
 				return multipart.Config{
-					DB:       dbmocks.NewMockDB(t),
-					Storage:  mpmocks.NewMockStorage(t),
-					Profiles: types.NewProfileSet(),
+					DB:             dbmocks.NewMockDB(t),
+					Storage:        mpmocks.NewMockStorage(t),
+					Profiles:       types.NewProfileSet(),
+					DefaultProfile: "STANDARD",
 				}
 			},
 			wantErr: false,
 		},
 		{
-			name: "uses default profile when not specified",
+			name: "missing default profile returns error",
 			setupConfig: func(t *testing.T) multipart.Config {
 				return multipart.Config{
 					DB:             dbmocks.NewMockDB(t),
 					Storage:        mpmocks.NewMockStorage(t),
 					Profiles:       types.NewProfileSet(),
-					DefaultProfile: "", // Should default to "STANDARD"
+					DefaultProfile: "",
 				}
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "DefaultProfile is required",
 		},
 	}
 

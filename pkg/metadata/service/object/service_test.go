@@ -90,7 +90,7 @@ func TestNewService(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "empty default profile uses STANDARD",
+			name: "empty default profile returns error",
 			setupConfig: func(t *testing.T) Config {
 				profiles := types.NewProfileSet()
 				profiles.Add(&types.StorageProfile{Name: "STANDARD"})
@@ -101,7 +101,8 @@ func TestNewService(t *testing.T) {
 					DefaultProfile: "",
 				}
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "DefaultProfile is required",
 		},
 	}
 
@@ -121,12 +122,6 @@ func TestNewService(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.NotNil(t, svc)
-
-			// Special check for default profile
-			if tc.name == "empty default profile uses STANDARD" {
-				impl := svc.(*serviceImpl)
-				assert.Equal(t, "STANDARD", impl.defaultProfile)
-			}
 		})
 	}
 }

@@ -74,9 +74,8 @@ func NewService(cfg Config) (Service, error) {
 	if cfg.Profiles == nil {
 		return nil, newValidationError("Profiles is required")
 	}
-
 	if cfg.DefaultProfile == "" {
-		cfg.DefaultProfile = "STANDARD"
+		return nil, newValidationError("DefaultProfile is required (e.g., 'STANDARD')")
 	}
 
 	return &serviceImpl{

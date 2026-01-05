@@ -108,6 +108,7 @@ func init() {
 	f.String("index_path", filepath.Join(os.TempDir(), "dir.idx"), "Path to store file index data")
 	f.String("ec_scheme", "4+2", "Erasure coding scheme (e.g., '4+2', '8+4', '10+4')")
 	f.Bool("direct_io", false, "Use O_DIRECT for disk writes (Linux only, bypasses page cache)")
+	f.Bool("allow_default_backend", false, "Allow auto-creation of default local backend when no backends configured (not recommended for production)")
 
 	// Reconciliation configuration
 	f.Duration("reconciliation_interval", 6*time.Hour, "How often to run chunk reconciliation with registry (0 = disabled)")
@@ -154,7 +155,14 @@ func runFileServer(cmd *cobra.Command, args []string) {
 	var storeBackends []*types.Backend
 
 	if len(opts.Backends) == 0 {
-		// Fallback to default local backend if none configured
+		// No backends configured - check if default backend is explicitly allowed
+		if !viper.GetBool("allow_default_backend") {
+			logger.Fatal().Msg("no storage backends configured. " +
+				"Configure backends in file.toml or set --allow-default-backend for testing. " +
+				"See cmd/config/file.toml for examples.")
+		}
+
+		// Create default local backend (only when explicitly allowed)
 		backendID := "local-" + opts.NodeID
 		if err := backendManager.Add(backendID, types.BackendConfig{
 			Type:     types.StorageTypeLocal,
@@ -168,7 +176,7 @@ func runFileServer(cmd *cobra.Command, args []string) {
 			Type:       types.StorageTypeLocal,
 			TotalBytes: 100 * 1024 * 1024 * 1024, // 100GB placeholder
 		})
-		logger.Info().Str("backend_id", backendID).Msg("Using default local backend")
+		logger.Warn().Str("backend_id", backendID).Msg("Using auto-created default local backend (not recommended for production)")
 	} else {
 		// Configure backends from TOML
 		for _, b := range opts.Backends {

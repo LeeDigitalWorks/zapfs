@@ -82,6 +82,7 @@ services:
       - --manager_addr=manager:8050
       - --reconciliation_interval=30s
       - --reconciliation_grace_period=10s
+      - --allow_default_backend
     ports:
       - "8081:8081"
       - "8010:8010"  # Metrics
@@ -112,6 +113,7 @@ services:
       - --manager_addr=manager:8050
       - --reconciliation_interval=30s
       - --reconciliation_grace_period=10s
+      - --allow_default_backend
     ports:
       - "8091:8091"
       - "8011:8011"  # Metrics

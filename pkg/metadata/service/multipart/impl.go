@@ -63,10 +63,8 @@ func NewService(cfg Config) (Service, error) {
 	if cfg.Storage == nil {
 		return nil, errors.New("Storage is required")
 	}
-
-	defaultProfile := cfg.DefaultProfile
-	if defaultProfile == "" {
-		defaultProfile = "STANDARD"
+	if cfg.DefaultProfile == "" {
+		return nil, errors.New("DefaultProfile is required (e.g., 'STANDARD')")
 	}
 
 	return &serviceImpl{
@@ -74,7 +72,7 @@ func NewService(cfg Config) (Service, error) {
 		storage:        cfg.Storage,
 		encryption:     cfg.Encryption,
 		profiles:       cfg.Profiles,
-		defaultProfile: defaultProfile,
+		defaultProfile: cfg.DefaultProfile,
 		emitter:        cfg.Emitter,
 	}, nil
 }

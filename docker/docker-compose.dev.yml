@@ -158,6 +158,7 @@ services:
       - --node_id=file-1
       - --advertise_addr=file-1:8081
       - --manager_addr=manager-1:8050
+      - --allow_default_backend
     volumes:
       - ..:/app:cached
       - go-mod-cache:/go/pkg/mod
@@ -182,6 +183,7 @@ services:
       - --node_id=file-2
       - --advertise_addr=file-2:8091
       - --manager_addr=manager-1:8050
+      - --allow_default_backend
     volumes:
       - ..:/app:cached
       - go-mod-cache:/go/pkg/mod
