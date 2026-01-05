@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/compression"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
@@ -627,4 +628,252 @@ func TestFileStore_GetIndexStats(t *testing.T) {
 	// We should have some chunks tracked
 	assert.GreaterOrEqual(t, stats.TotalChunks, int64(1))
 	assert.GreaterOrEqual(t, stats.TotalBytes, int64(100))
+}
+
+// ============================================================================
+// Compression Tests
+// ============================================================================
+
+func TestFileStore_PutObjectWithCompression_LZ4(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	objID := uuid.New()
+	// Compressible data (repeated patterns compress well)
+	testData := bytes.Repeat([]byte("hello world compression test "), 1000)
+
+	obj := &types.ObjectRef{ID: objID}
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.LZ4)
+	require.NoError(t, err)
+
+	// Verify object metadata
+	retrieved, err := fs.GetObject(ctx, objID)
+	require.NoError(t, err)
+	assert.Equal(t, objID, retrieved.ID)
+	assert.Equal(t, uint64(len(testData)), retrieved.Size)
+	require.NotEmpty(t, retrieved.ChunkRefs)
+
+	// Verify compression metadata
+	chunkRef := retrieved.ChunkRefs[0]
+	assert.Equal(t, "lz4", chunkRef.Compression)
+	assert.Greater(t, chunkRef.OriginalSize, uint64(0))
+	// Compressed size should be less than original for compressible data
+	assert.Less(t, chunkRef.Size, chunkRef.OriginalSize)
+
+	// Verify data is correctly retrieved (decompressed)
+	reader, err := fs.GetChunk(ctx, chunkRef.ChunkID)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, testData, data)
+}
+
+func TestFileStore_PutObjectWithCompression_ZSTD(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	objID := uuid.New()
+	testData := bytes.Repeat([]byte("zstd compression works great "), 1000)
+
+	obj := &types.ObjectRef{ID: objID}
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.ZSTD)
+	require.NoError(t, err)
+
+	retrieved, err := fs.GetObject(ctx, objID)
+	require.NoError(t, err)
+	require.NotEmpty(t, retrieved.ChunkRefs)
+
+	chunkRef := retrieved.ChunkRefs[0]
+	assert.Equal(t, "zstd", chunkRef.Compression)
+	assert.Less(t, chunkRef.Size, chunkRef.OriginalSize)
+
+	// Verify decompression
+	reader, err := fs.GetChunk(ctx, chunkRef.ChunkID)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, testData, data)
+}
+
+func TestFileStore_PutObjectWithCompression_Snappy(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	objID := uuid.New()
+	testData := bytes.Repeat([]byte("snappy is fast "), 1000)
+
+	obj := &types.ObjectRef{ID: objID}
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.Snappy)
+	require.NoError(t, err)
+
+	retrieved, err := fs.GetObject(ctx, objID)
+	require.NoError(t, err)
+	require.NotEmpty(t, retrieved.ChunkRefs)
+
+	chunkRef := retrieved.ChunkRefs[0]
+	assert.Equal(t, "snappy", chunkRef.Compression)
+	assert.Less(t, chunkRef.Size, chunkRef.OriginalSize)
+
+	// Verify decompression
+	reader, err := fs.GetChunk(ctx, chunkRef.ChunkID)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, testData, data)
+}
+
+func TestFileStore_PutObjectWithCompression_None(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	objID := uuid.New()
+	testData := []byte("no compression data")
+
+	obj := &types.ObjectRef{ID: objID}
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.None)
+	require.NoError(t, err)
+
+	retrieved, err := fs.GetObject(ctx, objID)
+	require.NoError(t, err)
+	require.NotEmpty(t, retrieved.ChunkRefs)
+
+	chunkRef := retrieved.ChunkRefs[0]
+	// No compression should result in empty compression field or "none"
+	assert.True(t, chunkRef.Compression == "" || chunkRef.Compression == "none")
+	// Size should equal the data size
+	assert.Equal(t, uint64(len(testData)), chunkRef.Size)
+}
+
+func TestFileStore_CompressionSkippedForIncompressibleData(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	objID := uuid.New()
+	// Random data doesn't compress well - CompressIfBeneficial should skip compression
+	testData := make([]byte, 4096)
+	for i := range testData {
+		testData[i] = byte(i * 17) // Pseudo-random pattern
+	}
+
+	obj := &types.ObjectRef{ID: objID}
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.LZ4)
+	require.NoError(t, err)
+
+	retrieved, err := fs.GetObject(ctx, objID)
+	require.NoError(t, err)
+	require.NotEmpty(t, retrieved.ChunkRefs)
+
+	// Even if compression was requested, it should be skipped if not beneficial
+	// So the data should still be readable
+	reader, err := fs.GetChunk(ctx, retrieved.ChunkRefs[0].ChunkID)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, testData, data)
+}
+
+func TestFileStore_GetChunkRange_WithCompression(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	objID := uuid.New()
+	testData := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes of compressible data
+
+	obj := &types.ObjectRef{ID: objID}
+	err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), compression.LZ4)
+	require.NoError(t, err)
+
+	retrieved, err := fs.GetObject(ctx, objID)
+	require.NoError(t, err)
+	require.NotEmpty(t, retrieved.ChunkRefs)
+
+	chunkID := retrieved.ChunkRefs[0].ChunkID
+
+	// Read a range from the middle
+	reader, err := fs.GetChunkRange(ctx, chunkID, 100, 50)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	assert.Equal(t, testData[100:150], data)
+}
+
+func TestFileStore_Deduplication_WithCompression(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	// Write same data twice with compression
+	testData := bytes.Repeat([]byte("deduplicated compressed content "), 100)
+
+	obj1 := &types.ObjectRef{ID: uuid.New()}
+	err := fs.PutObjectWithCompression(ctx, obj1, bytes.NewReader(testData), compression.LZ4)
+	require.NoError(t, err)
+
+	obj2 := &types.ObjectRef{ID: uuid.New()}
+	err = fs.PutObjectWithCompression(ctx, obj2, bytes.NewReader(testData), compression.LZ4)
+	require.NoError(t, err)
+
+	// Both should reference the same chunk (deduplication based on original data hash)
+	retrieved1, _ := fs.GetObject(ctx, obj1.ID)
+	retrieved2, _ := fs.GetObject(ctx, obj2.ID)
+
+	assert.Equal(t, retrieved1.ChunkRefs[0].ChunkID, retrieved2.ChunkRefs[0].ChunkID)
+}
+
+func TestFileStore_ConcurrentPutObjectWithCompression(t *testing.T) {
+	t.Parallel()
+
+	fs, _ := newTestFileStore(t)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	algos := []compression.Algorithm{compression.LZ4, compression.ZSTD, compression.Snappy, compression.None}
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			objID := uuid.New()
+			testData := bytes.Repeat([]byte("concurrent compression test "), id+10)
+			algo := algos[id%len(algos)]
+
+			obj := &types.ObjectRef{ID: objID}
+			err := fs.PutObjectWithCompression(ctx, obj, bytes.NewReader(testData), algo)
+			assert.NoError(t, err)
+
+			// Verify we can read it back
+			reader, err := fs.GetObjectData(ctx, objID)
+			if assert.NoError(t, err) {
+				defer reader.Close()
+				data, err := io.ReadAll(reader)
+				assert.NoError(t, err)
+				assert.Equal(t, testData, data)
+			}
+		}(i)
+	}
+
+	wg.Wait()
 }

@@ -36,9 +36,10 @@ func NewFileClient(t *testing.T, addr string) *FileClient {
 
 // PutConfig configures a PutObject request
 type PutConfig struct {
-	BackendID string
-	UseEC     bool
-	ECScheme  *common_pb.ECScheme
+	BackendID   string
+	UseEC       bool
+	ECScheme    *common_pb.ECScheme
+	Compression string // Compression algorithm: "lz4", "zstd", "snappy", or "" for none
 }
 
 // PutOption modifies PutConfig
@@ -52,6 +53,13 @@ func WithErasureCoding(dataShards, parityShards int32) PutOption {
 			DataShards:   dataShards,
 			ParityShards: parityShards,
 		}
+	}
+}
+
+// WithCompression enables compression with the specified algorithm
+func WithCompression(algo string) PutOption {
+	return func(c *PutConfig) {
+		c.Compression = algo
 	}
 }
 
@@ -79,6 +87,7 @@ func (fc *FileClient) PutObject(objectID string, data []byte, opts ...PutOption)
 				TotalSize:          uint64(len(data)),
 				UseErasureCoding:   config.UseEC,
 				EcScheme:           config.ECScheme,
+				Compression:        config.Compression,
 			},
 		},
 	}

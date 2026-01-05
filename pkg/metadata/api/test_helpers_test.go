@@ -193,6 +193,10 @@ func (m *threadSafeFileClient) OnPutObject(fn func(ctx context.Context, address,
 }
 
 func (m *threadSafeFileClient) PutObject(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64) (*client.PutObjectResult, error) {
+	return m.PutObjectWithCompression(ctx, address, objectID, data, totalSize, "")
+}
+
+func (m *threadSafeFileClient) PutObjectWithCompression(ctx context.Context, address, objectID string, data io.Reader, totalSize uint64, compression string) (*client.PutObjectResult, error) {
 	m.mu.Lock()
 	fn := m.putObjectFn
 	m.mu.Unlock()

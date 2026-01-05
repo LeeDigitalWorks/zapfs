@@ -80,6 +80,7 @@ message PutObjectMeta {
   bool async_replication = 5;
   bool use_erasure_coding = 6;
   common_pb.ECScheme ec_scheme = 7;
+  string compression = 8;  // Compression algorithm: "none", "lz4", "zstd", "snappy"
 }
 
 message PutObjectResponse {
@@ -92,9 +93,11 @@ message PutObjectResponse {
 
 // ChunkInfo describes a chunk written by the file server
 message ChunkInfo {
-  string chunk_id = 1;  // SHA-256 content hash
-  uint64 size = 2;
-  uint64 offset = 3;    // Offset within the object
+  string chunk_id = 1;      // SHA-256 content hash of ORIGINAL (uncompressed) data
+  uint64 size = 2;          // Compressed size on disk
+  uint64 offset = 3;        // Offset within the object
+  uint64 original_size = 4; // Original uncompressed size
+  string compression = 5;   // Compression algorithm used: "none", "lz4", "zstd", "snappy"
 }
 
 message GetObjectRequest {
@@ -204,11 +207,13 @@ message ListLocalChunksRequest {}
 
 message LocalChunkInfo {
   string chunk_id = 1;
-  int64 size = 2;
+  int64 size = 2;           // Compressed size on disk
   int64 created_at = 3;
   string backend_id = 4;
   string path = 5;
   // Note: ref_count and zero_ref_since removed - RefCount managed in chunk_registry
+  int64 original_size = 6;  // Original uncompressed size
+  string compression = 7;   // Compression algorithm used
 }
 
 message GetLocalChunkRequest {

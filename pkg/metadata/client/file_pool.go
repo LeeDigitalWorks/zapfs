@@ -71,14 +71,28 @@ func (p *FileClientPool) GetClient(ctx context.Context, address string) (file_pb
 	return p.pool.Get(ctx, address)
 }
 
-// PutObject streams data to a file server and returns the result.
-// This handles streaming the data in chunks to the file service.
+// PutObject streams data to a file server without compression.
+// This is a convenience wrapper around PutObjectWithCompression with no compression.
 func (p *FileClientPool) PutObject(
 	ctx context.Context,
 	address string,
 	objectID string,
 	data io.Reader,
 	totalSize uint64,
+) (*PutObjectResult, error) {
+	return p.PutObjectWithCompression(ctx, address, objectID, data, totalSize, "")
+}
+
+// PutObjectWithCompression streams data to a file server with optional compression.
+// The compression algorithm is passed to the file server which compresses chunks before storage.
+// Supported algorithms: "none", "lz4", "zstd", "snappy", or empty string for no compression.
+func (p *FileClientPool) PutObjectWithCompression(
+	ctx context.Context,
+	address string,
+	objectID string,
+	data io.Reader,
+	totalSize uint64,
+	compression string,
 ) (*PutObjectResult, error) {
 	client, err := p.GetClient(ctx, address)
 	if err != nil {
@@ -91,12 +105,13 @@ func (p *FileClientPool) PutObject(
 		return nil, fmt.Errorf("failed to open PutObject stream: %w", err)
 	}
 
-	// Send metadata first
+	// Send metadata first (including compression algorithm)
 	meta := &file_pb.PutObjectRequest{
 		Payload: &file_pb.PutObjectRequest_Meta{
 			Meta: &file_pb.PutObjectMeta{
-				ObjectId:  objectID,
-				TotalSize: totalSize,
+				ObjectId:    objectID,
+				TotalSize:   totalSize,
+				Compression: compression,
 			},
 		},
 	}
@@ -132,13 +147,15 @@ func (p *FileClientPool) PutObject(
 		return nil, fmt.Errorf("failed to complete PutObject: %w", err)
 	}
 
-	// Extract chunk information from response
+	// Extract chunk information from response (including compression metadata)
 	chunks := make([]ChunkInfo, len(resp.Chunks))
 	for i, c := range resp.Chunks {
 		chunks[i] = ChunkInfo{
-			ChunkID: c.ChunkId,
-			Size:    c.Size,
-			Offset:  c.Offset,
+			ChunkID:      c.ChunkId,
+			Size:         c.Size,
+			Offset:       c.Offset,
+			OriginalSize: c.OriginalSize,
+			Compression:  c.Compression,
 		}
 	}
 

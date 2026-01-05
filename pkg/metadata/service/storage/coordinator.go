@@ -220,12 +220,14 @@ func (c *Coordinator) WriteObject(ctx context.Context, req *WriteRequest) (*Writ
 	}
 
 	// Stream to ALL targets in parallel using pipes
-	return c.writeToAllTargets(ctx, req, targetList)
+	// Pass compression algorithm from the storage profile
+	return c.writeToAllTargets(ctx, req, targetList, profile.Compression)
 }
 
 // writeToAllTargets streams data to all targets in parallel.
 // Uses io.Pipe to create independent streams for each target.
-func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, targets []*manager_pb.ReplicationTarget) (*WriteResult, error) {
+// The compression parameter specifies the algorithm to use (e.g., "lz4", "zstd", "snappy", or "" for none).
+func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, targets []*manager_pb.ReplicationTarget, compression string) (*WriteResult, error) {
 	numTargets := len(targets)
 
 	// Create a pipe for each target
@@ -254,12 +256,13 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 			defer wg.Done()
 			defer p.reader.Close()
 
-			result, err := c.fileClientPool.PutObject(
+			result, err := c.fileClientPool.PutObjectWithCompression(
 				ctx,
 				p.target.Location.Address,
 				req.ObjectID,
 				p.reader,
 				req.Size,
+				compression,
 			)
 
 			if err != nil {
@@ -368,6 +371,8 @@ func (c *Coordinator) writeToAllTargets(ctx context.Context, req *WriteRequest, 
 				ChunkID:        types.ChunkID(chunk.ChunkID),
 				Offset:         chunk.Offset,
 				Size:           chunk.Size,
+				OriginalSize:   chunk.OriginalSize,
+				Compression:    chunk.Compression,
 				BackendID:      sr.target.BackendId,
 				FileServerAddr: sr.target.Location.Address,
 			})

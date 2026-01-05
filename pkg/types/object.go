@@ -77,11 +77,27 @@ type ObjectRef struct {
 
 // ChunkRef references a chunk that stores part of an object
 type ChunkRef struct {
-	ChunkID        ChunkID `json:"chunk_id"`
+	ChunkID        ChunkID `json:"chunk_id"`                   // SHA-256 hash of ORIGINAL (uncompressed) data
 	Offset         uint64  `json:"offset"`                     // Offset within the object
-	Size           uint64  `json:"size"`                       // Size of this chunk
+	Size           uint64  `json:"size"`                       // Compressed size on disk
+	OriginalSize   uint64  `json:"original_size,omitempty"`    // Original uncompressed size (0 means same as Size)
+	Compression    string  `json:"compression,omitempty"`      // Compression algorithm: "none", "lz4", "zstd", "snappy"
 	BackendID      string  `json:"backend_id"`                 // Which backend has this chunk
 	FileServerAddr string  `json:"file_server_addr,omitempty"` // Address of file server hosting this chunk
+}
+
+// GetOriginalSize returns the original uncompressed size.
+// If OriginalSize is 0, returns Size (indicates no compression or legacy data).
+func (c *ChunkRef) GetOriginalSize() uint64 {
+	if c.OriginalSize > 0 {
+		return c.OriginalSize
+	}
+	return c.Size
+}
+
+// IsCompressed returns true if the chunk is compressed.
+func (c *ChunkRef) IsCompressed() bool {
+	return c.Compression != "" && c.Compression != "none"
 }
 
 // IsDeleted returns true if the object has been deleted

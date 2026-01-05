@@ -486,3 +486,95 @@ func (_c *MockFile_PutObject_Call) RunAndReturn(run func(ctx context.Context, ad
 	_c.Call.Return(run)
 	return _c
 }
+
+// PutObjectWithCompression provides a mock function for the type MockFile
+func (_mock *MockFile) PutObjectWithCompression(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64, compression string) (*client.PutObjectResult, error) {
+	ret := _mock.Called(ctx, address, objectID, data, totalSize, compression)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PutObjectWithCompression")
+	}
+
+	var r0 *client.PutObjectResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, io.Reader, uint64, string) (*client.PutObjectResult, error)); ok {
+		return returnFunc(ctx, address, objectID, data, totalSize, compression)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, io.Reader, uint64, string) *client.PutObjectResult); ok {
+		r0 = returnFunc(ctx, address, objectID, data, totalSize, compression)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.PutObjectResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, io.Reader, uint64, string) error); ok {
+		r1 = returnFunc(ctx, address, objectID, data, totalSize, compression)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockFile_PutObjectWithCompression_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PutObjectWithCompression'
+type MockFile_PutObjectWithCompression_Call struct {
+	*mock.Call
+}
+
+// PutObjectWithCompression is a helper method to define mock.On call
+//   - ctx context.Context
+//   - address string
+//   - objectID string
+//   - data io.Reader
+//   - totalSize uint64
+//   - compression string
+func (_e *MockFile_Expecter) PutObjectWithCompression(ctx interface{}, address interface{}, objectID interface{}, data interface{}, totalSize interface{}, compression interface{}) *MockFile_PutObjectWithCompression_Call {
+	return &MockFile_PutObjectWithCompression_Call{Call: _e.mock.On("PutObjectWithCompression", ctx, address, objectID, data, totalSize, compression)}
+}
+
+func (_c *MockFile_PutObjectWithCompression_Call) Run(run func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64, compression string)) *MockFile_PutObjectWithCompression_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 io.Reader
+		if args[3] != nil {
+			arg3 = args[3].(io.Reader)
+		}
+		var arg4 uint64
+		if args[4] != nil {
+			arg4 = args[4].(uint64)
+		}
+		var arg5 string
+		if args[5] != nil {
+			arg5 = args[5].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *MockFile_PutObjectWithCompression_Call) Return(putObjectResult *client.PutObjectResult, err error) *MockFile_PutObjectWithCompression_Call {
+	_c.Call.Return(putObjectResult, err)
+	return _c
+}
+
+func (_c *MockFile_PutObjectWithCompression_Call) RunAndReturn(run func(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64, compression string) (*client.PutObjectResult, error)) *MockFile_PutObjectWithCompression_Call {
+	_c.Call.Return(run)
+	return _c
+}

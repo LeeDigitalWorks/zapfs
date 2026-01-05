@@ -752,6 +752,10 @@ func (m *mockFileClient) PutObject(ctx context.Context, address string, objectID
 	return nil, nil
 }
 
+func (m *mockFileClient) PutObjectWithCompression(ctx context.Context, address string, objectID string, data io.Reader, totalSize uint64, compression string) (*client.PutObjectResult, error) {
+	return nil, nil
+}
+
 func (m *mockFileClient) GetObject(ctx context.Context, address string, objectID string, writer client.ObjectWriter) (string, error) {
 	return "", nil
 }

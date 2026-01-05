@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/compression"
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
@@ -125,6 +126,7 @@ func (r *streamReader) Read(p []byte) (n int, err error) {
 // PutObject receives a stream of chunks and writes them to local storage.
 // Uses chunk-based storage with content-hash deduplication and reference counting.
 // Each chunk is stored by its SHA-256 hash, enabling deduplication across objects.
+// Supports optional compression based on the compression field in metadata.
 func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) error {
 	ctx := stream.Context()
 
@@ -141,9 +143,13 @@ func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) erro
 
 	objectID := meta.ObjectId
 
+	// Parse compression algorithm from metadata
+	algo := compression.ParseAlgorithm(meta.Compression)
+
 	logger.Debug().
 		Str("object_id", objectID).
 		Uint64("total_size", meta.TotalSize).
+		Str("compression", meta.Compression).
 		Msg("PutObject started")
 
 	// Create ObjectRef for chunk-based storage
@@ -154,21 +160,25 @@ func (fs *FileServer) PutObject(stream file_pb.FileService_PutObjectServer) erro
 	// Create stream reader - wraps gRPC stream as io.Reader
 	reader := newStreamReader(stream)
 
-	// Use chunk-based storage: data is split into 64MB chunks,
-	// each chunk identified by SHA-256 hash for deduplication,
-	// with reference counting for GC
-	if err := fs.store.PutObject(ctx, &obj, reader); err != nil {
+	// Use chunk-based storage with optional compression:
+	// - Data is split into 64MB chunks
+	// - Each chunk is compressed (if algo != none) before storage
+	// - Chunk ID is SHA-256 of ORIGINAL data (preserves deduplication)
+	// - Reference counting for GC
+	if err := fs.store.PutObjectWithCompression(ctx, &obj, reader, algo); err != nil {
 		logger.Error().Err(err).Str("object_id", objectID).Msg("failed to write object")
 		return status.Errorf(codes.Internal, "failed to write to storage: %v", err)
 	}
 
-	// Build chunk info response with actual content-hash based chunk IDs
+	// Build chunk info response with compression metadata
 	chunks := make([]*file_pb.ChunkInfo, 0, len(obj.ChunkRefs))
 	for _, ref := range obj.ChunkRefs {
 		chunks = append(chunks, &file_pb.ChunkInfo{
-			ChunkId: string(ref.ChunkID),
-			Size:    ref.Size,
-			Offset:  ref.Offset,
+			ChunkId:      string(ref.ChunkID),
+			Size:         ref.Size,
+			Offset:       ref.Offset,
+			OriginalSize: ref.OriginalSize,
+			Compression:  ref.Compression,
 		})
 	}
 

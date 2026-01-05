@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/compression"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/backend"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/ec"
 	"github.com/LeeDigitalWorks/zapfs/pkg/storage/index"
@@ -223,7 +224,8 @@ func (fs *FileStore) DeleteObject(ctx context.Context, id uuid.UUID) error {
 	return fs.objectIdx.Put(id, obj)
 }
 
-// GetChunk reads a chunk from storage
+// GetChunk reads a chunk from storage, decompressing if needed.
+// Returns the original (uncompressed) data.
 func (fs *FileStore) GetChunk(ctx context.Context, id types.ChunkID) (io.ReadCloser, error) {
 	chunk, err := fs.chunkIdx.Get(id)
 	if err != nil {
@@ -235,10 +237,38 @@ func (fs *FileStore) GetChunk(ctx context.Context, id types.ChunkID) (io.ReadClo
 		return nil, fmt.Errorf("backend %s not found", chunk.BackendID)
 	}
 
-	return store.Read(ctx, chunk.Path)
+	reader, err := store.Read(ctx, chunk.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	// If not compressed, return directly
+	if !chunk.IsCompressed() {
+		return reader, nil
+	}
+
+	// Read compressed data and decompress
+	compressedData, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read compressed chunk: %w", err)
+	}
+
+	algo := compression.ParseAlgorithm(chunk.Compression)
+	decompressed, err := compression.Decompress(algo, compressedData)
+	if err != nil {
+		return nil, fmt.Errorf("decompress chunk %s: %w", id, err)
+	}
+
+	// Record decompression metrics
+	compression.RecordDecompression(algo, len(compressedData), len(decompressed))
+
+	return io.NopCloser(bytes.NewReader(decompressed)), nil
 }
 
-// GetChunkRange reads a range from a chunk
+// GetChunkRange reads a range from a chunk, decompressing if needed.
+// For compressed chunks, the entire chunk is read and decompressed,
+// then the requested range is extracted.
 func (fs *FileStore) GetChunkRange(ctx context.Context, id types.ChunkID, offset, length int64) (io.ReadCloser, error) {
 	chunk, err := fs.chunkIdx.Get(id)
 	if err != nil {
@@ -250,7 +280,66 @@ func (fs *FileStore) GetChunkRange(ctx context.Context, id types.ChunkID, offset
 		return nil, fmt.Errorf("backend %s not found", chunk.BackendID)
 	}
 
-	return store.ReadRange(ctx, chunk.Path, offset, length)
+	// If not compressed, use efficient range read
+	if !chunk.IsCompressed() {
+		return store.ReadRange(ctx, chunk.Path, offset, length)
+	}
+
+	// For compressed chunks, we must read and decompress the entire chunk
+	// then extract the requested range
+	reader, err := store.Read(ctx, chunk.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	compressedData, err := io.ReadAll(reader)
+	reader.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read compressed chunk: %w", err)
+	}
+
+	algo := compression.ParseAlgorithm(chunk.Compression)
+	decompressed, err := compression.Decompress(algo, compressedData)
+	if err != nil {
+		return nil, fmt.Errorf("decompress chunk %s: %w", id, err)
+	}
+
+	// Record decompression metrics
+	compression.RecordDecompression(algo, len(compressedData), len(decompressed))
+
+	// Extract requested range
+	dataLen := int64(len(decompressed))
+	if offset >= dataLen {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	end := offset + length
+	if end > dataLen {
+		end = dataLen
+	}
+
+	return io.NopCloser(bytes.NewReader(decompressed[offset:end])), nil
+}
+
+// GetChunkData reads a chunk and returns the decompressed data as bytes.
+// This is a convenience function for the gRPC handler.
+func (fs *FileStore) GetChunkData(ctx context.Context, id types.ChunkID) ([]byte, error) {
+	reader, err := fs.GetChunk(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+// GetChunkDataRange reads a range from a chunk and returns the decompressed data as bytes.
+// This is a convenience function for the gRPC handler.
+func (fs *FileStore) GetChunkDataRange(ctx context.Context, id types.ChunkID, offset, length int64) ([]byte, error) {
+	reader, err := fs.GetChunkRange(ctx, id, offset, length)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
 }
 
 // GetChunkInfo returns chunk metadata by ID (for admin/debugging)
@@ -327,26 +416,58 @@ func (fs *FileStore) DeleteChunk(ctx context.Context, id types.ChunkID) error {
 	return fs.chunkIdx.Delete(id)
 }
 
-// WriteChunk writes a chunk directly to storage.
+// WriteChunk writes a chunk directly to storage without compression.
 // Used by migration to receive chunks from peer servers.
 // Returns the chunk reference on success.
 func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data []byte, backendID string) (*types.ChunkRef, error) {
+	return fs.WriteChunkWithCompression(ctx, chunkID, data, backendID, compression.None)
+}
+
+// WriteChunkWithCompression writes a chunk directly to storage with optional compression.
+// The chunkID should be computed from the ORIGINAL (uncompressed) data to preserve deduplication.
+// Used by the file server gRPC handler for PutObject requests.
+// Returns the chunk reference on success.
+func (fs *FileStore) WriteChunkWithCompression(ctx context.Context, chunkID types.ChunkID, data []byte, backendID string, algo compression.Algorithm) (*types.ChunkRef, error) {
+	originalSize := uint64(len(data))
+
 	// Check if chunk already exists
 	if existing, err := fs.chunkIdx.Get(chunkID); err == nil {
 		// Chunk exists - this is fine for migration (idempotent)
 		return &types.ChunkRef{
-			ChunkID:   chunkID,
-			Size:      existing.Size,
-			BackendID: existing.BackendID,
+			ChunkID:      chunkID,
+			Size:         existing.Size,
+			OriginalSize: existing.GetOriginalSize(),
+			Compression:  existing.Compression,
+			BackendID:    existing.BackendID,
 		}, nil
+	}
+
+	// Compress data if algorithm specified
+	var dataToWrite []byte
+	var usedAlgo compression.Algorithm
+	var err error
+
+	if algo != compression.None && algo != "" && algo.IsValid() {
+		dataToWrite, usedAlgo, err = compression.CompressIfBeneficial(algo, data)
+		if err != nil {
+			return nil, fmt.Errorf("compress chunk: %w", err)
+		}
+		// Record compression metrics
+		if usedAlgo == compression.None {
+			compression.CompressionSkipped.WithLabelValues(algo.String()).Inc()
+		} else {
+			compression.RecordCompression(usedAlgo, int(originalSize), len(dataToWrite), false)
+		}
+	} else {
+		dataToWrite = data
+		usedAlgo = compression.None
 	}
 
 	// Get backend
 	backend, ok := fs.backends[backendID]
 	if !ok {
 		// Fall back to placer selection
-		var err error
-		backend, err = fs.placer.SelectBackend(ctx, uint64(len(data)), "")
+		backend, err = fs.placer.SelectBackend(ctx, uint64(len(dataToWrite)), "")
 		if err != nil {
 			return nil, err
 		}
@@ -359,17 +480,28 @@ func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data
 
 	// Write to backend
 	path := chunkID.FullPath("")
-	if err := store.Write(ctx, path, bytes.NewReader(data), int64(len(data))); err != nil {
+	if err := store.Write(ctx, path, bytes.NewReader(dataToWrite), int64(len(dataToWrite))); err != nil {
 		return nil, err
+	}
+
+	// Determine sizes for index
+	compressedSize := uint64(len(dataToWrite))
+	storedOriginalSize := uint64(0)
+	storedCompression := ""
+	if usedAlgo != compression.None {
+		storedOriginalSize = originalSize
+		storedCompression = usedAlgo.String()
 	}
 
 	// Index chunk locally (RefCount managed centrally in chunk_registry)
 	chunk := types.Chunk{
-		ID:        chunkID,
-		BackendID: backend.ID,
-		Path:      path,
-		Size:      uint64(len(data)),
-		CreatedAt: time.Now().Unix(),
+		ID:           chunkID,
+		BackendID:    backend.ID,
+		Path:         path,
+		Size:         compressedSize,
+		OriginalSize: storedOriginalSize,
+		Compression:  storedCompression,
+		CreatedAt:    time.Now().Unix(),
 	}
 	if err := fs.chunkIdx.PutSync(chunkID, chunk); err != nil {
 		return nil, err
@@ -377,12 +509,14 @@ func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data
 
 	// Update metrics
 	ChunkTotalCount.Inc()
-	ChunkTotalBytes.Add(float64(len(data)))
-	ChunkOperations.WithLabelValues("migrate_receive").Inc()
+	ChunkTotalBytes.Add(float64(compressedSize))
+	ChunkOperations.WithLabelValues("write").Inc()
 
 	return &types.ChunkRef{
-		ChunkID:   chunkID,
-		Size:      uint64(len(data)),
-		BackendID: backend.ID,
+		ChunkID:      chunkID,
+		Size:         compressedSize,
+		OriginalSize: storedOriginalSize,
+		Compression:  storedCompression,
+		BackendID:    backend.ID,
 	}, nil
 }
