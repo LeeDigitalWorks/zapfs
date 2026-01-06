@@ -569,12 +569,16 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 		return sortedParts[i].PartNumber < sortedParts[j].PartNumber
 	})
 
+	// Minimum part size: 5MB (5,242,880 bytes) for all parts except the last
+	const minPartSize int64 = 5 * 1024 * 1024 // 5MB
+
 	// Validate and collect parts in order
 	var totalSize int64
 	var allChunkRefs []types.ChunkRef
 	var etagParts []string
+	numParts := len(sortedParts)
 
-	for _, reqPart := range sortedParts {
+	for i, reqPart := range sortedParts {
 		part, exists := partMap[reqPart.PartNumber]
 		if !exists {
 			return nil, &Error{
@@ -589,6 +593,15 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 			return nil, &Error{
 				Code:    ErrCodeInvalidPart,
 				Message: "ETag mismatch for part " + strconv.Itoa(reqPart.PartNumber),
+			}
+		}
+
+		// Validate part size: all parts except the last must be at least 5MB
+		isLastPart := i == numParts-1
+		if !isLastPart && part.Size < minPartSize {
+			return nil, &Error{
+				Code:    ErrCodeEntityTooSmall,
+				Message: "Your proposed upload is smaller than the minimum allowed size. Part " + strconv.Itoa(reqPart.PartNumber) + " is " + strconv.FormatInt(part.Size, 10) + " bytes, minimum is " + strconv.FormatInt(minPartSize, 10) + " bytes.",
 			}
 		}
 

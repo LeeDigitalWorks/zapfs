@@ -141,11 +141,7 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 
 	// Set object tags if provided
 	if tagSet != nil && len(tagSet.Tags) > 0 {
-		if _, err := s.svc.Config().SetObjectTagging(ctx, bucket, key, tagSet); err != nil {
-			// Log error but don't fail the request - object was already created
-			// This matches S3 behavior where tagging is best-effort
-			// Note: We don't log here as the service layer already logs errors
-		}
+		s.svc.Config().SetObjectTagging(ctx, bucket, key, tagSet)
 	}
 
 	// Set response headers
@@ -1146,10 +1142,15 @@ func (s *MetadataServer) PostObjectHandler(d *data.Data, w http.ResponseWriter) 
 		Tagging:               getField("tagging"),
 	}
 
-	// Parse success_action_status
+	// Parse success_action_status (valid values: 200, 201, 204)
+	// Invalid or missing values default to 204 (handled later)
 	if statusStr := getField("success_action_status"); statusStr != "" {
 		if status, err := strconv.Atoi(statusStr); err == nil {
-			formData.SuccessActionStatus = status
+			// Only accept valid S3 status codes
+			if status == 200 || status == 201 || status == 204 {
+				formData.SuccessActionStatus = status
+			}
+			// Invalid values are ignored, defaulting to 204 later
 		}
 	}
 

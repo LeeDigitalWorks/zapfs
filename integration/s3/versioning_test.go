@@ -308,4 +308,250 @@ func TestVersioning(t *testing.T) {
 		require.NoError(t, err)
 		client.DeleteBucket(bucket)
 	})
+
+	t.Run("suspend and re-enable versioning", func(t *testing.T) {
+		bucket := uniqueBucket("test-versioning-reenable")
+		key := uniqueKey("reenable-obj")
+		client.CreateBucket(bucket)
+
+		ctx, cancel := testutil.WithTimeout(context.Background())
+		defer cancel()
+
+		// Enable versioning
+		_, err := rawClient.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: aws.String(bucket),
+			VersioningConfiguration: &s3types.VersioningConfiguration{
+				Status: s3types.BucketVersioningStatusEnabled,
+			},
+		})
+		require.NoError(t, err)
+
+		// Put first version (with versioning enabled)
+		putResp1, err := rawClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   bytes.NewReader([]byte("version 1")),
+		})
+		require.NoError(t, err)
+		version1ID := *putResp1.VersionId
+
+		// Suspend versioning
+		_, err = rawClient.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: aws.String(bucket),
+			VersioningConfiguration: &s3types.VersioningConfiguration{
+				Status: s3types.BucketVersioningStatusSuspended,
+			},
+		})
+		require.NoError(t, err)
+
+		// Put object while suspended (should get null version)
+		putResp2, err := rawClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   bytes.NewReader([]byte("suspended version")),
+		})
+		require.NoError(t, err)
+		// When suspended, version ID is typically "null" or empty
+		suspendedVersionID := ""
+		if putResp2.VersionId != nil {
+			suspendedVersionID = *putResp2.VersionId
+		}
+
+		// Re-enable versioning
+		_, err = rawClient.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: aws.String(bucket),
+			VersioningConfiguration: &s3types.VersioningConfiguration{
+				Status: s3types.BucketVersioningStatusEnabled,
+			},
+		})
+		require.NoError(t, err)
+
+		// Verify it's enabled again
+		getResp, err := rawClient.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: aws.String(bucket),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, s3types.BucketVersioningStatusEnabled, getResp.Status)
+
+		// Put another version (should get new version ID)
+		putResp3, err := rawClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   bytes.NewReader([]byte("version 3 after re-enable")),
+		})
+		require.NoError(t, err)
+		assert.NotEmpty(t, putResp3.VersionId, "should have version ID after re-enabling")
+		version3ID := *putResp3.VersionId
+
+		// Version 1 should still be accessible
+		getObj, err := rawClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    aws.String(bucket),
+			Key:       aws.String(key),
+			VersionId: aws.String(version1ID),
+		})
+		require.NoError(t, err)
+		defer getObj.Body.Close()
+		body, _ := io.ReadAll(getObj.Body)
+		assert.Equal(t, "version 1", string(body))
+
+		// Cleanup
+		_, _ = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    aws.String(bucket),
+			Key:       aws.String(key),
+			VersionId: aws.String(version1ID),
+		})
+		if suspendedVersionID != "" && suspendedVersionID != "null" {
+			_, _ = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    aws.String(bucket),
+				Key:       aws.String(key),
+				VersionId: aws.String(suspendedVersionID),
+			})
+		} else {
+			// Delete null version
+			_, _ = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    aws.String(bucket),
+				Key:       aws.String(key),
+				VersionId: aws.String("null"),
+			})
+		}
+		_, _ = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    aws.String(bucket),
+			Key:       aws.String(key),
+			VersionId: aws.String(version3ID),
+		})
+		client.DeleteBucket(bucket)
+	})
+
+	t.Run("list object versions pagination", func(t *testing.T) {
+		bucket := uniqueBucket("test-versioning-pagination")
+		key := uniqueKey("paginate-obj")
+		client.CreateBucket(bucket)
+
+		ctx, cancel := testutil.WithTimeout(context.Background())
+		defer cancel()
+
+		// Enable versioning
+		_, err := rawClient.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: aws.String(bucket),
+			VersioningConfiguration: &s3types.VersioningConfiguration{
+				Status: s3types.BucketVersioningStatusEnabled,
+			},
+		})
+		require.NoError(t, err)
+
+		// Create 5 versions
+		var versionIDs []string
+		for i := 0; i < 5; i++ {
+			resp, err := rawClient.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: aws.String(bucket),
+				Key:    aws.String(key),
+				Body:   bytes.NewReader([]byte("version " + string(rune('0'+i)))),
+			})
+			require.NoError(t, err)
+			versionIDs = append(versionIDs, *resp.VersionId)
+		}
+
+		// List with max-keys=2 to test pagination
+		listResp, err := rawClient.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:  aws.String(bucket),
+			MaxKeys: aws.Int32(2),
+		})
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(listResp.Versions), 2, "should return at most 2 versions")
+		assert.True(t, *listResp.IsTruncated, "should be truncated")
+
+		// Continue with pagination markers
+		totalVersions := len(listResp.Versions)
+		for listResp.IsTruncated != nil && *listResp.IsTruncated {
+			listResp, err = rawClient.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+				Bucket:          aws.String(bucket),
+				MaxKeys:         aws.Int32(2),
+				KeyMarker:       listResp.NextKeyMarker,
+				VersionIdMarker: listResp.NextVersionIdMarker,
+			})
+			require.NoError(t, err)
+			totalVersions += len(listResp.Versions)
+		}
+		assert.Equal(t, 5, totalVersions, "should find all 5 versions via pagination")
+
+		// Cleanup
+		for _, vid := range versionIDs {
+			_, _ = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    aws.String(bucket),
+				Key:       aws.String(key),
+				VersionId: aws.String(vid),
+			})
+		}
+		client.DeleteBucket(bucket)
+	})
+
+	t.Run("delete marker removal restores object", func(t *testing.T) {
+		bucket := uniqueBucket("test-versioning-restore")
+		key := uniqueKey("restore-obj")
+		client.CreateBucket(bucket)
+
+		ctx, cancel := testutil.WithTimeout(context.Background())
+		defer cancel()
+
+		// Enable versioning
+		_, err := rawClient.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: aws.String(bucket),
+			VersioningConfiguration: &s3types.VersioningConfiguration{
+				Status: s3types.BucketVersioningStatusEnabled,
+			},
+		})
+		require.NoError(t, err)
+
+		// Put an object
+		data := []byte("original content")
+		putResp, err := rawClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   bytes.NewReader(data),
+		})
+		require.NoError(t, err)
+		originalVersionID := *putResp.VersionId
+
+		// Delete without version ID (creates delete marker)
+		delResp, err := rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		require.NoError(t, err)
+		deleteMarkerID := *delResp.VersionId
+
+		// Verify object is "deleted"
+		_, err = rawClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		assert.Error(t, err, "object should appear deleted")
+
+		// Remove the delete marker
+		_, err = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    aws.String(bucket),
+			Key:       aws.String(key),
+			VersionId: aws.String(deleteMarkerID),
+		})
+		require.NoError(t, err)
+
+		// Object should be accessible again
+		getResp, err := rawClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		require.NoError(t, err, "object should be restored after delete marker removal")
+		defer getResp.Body.Close()
+
+		body, _ := io.ReadAll(getResp.Body)
+		assert.Equal(t, data, body, "content should match original")
+
+		// Cleanup
+		_, _ = rawClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    aws.String(bucket),
+			Key:       aws.String(key),
+			VersionId: aws.String(originalVersionID),
+		})
+		client.DeleteBucket(bucket)
+	})
 }
