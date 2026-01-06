@@ -6,6 +6,8 @@ package multipart
 import (
 	"context"
 	"io"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 )
 
 // Service defines the interface for multipart upload operations.
@@ -46,6 +48,9 @@ type CreateUploadRequest struct {
 	OwnerID      string
 	ContentType  string
 	StorageClass string
+
+	// ACL for the final object (nil uses default private ACL)
+	ACL *s3types.AccessControlList
 
 	// SSE-KMS encryption (optional)
 	SSEKMS *SSEKMSParams

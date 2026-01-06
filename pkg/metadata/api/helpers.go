@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -320,6 +321,208 @@ func parseACLXML(body []byte, defaultOwnerID string) (*s3types.AccessControlList
 	}
 
 	return acl, nil
+}
+
+// parseGrantHeader parses a single x-amz-grant-* header value.
+// Format: grantee_type=value, grantee_type=value, ...
+// Supported grantee types: id (canonical user ID), uri (group URI)
+// Example: id="canonical-user-id", uri="http://acs.amazonaws.com/groups/global/AllUsers"
+func parseGrantHeader(headerValue string) ([]s3types.Grantee, error) {
+	if headerValue == "" {
+		return nil, nil
+	}
+
+	var grantees []s3types.Grantee
+
+	// Split by comma, but be careful of commas inside quoted values
+	parts := splitGrantHeader(headerValue)
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		// Parse key=value format
+		eqIdx := strings.Index(part, "=")
+		if eqIdx == -1 {
+			return nil, fmt.Errorf("invalid grant format: %s", part)
+		}
+
+		key := strings.ToLower(strings.TrimSpace(part[:eqIdx]))
+		value := strings.TrimSpace(part[eqIdx+1:])
+
+		// Remove surrounding quotes
+		value = strings.Trim(value, "\"")
+
+		var grantee s3types.Grantee
+		switch key {
+		case "id":
+			grantee = s3types.Grantee{
+				Type: s3types.GranteeTypeCanonicalUser,
+				ID:   value,
+			}
+		case "uri":
+			// Validate known group URIs
+			switch value {
+			case s3types.AllUsersGroup, s3types.AuthenticatedUsersGroup, s3types.LogDeliveryGroup:
+				grantee = s3types.Grantee{
+					Type: s3types.GranteeTypeGroup,
+					URI:  value,
+				}
+			default:
+				return nil, fmt.Errorf("invalid group URI: %s", value)
+			}
+		case "emailaddress":
+			// Email-based ACLs deprecated as of Oct 2025
+			return nil, fmt.Errorf("email-based ACLs are no longer supported")
+		default:
+			return nil, fmt.Errorf("unknown grant type: %s", key)
+		}
+
+		grantees = append(grantees, grantee)
+	}
+
+	return grantees, nil
+}
+
+// splitGrantHeader splits a grant header value by commas, respecting quoted values.
+func splitGrantHeader(s string) []string {
+	var result []string
+	var current strings.Builder
+	inQuotes := false
+
+	for _, r := range s {
+		switch r {
+		case '"':
+			inQuotes = !inQuotes
+			current.WriteRune(r)
+		case ',':
+			if inQuotes {
+				current.WriteRune(r)
+			} else {
+				result = append(result, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+
+	return result
+}
+
+// ACLFromRequest builds an ACL from request headers.
+// It checks x-amz-acl (canned ACL) and x-amz-grant-* headers.
+// Returns nil if no ACL headers are present.
+func ACLFromRequest(req *http.Request, ownerID string) (*s3types.AccessControlList, *s3err.ErrorCode) {
+	cannedACL := req.Header.Get(s3consts.XAmzACL)
+	grantRead := req.Header.Get(s3consts.XAmzGrantRead)
+	grantWrite := req.Header.Get(s3consts.XAmzGrantWrite)
+	grantReadACP := req.Header.Get(s3consts.XAmzGrantReadACP)
+	grantWriteACP := req.Header.Get(s3consts.XAmzGrantWriteACP)
+	grantFullControl := req.Header.Get(s3consts.XAmzGrantFullControl)
+
+	hasGrantHeaders := grantRead != "" || grantWrite != "" || grantReadACP != "" ||
+		grantWriteACP != "" || grantFullControl != ""
+
+	// Cannot specify both canned ACL and grant headers
+	if cannedACL != "" && hasGrantHeaders {
+		errCode := s3err.ErrInvalidArgument
+		return nil, &errCode
+	}
+
+	// No ACL specified - return nil (caller should use default)
+	if cannedACL == "" && !hasGrantHeaders {
+		return nil, nil
+	}
+
+	// Handle canned ACL
+	if cannedACL != "" {
+		canned, err := s3types.ParseValidCannedACL(cannedACL)
+		if err != nil {
+			errCode := s3err.ErrInvalidArgument
+			return nil, &errCode
+		}
+		return s3types.FromCannedACL(canned, ownerID, ownerID), nil
+	}
+
+	// Handle grant headers - start with owner having full control
+	acl := s3types.NewPrivateACL(ownerID, ownerID)
+
+	// Parse each grant header
+	grantHeaders := map[string]s3types.Permission{
+		grantRead:        s3types.PermissionRead,
+		grantWrite:       s3types.PermissionWrite,
+		grantReadACP:     s3types.PermissionReadACP,
+		grantWriteACP:    s3types.PermissionWriteACP,
+		grantFullControl: s3types.PermissionFullControl,
+	}
+
+	for headerValue, permission := range grantHeaders {
+		if headerValue == "" {
+			continue
+		}
+
+		grantees, err := parseGrantHeader(headerValue)
+		if err != nil {
+			errCode := s3err.ErrInvalidArgument
+			return nil, &errCode
+		}
+
+		for _, grantee := range grantees {
+			acl.Grants = append(acl.Grants, s3types.Grant{
+				Grantee:    grantee,
+				Permission: permission,
+			})
+		}
+	}
+
+	return acl, nil
+}
+
+// ValidateACLForOwnership checks if the ACL is allowed given the bucket's ownership controls.
+// When BucketOwnerEnforced is set, only bucket-owner-full-control or no ACL is allowed.
+// Returns nil if allowed, error code if not allowed.
+func ValidateACLForOwnership(req *http.Request, bucket *s3types.Bucket) *s3err.ErrorCode {
+	if bucket == nil || bucket.OwnershipControls == nil {
+		return nil
+	}
+	if len(bucket.OwnershipControls.Rules) == 0 {
+		return nil
+	}
+
+	// Only BucketOwnerEnforced restricts ACLs
+	if bucket.OwnershipControls.Rules[0].ObjectOwnership != s3types.ObjectOwnershipBucketOwnerEnforced {
+		return nil
+	}
+
+	// Check for any ACL headers
+	cannedACL := req.Header.Get(s3consts.XAmzACL)
+	grantRead := req.Header.Get(s3consts.XAmzGrantRead)
+	grantWrite := req.Header.Get(s3consts.XAmzGrantWrite)
+	grantReadACP := req.Header.Get(s3consts.XAmzGrantReadACP)
+	grantWriteACP := req.Header.Get(s3consts.XAmzGrantWriteACP)
+	grantFullControl := req.Header.Get(s3consts.XAmzGrantFullControl)
+
+	// Grant headers are not allowed with BucketOwnerEnforced
+	if grantRead != "" || grantWrite != "" || grantReadACP != "" ||
+		grantWriteACP != "" || grantFullControl != "" {
+		errCode := s3err.ErrAccessControlListNotSupported
+		return &errCode
+	}
+
+	// bucket-owner-full-control is the only allowed canned ACL
+	if cannedACL != "" && cannedACL != string(s3types.ACLBucketOwnerFull) {
+		errCode := s3err.ErrAccessControlListNotSupported
+		return &errCode
+	}
+
+	return nil
 }
 
 // EncryptionMetadata contains encryption information for an object
@@ -720,5 +923,83 @@ func getBucketDefaultEncryptionForMultipart(encConfig *s3types.ServerSideEncrypt
 
 	return &multipart.SSEKMSParams{
 		KeyID: defaultEnc.KMSMasterKeyID,
+	}
+}
+
+// parseTaggingHeader parses the x-amz-tagging header from a request.
+// The header value is URL-encoded key=value pairs separated by &.
+// Returns nil if the header is not present or empty.
+func parseTaggingHeader(req *http.Request) (*s3types.TagSet, *s3err.ErrorCode) {
+	taggingHeader := req.Header.Get(s3consts.XAmzTagging)
+	if taggingHeader == "" {
+		return nil, nil
+	}
+
+	// Parse the URL-encoded tag string
+	var tags []s3types.Tag
+	pairs := strings.Split(taggingHeader, "&")
+	for _, pair := range pairs {
+		if pair == "" {
+			continue
+		}
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			err := s3err.ErrInvalidTag
+			return nil, &err
+		}
+		key, keyErr := url.QueryUnescape(kv[0])
+		value, valueErr := url.QueryUnescape(kv[1])
+		if keyErr != nil || valueErr != nil {
+			err := s3err.ErrInvalidTag
+			return nil, &err
+		}
+		if key == "" {
+			err := s3err.ErrInvalidTag
+			return nil, &err
+		}
+		tags = append(tags, s3types.Tag{
+			Key:   key,
+			Value: value,
+		})
+	}
+
+	// S3 limits: max 10 tags per object, key max 128 chars, value max 256 chars
+	if len(tags) > 10 {
+		err := s3err.ErrInvalidTag
+		return nil, &err
+	}
+	for _, tag := range tags {
+		if len(tag.Key) > 128 || len(tag.Value) > 256 {
+			err := s3err.ErrInvalidTag
+			return nil, &err
+		}
+	}
+
+	return &s3types.TagSet{Tags: tags}, nil
+}
+
+// parseUserMetadataHeaders extracts x-amz-meta-* headers from the request.
+// Returns a map of metadata keys (without the x-amz-meta- prefix) to values.
+// Keys are stored in lowercase as per S3 behavior.
+func parseUserMetadataHeaders(req *http.Request) map[string]string {
+	metadata := make(map[string]string)
+	for key, values := range req.Header {
+		lowerKey := strings.ToLower(key)
+		if strings.HasPrefix(lowerKey, "x-amz-meta-") && len(values) > 0 {
+			metaKey := strings.TrimPrefix(lowerKey, "x-amz-meta-")
+			metadata[metaKey] = values[0]
+		}
+	}
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
+}
+
+// writeUserMetadataHeaders writes x-amz-meta-* headers to the response.
+// The metadata map keys should be without the x-amz-meta- prefix.
+func writeUserMetadataHeaders(w http.ResponseWriter, metadata map[string]string) {
+	for key, value := range metadata {
+		w.Header().Set("x-amz-meta-"+key, value)
 	}
 }

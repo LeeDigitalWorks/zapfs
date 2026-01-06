@@ -28,6 +28,25 @@ func (s *MetadataServer) CreateMultipartUploadHandler(d *data.Data, w http.Respo
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
+	// Get bucket info for ACL validation
+	var bucketInfo *s3types.Bucket
+	if info, exists := s.bucketStore.GetBucket(bucket); exists {
+		bucketInfo = &info
+	}
+
+	// Validate ACL headers against ownership controls
+	if errCode := ValidateACLForOwnership(d.Req, bucketInfo); errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+
+	// Parse ACL from request headers
+	acl, errCode := ACLFromRequest(d.Req, d.S3Info.OwnerID)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+
 	// Build service request
 	req := &multipart.CreateUploadRequest{
 		Bucket:       bucket,
@@ -35,6 +54,7 @@ func (s *MetadataServer) CreateMultipartUploadHandler(d *data.Data, w http.Respo
 		OwnerID:      d.S3Info.OwnerID,
 		ContentType:  d.Req.Header.Get("Content-Type"),
 		StorageClass: d.Req.Header.Get("x-amz-storage-class"),
+		ACL:          acl,
 	}
 
 	// Parse SSE-KMS headers (if present)

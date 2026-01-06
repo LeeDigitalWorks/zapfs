@@ -63,22 +63,28 @@ func (s *MetadataServer) PutBucketAclHandler(d *data.Data, w http.ResponseWriter
 		return
 	}
 
+	// Check if ACLs are disabled (BucketOwnerEnforced)
+	if isBucketACLDisabled(&bucketInfo) {
+		writeXMLErrorResponse(w, d, s3err.ErrAccessControlListNotSupported)
+		return
+	}
+
 	var acl *s3types.AccessControlList
 
-	// Check for canned ACL header first
-	cannedACL := d.Req.Header.Get("x-amz-acl")
-	if cannedACL != "" {
-		canned, err := s3types.ParseValidCannedACL(cannedACL)
-		if err != nil {
-			writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
-			return
-		}
-		acl = s3types.FromCannedACL(canned, bucketInfo.OwnerID, bucketInfo.OwnerID)
+	// Try to build ACL from headers (canned ACL or grant headers)
+	headerACL, errCode := ACLFromRequest(d.Req, bucketInfo.OwnerID)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+
+	if headerACL != nil {
+		acl = headerACL
 	} else {
-		// Parse ACL from body
+		// No headers - parse ACL from body
 		body, err := io.ReadAll(d.Req.Body)
 		if err != nil || len(body) == 0 {
-			// No body and no canned ACL - use private
+			// No body and no headers - use private
 			acl = s3types.NewPrivateACL(bucketInfo.OwnerID, bucketInfo.OwnerID)
 		} else {
 			acl, err = parseACLXML(body, bucketInfo.OwnerID)
@@ -146,22 +152,30 @@ func (s *MetadataServer) PutObjectAclHandler(d *data.Data, w http.ResponseWriter
 	key := d.S3Info.Key
 	ownerID := d.S3Info.OwnerID
 
-	var acl *s3types.AccessControlList
-
-	// Check for canned ACL header first
-	cannedACL := d.Req.Header.Get("x-amz-acl")
-	if cannedACL != "" {
-		canned, err := s3types.ParseValidCannedACL(cannedACL)
-		if err != nil {
-			writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
+	// Check if ACLs are disabled (BucketOwnerEnforced)
+	if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists {
+		if isBucketACLDisabled(&bucketInfo) {
+			writeXMLErrorResponse(w, d, s3err.ErrAccessControlListNotSupported)
 			return
 		}
-		acl = s3types.FromCannedACL(canned, ownerID, ownerID)
+	}
+
+	var acl *s3types.AccessControlList
+
+	// Try to build ACL from headers (canned ACL or grant headers)
+	headerACL, errCode := ACLFromRequest(d.Req, ownerID)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+
+	if headerACL != nil {
+		acl = headerACL
 	} else {
-		// Parse ACL from body
+		// No headers - parse ACL from body
 		body, err := io.ReadAll(d.Req.Body)
 		if err != nil || len(body) == 0 {
-			// No body and no canned ACL - use private
+			// No body and no headers - use private
 			acl = s3types.NewPrivateACL(ownerID, ownerID)
 		} else {
 			acl, err = parseACLXML(body, ownerID)
@@ -189,3 +203,15 @@ func (s *MetadataServer) PutObjectAclHandler(d *data.Data, w http.ResponseWriter
 }
 
 // Helper functions
+
+// isBucketACLDisabled checks if ACLs are disabled for the bucket.
+// ACLs are disabled when BucketOwnerEnforced ownership control is set.
+func isBucketACLDisabled(bucket *s3types.Bucket) bool {
+	if bucket == nil || bucket.OwnershipControls == nil {
+		return false
+	}
+	if len(bucket.OwnershipControls.Rules) == 0 {
+		return false
+	}
+	return bucket.OwnershipControls.Rules[0].ObjectOwnership == s3types.ObjectOwnershipBucketOwnerEnforced
+}

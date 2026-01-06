@@ -27,7 +27,7 @@ func ScanObject(s scanner, dialect Dialect) (*types.ObjectRef, error) {
 	var storageClassDB sql.NullString
 	var transitionedRef sql.NullString
 	var restoreStatus, restoreTier sql.NullString
-	var chunkRefsJSON, ecGroupIDsJSON []byte
+	var chunkRefsJSON, ecGroupIDsJSON, metadataJSON []byte
 	var sseAlgorithm, sseCustomerKeyMD5, sseKMSKeyID, sseKMSContext sql.NullString
 
 	// Use dialect-specific boolean scanner
@@ -60,6 +60,7 @@ func ScanObject(s scanner, dialect Dialect) (*types.ObjectRef, error) {
 		&sseCustomerKeyMD5,
 		&sseKMSKeyID,
 		&sseKMSContext,
+		&metadataJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, db.ErrObjectNotFound
@@ -97,6 +98,12 @@ func ScanObject(s scanner, dialect Dialect) (*types.ObjectRef, error) {
 	if len(ecGroupIDsJSON) > 0 && string(ecGroupIDsJSON) != "null" {
 		if err := json.Unmarshal(ecGroupIDsJSON, &obj.ECGroupIDs); err != nil {
 			return nil, fmt.Errorf("unmarshal ec_group_ids: %w", err)
+		}
+	}
+
+	if len(metadataJSON) > 0 && string(metadataJSON) != "null" {
+		if err := json.Unmarshal(metadataJSON, &obj.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal metadata: %w", err)
 		}
 	}
 

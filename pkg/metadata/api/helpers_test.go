@@ -1288,3 +1288,284 @@ func TestDecryptWithKMSDEK_InvalidInput(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGrantHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		header      string
+		expectErr   bool
+		expectCount int
+	}{
+		{
+			name:        "empty header",
+			header:      "",
+			expectErr:   false,
+			expectCount: 0,
+		},
+		{
+			name:        "single canonical user",
+			header:      `id="user-id-123"`,
+			expectErr:   false,
+			expectCount: 1,
+		},
+		{
+			name:        "multiple canonical users",
+			header:      `id="user-1", id="user-2"`,
+			expectErr:   false,
+			expectCount: 2,
+		},
+		{
+			name:        "AllUsers group URI",
+			header:      `uri="http://acs.amazonaws.com/groups/global/AllUsers"`,
+			expectErr:   false,
+			expectCount: 1,
+		},
+		{
+			name:        "AuthenticatedUsers group URI",
+			header:      `uri="http://acs.amazonaws.com/groups/global/AuthenticatedUsers"`,
+			expectErr:   false,
+			expectCount: 1,
+		},
+		{
+			name:        "LogDelivery group URI",
+			header:      `uri="http://acs.amazonaws.com/groups/s3/LogDelivery"`,
+			expectErr:   false,
+			expectCount: 1,
+		},
+		{
+			name:        "mixed users and groups",
+			header:      `id="user-1", uri="http://acs.amazonaws.com/groups/global/AllUsers"`,
+			expectErr:   false,
+			expectCount: 2,
+		},
+		{
+			name:      "invalid format - no equals",
+			header:    `id"user-1"`,
+			expectErr: true,
+		},
+		{
+			name:      "invalid group URI",
+			header:    `uri="http://invalid.group/uri"`,
+			expectErr: true,
+		},
+		{
+			name:      "email grantee - deprecated",
+			header:    `emailAddress="user@example.com"`,
+			expectErr: true,
+		},
+		{
+			name:      "unknown grant type",
+			header:    `unknown="value"`,
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			grantees, err := parseGrantHeader(tc.header)
+			if tc.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Len(t, grantees, tc.expectCount)
+			}
+		})
+	}
+}
+
+func TestACLFromRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		headers      map[string]string
+		expectErr    bool
+		expectNil    bool
+		expectGrants int
+	}{
+		{
+			name:      "no ACL headers",
+			headers:   map[string]string{},
+			expectNil: true,
+		},
+		{
+			name: "canned ACL - private",
+			headers: map[string]string{
+				s3consts.XAmzACL: "private",
+			},
+			expectGrants: 1, // owner full control
+		},
+		{
+			name: "canned ACL - public-read",
+			headers: map[string]string{
+				s3consts.XAmzACL: "public-read",
+			},
+			expectGrants: 2, // owner full control + public read
+		},
+		{
+			name: "grant header - read",
+			headers: map[string]string{
+				s3consts.XAmzGrantRead: `id="user-123"`,
+			},
+			expectGrants: 2, // owner full control + user read
+		},
+		{
+			name: "multiple grant headers",
+			headers: map[string]string{
+				s3consts.XAmzGrantRead:        `id="user-1"`,
+				s3consts.XAmzGrantFullControl: `id="user-2"`,
+			},
+			expectGrants: 3, // owner full control + 2 grants
+		},
+		{
+			name: "canned ACL and grant header - error",
+			headers: map[string]string{
+				s3consts.XAmzACL:       "private",
+				s3consts.XAmzGrantRead: `id="user-123"`,
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid canned ACL",
+			headers: map[string]string{
+				s3consts.XAmzACL: "invalid-acl",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid grant header",
+			headers: map[string]string{
+				s3consts.XAmzGrantRead: `invalid`,
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest("PUT", "/bucket/key", nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+
+			acl, errCode := ACLFromRequest(req, "owner-id")
+
+			if tc.expectErr {
+				assert.NotNil(t, errCode)
+			} else {
+				assert.Nil(t, errCode)
+				if tc.expectNil {
+					assert.Nil(t, acl)
+				} else {
+					assert.NotNil(t, acl)
+					assert.Len(t, acl.Grants, tc.expectGrants)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateACLForOwnership(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		ownership     string
+		headers       map[string]string
+		expectErr     bool
+		expectErrCode s3err.ErrorCode
+	}{
+		{
+			name:      "no ownership controls - allow any ACL",
+			ownership: "",
+			headers: map[string]string{
+				s3consts.XAmzACL: "public-read",
+			},
+			expectErr: false,
+		},
+		{
+			name:      "ObjectWriter - allow any ACL",
+			ownership: s3types.ObjectOwnershipObjectWriter,
+			headers: map[string]string{
+				s3consts.XAmzACL: "public-read",
+			},
+			expectErr: false,
+		},
+		{
+			name:      "BucketOwnerPreferred - allow any ACL",
+			ownership: s3types.ObjectOwnershipBucketOwnerPreferred,
+			headers: map[string]string{
+				s3consts.XAmzACL: "public-read",
+			},
+			expectErr: false,
+		},
+		{
+			name:      "BucketOwnerEnforced - no ACL headers",
+			ownership: s3types.ObjectOwnershipBucketOwnerEnforced,
+			headers:   map[string]string{},
+			expectErr: false,
+		},
+		{
+			name:      "BucketOwnerEnforced - bucket-owner-full-control allowed",
+			ownership: s3types.ObjectOwnershipBucketOwnerEnforced,
+			headers: map[string]string{
+				s3consts.XAmzACL: "bucket-owner-full-control",
+			},
+			expectErr: false,
+		},
+		{
+			name:      "BucketOwnerEnforced - other canned ACL blocked",
+			ownership: s3types.ObjectOwnershipBucketOwnerEnforced,
+			headers: map[string]string{
+				s3consts.XAmzACL: "public-read",
+			},
+			expectErr:     true,
+			expectErrCode: s3err.ErrAccessControlListNotSupported,
+		},
+		{
+			name:      "BucketOwnerEnforced - grant header blocked",
+			ownership: s3types.ObjectOwnershipBucketOwnerEnforced,
+			headers: map[string]string{
+				s3consts.XAmzGrantRead: `id="user-123"`,
+			},
+			expectErr:     true,
+			expectErrCode: s3err.ErrAccessControlListNotSupported,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest("PUT", "/bucket/key", nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+
+			var bucket *s3types.Bucket
+			if tc.ownership != "" {
+				bucket = &s3types.Bucket{
+					OwnershipControls: &s3types.OwnershipControls{
+						Rules: []s3types.OwnershipControlsRule{
+							{ObjectOwnership: tc.ownership},
+						},
+					},
+				}
+			}
+
+			errCode := ValidateACLForOwnership(req, bucket)
+
+			if tc.expectErr {
+				assert.NotNil(t, errCode)
+				assert.Equal(t, tc.expectErrCode, *errCode)
+			} else {
+				assert.Nil(t, errCode)
+			}
+		})
+	}
+}

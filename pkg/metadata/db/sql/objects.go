@@ -16,7 +16,7 @@ import (
 )
 
 // ObjectColumns is the standard column list for object queries.
-const ObjectColumns = `id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, restore_status, restore_expiry_date, restore_tier, restore_requested_at, last_accessed_at, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context`
+const ObjectColumns = `id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, restore_status, restore_expiry_date, restore_tier, restore_requested_at, last_accessed_at, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context, metadata`
 
 // ============================================================================
 // Object Operations - Store
@@ -159,6 +159,11 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 		return fmt.Errorf("marshal ec group ids: %w", err)
 	}
 
+	metadataJSON, err := json.Marshal(obj.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+
 	if obj.IsLatest {
 		// Versioning mode: use SELECT FOR UPDATE to prevent race condition
 		var existingID string
@@ -181,8 +186,8 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 
 		// Insert new version
 		_, err = t.Exec(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context, metadata)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		`,
 			obj.ID.String(),
 			obj.Bucket,
@@ -203,6 +208,7 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			obj.SSECustomerKeyMD5,
 			obj.SSEKMSKeyID,
 			obj.SSEKMSContext,
+			string(metadataJSON),
 		)
 	} else {
 		// Non-versioning mode: delete old, then insert new
@@ -214,8 +220,8 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 		}
 
 		_, err = t.Exec(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context, metadata)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		`,
 			obj.ID.String(),
 			obj.Bucket,
@@ -236,6 +242,7 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			obj.SSECustomerKeyMD5,
 			obj.SSEKMSKeyID,
 			obj.SSEKMSContext,
+			string(metadataJSON),
 		)
 	}
 	if err != nil {

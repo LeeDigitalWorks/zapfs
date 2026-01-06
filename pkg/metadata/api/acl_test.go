@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 
@@ -111,16 +112,54 @@ func TestPutBucketAclHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		bucket       string
-		ownerID      string
-		expectedCode int
-		verifyStored bool
+		name              string
+		bucket            string
+		ownerID           string
+		ownershipControls *s3types.OwnershipControls
+		expectedCode      int
+		verifyStored      bool
+		expectErrorCode   string
 	}{
 		{
 			name:         "successfully set bucket ACL",
 			bucket:       "test-bucket",
 			ownerID:      "test-owner",
+			expectedCode: http.StatusOK,
+			verifyStored: true,
+		},
+		{
+			name:    "ACL disabled with BucketOwnerEnforced",
+			bucket:  "test-bucket-enforced",
+			ownerID: "test-owner",
+			ownershipControls: &s3types.OwnershipControls{
+				Rules: []s3types.OwnershipControlsRule{
+					{ObjectOwnership: s3types.ObjectOwnershipBucketOwnerEnforced},
+				},
+			},
+			expectedCode:    http.StatusBadRequest,
+			expectErrorCode: "AccessControlListNotSupported",
+		},
+		{
+			name:    "ACL allowed with BucketOwnerPreferred",
+			bucket:  "test-bucket-preferred",
+			ownerID: "test-owner",
+			ownershipControls: &s3types.OwnershipControls{
+				Rules: []s3types.OwnershipControlsRule{
+					{ObjectOwnership: s3types.ObjectOwnershipBucketOwnerPreferred},
+				},
+			},
+			expectedCode: http.StatusOK,
+			verifyStored: true,
+		},
+		{
+			name:    "ACL allowed with ObjectWriter",
+			bucket:  "test-bucket-writer",
+			ownerID: "test-owner",
+			ownershipControls: &s3types.OwnershipControls{
+				Rules: []s3types.OwnershipControlsRule{
+					{ObjectOwnership: s3types.ObjectOwnershipObjectWriter},
+				},
+			},
 			expectedCode: http.StatusOK,
 			verifyStored: true,
 		},
@@ -142,8 +181,9 @@ func TestPutBucketAclHandler(t *testing.T) {
 
 			// Add bucket to cache (handlers check cache first)
 			srv.bucketStore.SetBucket(tc.bucket, s3types.Bucket{
-				Name:    tc.bucket,
-				OwnerID: tc.ownerID,
+				Name:              tc.bucket,
+				OwnerID:           tc.ownerID,
+				OwnershipControls: tc.ownershipControls,
 			})
 
 			// Create ACL request body
@@ -174,6 +214,13 @@ func TestPutBucketAclHandler(t *testing.T) {
 			srv.PutBucketAclHandler(d, w)
 
 			assert.Equal(t, tc.expectedCode, w.Code)
+
+			if tc.expectErrorCode != "" {
+				var errResp s3err.Error
+				err := xml.Unmarshal(w.Body.Bytes(), &errResp)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectErrorCode, errResp.Code)
+			}
 
 			if tc.verifyStored {
 				storedACL, err := srv.db.GetBucketACL(ctx, tc.bucket)
@@ -280,18 +327,46 @@ func TestPutObjectAclHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		bucket       string
-		key          string
-		ownerID      string
-		expectedCode int
-		verifyStored bool
+		name              string
+		bucket            string
+		key               string
+		ownerID           string
+		ownershipControls *s3types.OwnershipControls
+		expectedCode      int
+		verifyStored      bool
+		expectErrorCode   string
 	}{
 		{
 			name:         "successfully set object ACL",
 			bucket:       "test-bucket",
 			key:          "test.txt",
 			ownerID:      "test-owner",
+			expectedCode: http.StatusOK,
+			verifyStored: true,
+		},
+		{
+			name:    "ACL disabled with BucketOwnerEnforced",
+			bucket:  "test-bucket-enforced",
+			key:     "test.txt",
+			ownerID: "test-owner",
+			ownershipControls: &s3types.OwnershipControls{
+				Rules: []s3types.OwnershipControlsRule{
+					{ObjectOwnership: s3types.ObjectOwnershipBucketOwnerEnforced},
+				},
+			},
+			expectedCode:    http.StatusBadRequest,
+			expectErrorCode: "AccessControlListNotSupported",
+		},
+		{
+			name:    "ACL allowed with BucketOwnerPreferred",
+			bucket:  "test-bucket-preferred",
+			key:     "test.txt",
+			ownerID: "test-owner",
+			ownershipControls: &s3types.OwnershipControls{
+				Rules: []s3types.OwnershipControlsRule{
+					{ObjectOwnership: s3types.ObjectOwnershipBucketOwnerPreferred},
+				},
+			},
 			expectedCode: http.StatusOK,
 			verifyStored: true,
 		},
@@ -310,6 +385,13 @@ func TestPutObjectAclHandler(t *testing.T) {
 				OwnerID: tc.ownerID,
 			})
 			require.NoError(t, err)
+
+			// Add bucket to cache with ownership controls
+			srv.bucketStore.SetBucket(tc.bucket, s3types.Bucket{
+				Name:              tc.bucket,
+				OwnerID:           tc.ownerID,
+				OwnershipControls: tc.ownershipControls,
+			})
 
 			// Create object
 			err = srv.db.PutObject(ctx, &types.ObjectRef{
@@ -348,6 +430,13 @@ func TestPutObjectAclHandler(t *testing.T) {
 			srv.PutObjectAclHandler(d, w)
 
 			assert.Equal(t, tc.expectedCode, w.Code)
+
+			if tc.expectErrorCode != "" {
+				var errResp s3err.Error
+				err := xml.Unmarshal(w.Body.Bytes(), &errResp)
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectErrorCode, errResp.Code)
+			}
 
 			if tc.verifyStored {
 				storedACL, err := srv.db.GetObjectACL(ctx, tc.bucket, tc.key)

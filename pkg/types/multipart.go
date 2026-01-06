@@ -19,6 +19,9 @@ type MultipartUpload struct {
 	StorageClass string            `json:"storage_class,omitempty"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
 
+	// ACL for the final object (JSON-encoded s3types.AccessControlList)
+	ACLJSON string `json:"acl_json,omitempty"`
+
 	// SSE-KMS encryption (set on CreateMultipartUpload)
 	SSEAlgorithm     string `json:"sse_algorithm,omitempty"`      // "aws:kms" for SSE-KMS
 	SSEKMSKeyID      string `json:"sse_kms_key_id,omitempty"`     // KMS key ID

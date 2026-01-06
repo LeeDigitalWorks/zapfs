@@ -311,7 +311,7 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 	}
 
 	// Build object reference
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	contentType := req.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -329,6 +329,7 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 		CreatedAt:    now,
 		ChunkRefs:    writeResult.ChunkRefs,
 		IsLatest:     versioningEnabled, // Set IsLatest for versioned objects
+		Metadata:     req.Metadata,
 	}
 
 	// Set encryption metadata
@@ -368,6 +369,18 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 	})
 	if err != nil {
 		return nil, newInternalError(err)
+	}
+
+	// Store object ACL if specified
+	if req.ACL != nil {
+		if err := s.db.SetObjectACL(ctx, req.Bucket, req.Key, req.ACL); err != nil {
+			// Log but don't fail the request - object is already stored
+			// ACL will default to private if not set
+			logger.Warn().Err(err).
+				Str("bucket", req.Bucket).
+				Str("key", req.Key).
+				Msg("failed to store object ACL")
+		}
 	}
 
 	// Trigger CRR hook if configured
@@ -549,6 +562,7 @@ func (s *serviceImpl) GetObject(ctx context.Context, req *GetObjectRequest) (*Ge
 		Size:         objRef.Size,
 		ContentType:  ctValue,
 		StorageClass: storageClass,
+		Metadata:     objRef.Metadata,
 	}
 
 	result := &GetObjectResult{
@@ -662,6 +676,7 @@ func (s *serviceImpl) getEncryptedObject(
 		SSEAlgorithm:      objRef.SSEAlgorithm,
 		SSECustomerKeyMD5: objRef.SSECustomerKeyMD5,
 		SSEKMSKeyID:       objRef.SSEKMSKeyID,
+		Metadata:          objRef.Metadata,
 	}
 
 	if objRef.SSEKMSKeyID != "" {
@@ -794,6 +809,7 @@ func (s *serviceImpl) getTransitionedObject(
 		Size:         objRef.Size,
 		ContentType:  ctTransitioned,
 		StorageClass: storageClass,
+		Metadata:     objRef.Metadata,
 	}
 
 	result := &GetObjectResult{
@@ -907,6 +923,7 @@ func (s *serviceImpl) HeadObject(ctx context.Context, bucket, key string) (*Head
 		SSEAlgorithm:      objRef.SSEAlgorithm,
 		SSECustomerKeyMD5: objRef.SSECustomerKeyMD5,
 		SSEKMSKeyID:       objRef.SSEKMSKeyID,
+		Metadata:          objRef.Metadata,
 	}
 
 	if objRef.SSEKMSKeyID != "" {
@@ -922,7 +939,7 @@ func (s *serviceImpl) HeadObject(ctx context.Context, bucket, key string) (*Head
 // DeleteObject soft-deletes an object and decrements chunk reference counts
 func (s *serviceImpl) DeleteObject(ctx context.Context, bucket, key string) (*DeleteObjectResult, error) {
 	// Perform delete and ref count decrements atomically in a transaction
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 
 	err := s.db.WithTx(ctx, func(tx db.TxStore) error {
 		// Look up object to get its chunk refs
@@ -1014,7 +1031,7 @@ func (s *serviceImpl) DeleteObjects(ctx context.Context, req *DeleteObjectsReque
 	var deleted []DeletedObject
 	var errs []DeleteError
 
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 
 	// Process each object in its own transaction for partial success handling
 	for _, obj := range req.Objects {
@@ -1104,15 +1121,30 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 	// Create new object reference pointing to same chunks
 	now := time.Now()
 	newObjRef := &types.ObjectRef{
-		ID:          uuid.New(),
-		Bucket:      req.DestBucket,
-		Key:         req.DestKey,
-		Size:        srcObj.Size,
-		ETag:        srcObj.ETag,
-		ContentType: srcObj.ContentType, // Preserve content type from source
-		ChunkRefs:   srcObj.ChunkRefs,
-		CreatedAt:   now.UnixNano(),
-		ProfileID:   srcObj.ProfileID,
+		ID:        uuid.New(),
+		Bucket:    req.DestBucket,
+		Key:       req.DestKey,
+		Size:      srcObj.Size,
+		ETag:      srcObj.ETag,
+		ChunkRefs: srcObj.ChunkRefs,
+		CreatedAt: now.UnixNano(),
+		ProfileID: srcObj.ProfileID,
+	}
+
+	// Handle MetadataDirective for ContentType and user metadata
+	if req.MetadataDirective == "REPLACE" {
+		// Use content type from request (or default)
+		if req.ContentType != "" {
+			newObjRef.ContentType = req.ContentType
+		} else {
+			newObjRef.ContentType = "application/octet-stream"
+		}
+		// Use metadata from request (may be nil/empty)
+		newObjRef.Metadata = req.Metadata
+	} else {
+		// COPY directive: preserve content type and metadata from source
+		newObjRef.ContentType = srcObj.ContentType
+		newObjRef.Metadata = srcObj.Metadata
 	}
 
 	// Handle storage class: use requested or inherit from source
@@ -1237,6 +1269,15 @@ func (s *serviceImpl) CopyObject(ctx context.Context, req *CopyObjectRequest) (*
 			if err := s.db.SetObjectTagging(ctx, req.DestBucket, req.DestKey, srcTags); err != nil {
 				logger.Warn().Err(err).Msg("failed to copy object tags")
 			}
+		}
+	} else if taggingDirective == "REPLACE" && len(req.Tags) > 0 {
+		// Convert to s3types.TagSet
+		tagSet := &s3types.TagSet{Tags: make([]s3types.Tag, len(req.Tags))}
+		for i, tag := range req.Tags {
+			tagSet.Tags[i] = s3types.Tag{Key: tag.Key, Value: tag.Value}
+		}
+		if err := s.db.SetObjectTagging(ctx, req.DestBucket, req.DestKey, tagSet); err != nil {
+			logger.Warn().Err(err).Msg("failed to set object tags")
 		}
 	}
 
@@ -1508,10 +1549,16 @@ func (s *serviceImpl) checkConditionalHeaders(req *GetObjectRequest, etag string
 
 // checkCopySourceConditionals validates copy source conditional headers
 func (s *serviceImpl) checkCopySourceConditionals(req *CopyObjectRequest, etag string, lastModified time.Time) bool {
-	if req.CopySourceIfMatch != "" && req.CopySourceIfMatch != etag {
+	// Strip quotes from ETags for comparison (headers may include quotes)
+	normalizeETag := func(e string) string {
+		return strings.Trim(e, "\"")
+	}
+	normalizedETag := normalizeETag(etag)
+
+	if req.CopySourceIfMatch != "" && normalizeETag(req.CopySourceIfMatch) != normalizedETag {
 		return false
 	}
-	if req.CopySourceIfNoneMatch != "" && req.CopySourceIfNoneMatch == etag {
+	if req.CopySourceIfNoneMatch != "" && normalizeETag(req.CopySourceIfNoneMatch) == normalizedETag {
 		return false
 	}
 	if req.CopySourceIfModifiedSince != nil && !lastModified.After(*req.CopySourceIfModifiedSince) {

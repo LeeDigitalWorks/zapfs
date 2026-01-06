@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/db"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/encryption"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/storage"
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 
@@ -88,6 +90,14 @@ func (s *serviceImpl) CreateUpload(ctx context.Context, req *CreateUploadRequest
 		storageClass = s.defaultProfile
 	}
 
+	// Serialize ACL to JSON if provided
+	var aclJSON string
+	if req.ACL != nil {
+		if aclBytes, err := json.Marshal(req.ACL); err == nil {
+			aclJSON = string(aclBytes)
+		}
+	}
+
 	// Create upload record
 	upload := &types.MultipartUpload{
 		ID:           uploadUUID,
@@ -98,6 +108,7 @@ func (s *serviceImpl) CreateUpload(ctx context.Context, req *CreateUploadRequest
 		Initiated:    time.Now().UnixNano(),
 		ContentType:  req.ContentType,
 		StorageClass: storageClass,
+		ACLJSON:      aclJSON,
 	}
 
 	result := &CreateUploadResult{
@@ -661,6 +672,20 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 			Code:    ErrCodeInternalError,
 			Message: "failed to complete upload",
 			Err:     err,
+		}
+	}
+
+	// Apply ACL if specified during upload initiation
+	if upload.ACLJSON != "" {
+		var acl s3types.AccessControlList
+		if err := json.Unmarshal([]byte(upload.ACLJSON), &acl); err == nil {
+			if err := s.db.SetObjectACL(ctx, req.Bucket, req.Key, &acl); err != nil {
+				// Log but don't fail - object is already created
+				logger.Warn().Err(err).
+					Str("bucket", req.Bucket).
+					Str("key", req.Key).
+					Msg("failed to set object ACL after multipart completion")
+			}
 		}
 	}
 

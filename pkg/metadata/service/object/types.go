@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3types"
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
 )
 
@@ -19,6 +20,13 @@ type PutObjectRequest struct {
 	ContentType   string // MIME type (defaults to application/octet-stream)
 	StorageClass  string
 	Owner         string
+
+	// ACL for the object (nil uses default private ACL)
+	ACL *s3types.AccessControlList
+
+	// User-defined metadata (x-amz-meta-* headers)
+	// Keys are lowercase header names without the x-amz-meta- prefix
+	Metadata map[string]string
 
 	// Encryption options (mutually exclusive)
 	SSEC   *SSECParams
@@ -88,6 +96,9 @@ type ObjectMetadata struct {
 	SSECustomerKeyMD5 string
 	SSEKMSKeyID       string
 	SSEKMSContext     string
+
+	// User-defined metadata (x-amz-meta-* headers)
+	Metadata map[string]string
 }
 
 // DeleteObjectResult contains the result of deleting an object
@@ -143,6 +154,19 @@ type CopyObjectRequest struct {
 	MetadataDirective string // "COPY" or "REPLACE"
 	TaggingDirective  string // "COPY" or "REPLACE"
 
+	// Content-Type for destination object (used when MetadataDirective is REPLACE)
+	// If empty with REPLACE, defaults to application/octet-stream
+	ContentType string
+
+	// Metadata for destination object (used when MetadataDirective is REPLACE)
+	// Keys are lowercase header names without the x-amz-meta- prefix
+	// If nil with REPLACE, destination gets no user metadata
+	Metadata map[string]string
+
+	// Tags for destination object (used when TaggingDirective is REPLACE)
+	// If nil with REPLACE, destination gets no tags
+	Tags []Tag
+
 	// Storage class for destination object (optional)
 	// If not specified, inherits from source object
 	StorageClass string
@@ -157,6 +181,12 @@ type CopyObjectRequest struct {
 	// If not specified and source is encrypted, copy the encryption
 	// If not specified and bucket has default encryption, use that
 	SSEKMS *SSEKMSParams
+}
+
+// Tag represents a key-value tag
+type Tag struct {
+	Key   string
+	Value string
 }
 
 // CopyObjectResult contains the result of copying an object

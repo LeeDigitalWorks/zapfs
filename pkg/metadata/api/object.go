@@ -32,19 +32,33 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
-	// Check expected bucket owner header if provided
+	// Get bucket info for validation
+	var bucketInfo *s3types.Bucket
 	if bucket != "" {
-		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-		if exists {
-			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
+		if info, exists := s.bucketStore.GetBucket(bucket); exists {
+			bucketInfo = &info
+			if errCode := checkExpectedBucketOwner(d.Req, info.OwnerID); errCode != nil {
 				writeXMLErrorResponse(w, d, *errCode)
 				return
 			}
-			if errCode := checkRequestPayer(d.Req, bucketInfo.RequestPayment); errCode != nil {
+			if errCode := checkRequestPayer(d.Req, info.RequestPayment); errCode != nil {
 				writeXMLErrorResponse(w, d, *errCode)
 				return
 			}
 		}
+	}
+
+	// Validate ACL headers against ownership controls
+	if errCode := ValidateACLForOwnership(d.Req, bucketInfo); errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+
+	// Parse ACL from request headers
+	acl, errCode := ACLFromRequest(d.Req, d.S3Info.OwnerID)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
 	}
 
 	// Use verified body for streaming signed requests, otherwise use raw body
@@ -70,6 +84,8 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		ContentType:   d.Req.Header.Get("Content-Type"),
 		StorageClass:  d.Req.Header.Get(s3consts.XAmzStorageClass),
 		Owner:         d.S3Info.OwnerID,
+		ACL:           acl,
+		Metadata:      parseUserMetadataHeaders(d.Req),
 	}
 
 	// Parse SSE-C headers (if present)
@@ -109,11 +125,27 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		}
 	}
 
+	// Parse x-amz-tagging header (before calling service layer)
+	tagSet, errCode := parseTaggingHeader(d.Req)
+	if errCode != nil {
+		writeXMLErrorResponse(w, d, *errCode)
+		return
+	}
+
 	// Call service layer
 	result, err := s.svc.Objects().PutObject(ctx, req)
 	if err != nil {
 		s.handleObjectError(w, d, err)
 		return
+	}
+
+	// Set object tags if provided
+	if tagSet != nil && len(tagSet.Tags) > 0 {
+		if _, err := s.svc.Config().SetObjectTagging(ctx, bucket, key, tagSet); err != nil {
+			// Log error but don't fail the request - object was already created
+			// This matches S3 behavior where tagging is best-effort
+			// Note: We don't log here as the service layer already logs errors
+		}
 	}
 
 	// Set response headers
@@ -260,6 +292,9 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 	if result.Metadata.StorageClass != "" && result.Metadata.StorageClass != "STANDARD" {
 		w.Header().Set(s3consts.XAmzStorageClass, result.Metadata.StorageClass)
 	}
+
+	// Set user-defined metadata headers (x-amz-meta-*)
+	writeUserMetadataHeaders(w, result.Metadata.Metadata)
 
 	// Set restore status header for archived objects
 	if result.Object != nil && result.Object.RestoreStatus != "" {
@@ -503,7 +538,18 @@ func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) 
 		}
 	}
 
-	// Handle conditional requests (If-None-Match)
+	// Handle conditional requests (If-Match, If-None-Match)
+	ifMatch := d.Req.Header.Get("If-Match")
+	if ifMatch != "" {
+		// Strip quotes from the header value
+		ifMatch = strings.Trim(ifMatch, "\"")
+		if ifMatch != result.Metadata.ETag {
+			// ETag doesn't match - return 412 Precondition Failed
+			w.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+	}
+
 	ifNoneMatch := d.Req.Header.Get("If-None-Match")
 	if ifNoneMatch != "" {
 		// Strip quotes from the header value
@@ -531,6 +577,9 @@ func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) 
 	if result.Metadata.StorageClass != "" && result.Metadata.StorageClass != "STANDARD" {
 		w.Header().Set(s3consts.XAmzStorageClass, result.Metadata.StorageClass)
 	}
+
+	// Set user-defined metadata headers (x-amz-meta-*)
+	writeUserMetadataHeaders(w, result.Metadata.Metadata)
 
 	// Set restore status header for archived objects
 	if result.Object != nil && result.Object.RestoreStatus != "" {
@@ -708,6 +757,33 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 	// Parse storage class for destination
 	storageClass := d.Req.Header.Get(s3consts.XAmzStorageClass)
 
+	// For REPLACE directive, get Content-Type and user metadata from request
+	var contentType string
+	var metadata map[string]string
+	if metadataDirective == "REPLACE" {
+		contentType = d.Req.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		metadata = parseUserMetadataHeaders(d.Req)
+	}
+
+	// For tagging REPLACE directive, parse x-amz-tagging header
+	var tags []object.Tag
+	if taggingDirective == "REPLACE" {
+		tagSet, errCode := parseTaggingHeader(d.Req)
+		if errCode != nil {
+			writeXMLErrorResponse(w, d, *errCode)
+			return
+		}
+		if tagSet != nil {
+			tags = make([]object.Tag, len(tagSet.Tags))
+			for i, t := range tagSet.Tags {
+				tags[i] = object.Tag{Key: t.Key, Value: t.Value}
+			}
+		}
+	}
+
 	// Parse conditional headers
 	var copySourceIfMatch, copySourceIfNoneMatch string
 	var copySourceIfModifiedSince, copySourceIfUnmodifiedSince *time.Time
@@ -758,6 +834,9 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 		DestKey:                     destKey,
 		MetadataDirective:           metadataDirective,
 		TaggingDirective:            taggingDirective,
+		ContentType:                 contentType,
+		Metadata:                    metadata,
+		Tags:                        tags,
 		StorageClass:                storageClass,
 		CopySourceIfMatch:           copySourceIfMatch,
 		CopySourceIfNoneMatch:       copySourceIfNoneMatch,

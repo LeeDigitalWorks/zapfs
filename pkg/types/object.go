@@ -73,6 +73,10 @@ type ObjectRef struct {
 	SSEKMSKeyID string `json:"sse_kms_key_id,omitempty"`
 	// SSEKMSContext: KMS encryption context (for SSE-KMS)
 	SSEKMSContext string `json:"sse_kms_context,omitempty"`
+
+	// Metadata stores user-defined metadata (x-amz-meta-* headers)
+	// Keys are lowercase header names without the x-amz-meta- prefix
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // ChunkRef references a chunk that stores part of an object
