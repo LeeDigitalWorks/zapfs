@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS objects (
     -- Intelligent tiering access tracking
     last_accessed_at BIGINT NOT NULL DEFAULT 0,
 
+    -- User-defined metadata (x-amz-meta-* headers)
+    metadata JSONB DEFAULT NULL,
+
     CONSTRAINT fk_objects_bucket FOREIGN KEY (bucket)
         REFERENCES buckets(name) ON DELETE CASCADE
 );
@@ -56,3 +59,4 @@ COMMENT ON COLUMN objects.restore_expiry_date IS 'Unix nano when restored copy e
 COMMENT ON COLUMN objects.restore_tier IS 'Retrieval tier: Expedited, Standard, Bulk';
 COMMENT ON COLUMN objects.restore_requested_at IS 'Unix nano when restore was requested';
 COMMENT ON COLUMN objects.last_accessed_at IS 'Unix nano of last GET request, 0 if never accessed (use created_at)';
+COMMENT ON COLUMN objects.metadata IS 'User-defined metadata (x-amz-meta-* headers)';

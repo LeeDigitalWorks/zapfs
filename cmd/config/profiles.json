@@ -93,6 +93,45 @@
       ],
       "replication": 1,
       "compression": "zstd"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000016",
+      "name": "STANDARD_IA",
+      "description": "Infrequent access storage (S3 compatible)",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000001"
+        },
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000002"
+        }
+      ],
+      "replication": 1,
+      "compression": "zstd"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000017",
+      "name": "GLACIER",
+      "description": "S3 Glacier archival storage",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000004"
+        }
+      ],
+      "replication": 1,
+      "compression": "zstd"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000018",
+      "name": "DEEP_ARCHIVE",
+      "description": "S3 Glacier Deep Archive for long-term storage",
+      "pools": [
+        {
+          "pool_id": "00000000-0000-0000-0000-000000000004"
+        }
+      ],
+      "replication": 1,
+      "compression": "zstd"
     }
   ]
 }

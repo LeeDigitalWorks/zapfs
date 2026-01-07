@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS objects (
     -- Intelligent tiering access tracking
     last_accessed_at BIGINT NOT NULL DEFAULT 0 COMMENT 'Unix nano of last GET request, 0 if never accessed (use created_at)',
 
+    -- User-defined metadata (x-amz-meta-* headers)
+    metadata JSON DEFAULT NULL COMMENT 'User-defined metadata (x-amz-meta-* headers)',
+
     -- No unique constraint on (bucket, object_key) to allow multiple versions
     -- Use is_latest to identify current version
     INDEX idx_objects_bucket_key_latest (bucket, object_key(255), is_latest),

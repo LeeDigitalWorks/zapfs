@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS multipart_uploads (
     sse_kms_key_id VARCHAR(255) DEFAULT '',
     sse_kms_context TEXT,
     sse_dek_ciphertext TEXT,
+    -- ACL for the final object (JSON-encoded)
+    acl_json TEXT,
     PRIMARY KEY (upload_id)
 );
 

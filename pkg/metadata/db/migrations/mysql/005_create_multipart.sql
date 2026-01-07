@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS multipart_uploads (
     sse_kms_key_id VARCHAR(255),
     sse_kms_context TEXT,
     sse_dek_ciphertext BLOB,
+    -- ACL for the final object (JSON-encoded)
+    acl_json TEXT,
     PRIMARY KEY (upload_id),
     INDEX idx_bucket_key (bucket, object_key(255)),
     INDEX idx_bucket_initiated (bucket, initiated)

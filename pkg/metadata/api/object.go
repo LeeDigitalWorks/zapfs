@@ -994,11 +994,14 @@ func (s *MetadataServer) GetObjectAttributesHandler(d *data.Data, w http.Respons
 	key := d.S3Info.Key
 
 	// Parse x-amz-object-attributes header (required)
-	attrsHeader := d.Req.Header.Get(s3consts.XAmzObjectAttributes)
-	if attrsHeader == "" {
+	// Handle both single comma-separated header and multiple headers with same name
+	// (AWS SDK v2 had a bug where it sent each attribute as a separate header)
+	attrValues := d.Req.Header.Values(s3consts.XAmzObjectAttributes)
+	if len(attrValues) == 0 {
 		writeXMLErrorResponse(w, d, s3err.ErrInvalidArgument)
 		return
 	}
+	attrsHeader := strings.Join(attrValues, ",")
 
 	// Parse requested attributes
 	requestedAttrs := parseObjectAttributes(attrsHeader)

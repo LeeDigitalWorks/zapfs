@@ -140,6 +140,7 @@ func ScanMultipartUpload(s scanner, _ Dialect) (*types.MultipartUpload, error) {
 	var contentType, storageClass sql.NullString
 	var metadataJSON []byte
 	var sseAlgorithm, sseKMSKeyID, sseKMSContext, sseDEKCiphertext string
+	var aclJSON string
 
 	err := s.Scan(
 		&idStr,
@@ -155,6 +156,7 @@ func ScanMultipartUpload(s scanner, _ Dialect) (*types.MultipartUpload, error) {
 		&sseKMSKeyID,
 		&sseKMSContext,
 		&sseDEKCiphertext,
+		&aclJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, db.ErrUploadNotFound
@@ -170,6 +172,7 @@ func ScanMultipartUpload(s scanner, _ Dialect) (*types.MultipartUpload, error) {
 	upload.SSEKMSKeyID = sseKMSKeyID
 	upload.SSEKMSContext = sseKMSContext
 	upload.SSEDEKCiphertext = sseDEKCiphertext
+	upload.ACLJSON = aclJSON
 
 	if len(metadataJSON) > 0 && string(metadataJSON) != "null" {
 		if err := json.Unmarshal(metadataJSON, &upload.Metadata); err != nil {
@@ -187,6 +190,7 @@ func ScanMultipartUploadBasic(s scanner, _ Dialect) (*types.MultipartUpload, err
 	var idStr string
 	var contentType, storageClass sql.NullString
 	var metadataJSON []byte
+	var aclJSON string
 
 	err := s.Scan(
 		&idStr,
@@ -198,6 +202,7 @@ func ScanMultipartUploadBasic(s scanner, _ Dialect) (*types.MultipartUpload, err
 		&contentType,
 		&storageClass,
 		&metadataJSON,
+		&aclJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, db.ErrUploadNotFound
@@ -209,6 +214,7 @@ func ScanMultipartUploadBasic(s scanner, _ Dialect) (*types.MultipartUpload, err
 	upload.ID, _ = uuid.Parse(idStr)
 	upload.ContentType = contentType.String
 	upload.StorageClass = storageClass.String
+	upload.ACLJSON = aclJSON
 
 	if len(metadataJSON) > 0 && string(metadataJSON) != "null" {
 		if err := json.Unmarshal(metadataJSON, &upload.Metadata); err != nil {

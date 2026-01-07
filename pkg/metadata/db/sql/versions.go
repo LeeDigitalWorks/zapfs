@@ -109,7 +109,7 @@ func (s *Store) ListObjectVersions(ctx context.Context, bucket, prefix, keyMarke
 // GetObjectVersion retrieves a specific version of an object.
 func (s *Store) GetObjectVersion(ctx context.Context, bucket, key, versionID string) (*types.ObjectRef, error) {
 	row := s.QueryRow(ctx, `
-		SELECT id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, transitioned_at, transitioned_ref, restore_status, restore_expiry_date, restore_tier, restore_requested_at, last_accessed_at, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context
+		SELECT `+ObjectColumns+`
 		FROM objects
 		WHERE bucket = $1 AND object_key = $2 AND id = $3
 	`, bucket, key, versionID)

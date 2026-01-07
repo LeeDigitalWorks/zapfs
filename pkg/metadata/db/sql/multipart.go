@@ -13,10 +13,10 @@ import (
 
 // MultipartUploadColumns is the standard column list for multipart upload queries (with SSE).
 const MultipartUploadColumns = `id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata,
-       COALESCE(sse_algorithm, ''), COALESCE(sse_kms_key_id, ''), COALESCE(sse_kms_context, ''), COALESCE(sse_dek_ciphertext, '')`
+       COALESCE(sse_algorithm, ''), COALESCE(sse_kms_key_id, ''), COALESCE(sse_kms_context, ''), COALESCE(sse_dek_ciphertext, ''), COALESCE(acl_json, '')`
 
 // MultipartUploadColumnsBasic is the column list without SSE fields.
-const MultipartUploadColumnsBasic = `id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata`
+const MultipartUploadColumnsBasic = `id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata, COALESCE(acl_json, '')`
 
 // PartColumns is the standard column list for part queries.
 const PartColumns = `id, upload_id, part_number, size, etag, last_modified, chunk_refs`
@@ -105,8 +105,8 @@ func createMultipartUploadWithSSE(ctx context.Context, q Querier, upload *types.
 	}
 
 	query := `
-		INSERT INTO multipart_uploads (id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata, sse_algorithm, sse_kms_key_id, sse_kms_context, sse_dek_ciphertext)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO multipart_uploads (id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata, sse_algorithm, sse_kms_key_id, sse_kms_context, sse_dek_ciphertext, acl_json)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err = q.Exec(ctx, query,
@@ -123,6 +123,7 @@ func createMultipartUploadWithSSE(ctx context.Context, q Querier, upload *types.
 		upload.SSEKMSKeyID,
 		upload.SSEKMSContext,
 		upload.SSEDEKCiphertext,
+		upload.ACLJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("create multipart upload: %w", err)
@@ -138,8 +139,8 @@ func createMultipartUploadBasic(ctx context.Context, q Querier, upload *types.Mu
 	}
 
 	_, err = q.Exec(ctx, `
-		INSERT INTO multipart_uploads (id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO multipart_uploads (id, upload_id, bucket, object_key, owner_id, initiated, content_type, storage_class, metadata, acl_json)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`,
 		upload.ID.String(),
 		upload.UploadID,
@@ -150,6 +151,7 @@ func createMultipartUploadBasic(ctx context.Context, q Querier, upload *types.Mu
 		upload.ContentType,
 		upload.StorageClass,
 		string(metadataJSON),
+		upload.ACLJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("create multipart upload: %w", err)
