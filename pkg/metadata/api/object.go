@@ -1345,16 +1345,6 @@ func (s *MetadataServer) GetObjectTorrentHandler(d *data.Data, w http.ResponseWr
 	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 }
 
-// SelectObjectContentHandler performs S3 Select queries on objects.
-// POST /{bucket}/{key}?select&select-type=2
-//
-// Complex feature requiring SQL parsing - not planned for initial release.
-func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.ResponseWriter) {
-	// S3 Select requires SQL parsing for CSV/JSON/Parquet
-	// Complex feature - not planned for initial release
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
-}
-
 // WriteGetObjectResponseHandler writes Lambda response for Object Lambda.
 // POST /WriteGetObjectResponse
 //
