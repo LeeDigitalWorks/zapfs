@@ -36,9 +36,28 @@ func (s *Store) ListObjectVersions(ctx context.Context, bucket, prefix, keyMarke
 
 	if keyMarker != "" {
 		if versionIDMarker != "" {
-			query += fmt.Sprintf(" AND (object_key > $%d OR (object_key = $%d AND id > $%d))", argIdx, argIdx+1, argIdx+2)
-			args = append(args, keyMarker, keyMarker, versionIDMarker)
-			argIdx += 3
+			// For pagination, we need to skip past the marker. Since we order by
+			// object_key ASC, created_at DESC, we need to find versions where:
+			// - object_key > keyMarker, OR
+			// - object_key = keyMarker AND created_at < marker's created_at
+			// First look up the created_at of the version ID marker
+			var markerCreatedAt int64
+			err := s.QueryRow(ctx, `
+				SELECT created_at FROM objects WHERE bucket = $1 AND object_key = $2 AND id = $3
+			`, bucket, keyMarker, versionIDMarker).Scan(&markerCreatedAt)
+			if err != nil && err != sql.ErrNoRows {
+				return nil, false, "", "", fmt.Errorf("lookup version marker: %w", err)
+			}
+			if markerCreatedAt > 0 {
+				query += fmt.Sprintf(" AND (object_key > $%d OR (object_key = $%d AND created_at < $%d))", argIdx, argIdx+1, argIdx+2)
+				args = append(args, keyMarker, keyMarker, markerCreatedAt)
+				argIdx += 3
+			} else {
+				// Marker not found, just skip to next key
+				query += fmt.Sprintf(" AND object_key > $%d", argIdx)
+				args = append(args, keyMarker)
+				argIdx++
+			}
 		} else {
 			query += fmt.Sprintf(" AND object_key > $%d", argIdx)
 			args = append(args, keyMarker)
@@ -118,7 +137,24 @@ func (s *Store) GetObjectVersion(ctx context.Context, bucket, key, versionID str
 }
 
 // DeleteObjectVersion deletes a specific version of an object.
+// After deletion, if the deleted version was the latest, it recalculates
+// which remaining version should be marked as latest.
 func (s *Store) DeleteObjectVersion(ctx context.Context, bucket, key, versionID string) error {
+	// First check if this version exists and if it's the latest
+	var isLatest bool
+	isLatestScanner := s.dialect.ScanBool()
+	err := s.QueryRow(ctx, `
+		SELECT is_latest FROM objects WHERE bucket = $1 AND object_key = $2 AND id = $3
+	`, bucket, key, versionID).Scan(isLatestScanner.Dest())
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return db.ErrObjectNotFound
+		}
+		return fmt.Errorf("check version is_latest: %w", err)
+	}
+	isLatest = isLatestScanner.Value()
+
+	// Delete the version
 	result, err := s.Exec(ctx, `
 		DELETE FROM objects WHERE bucket = $1 AND object_key = $2 AND id = $3
 	`, bucket, key, versionID)
@@ -130,6 +166,33 @@ func (s *Store) DeleteObjectVersion(ctx context.Context, bucket, key, versionID 
 	if affected == 0 {
 		return db.ErrObjectNotFound
 	}
+
+	// If the deleted version was the latest, promote the next most recent version
+	if isLatest {
+		// Find the most recent remaining version (by created_at DESC)
+		var nextLatestID string
+		err = s.QueryRow(ctx, `
+			SELECT id FROM objects
+			WHERE bucket = $1 AND object_key = $2
+			ORDER BY created_at DESC
+			LIMIT 1
+		`, bucket, key).Scan(&nextLatestID)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("find next latest version: %w", err)
+		}
+
+		// Mark the next version as latest (if any remain)
+		if nextLatestID != "" {
+			_, err = s.Exec(ctx, fmt.Sprintf(`
+				UPDATE objects SET is_latest = %s
+				WHERE bucket = $1 AND object_key = $2 AND id = $3
+			`, s.dialect.BoolLiteral(true)), bucket, key, nextLatestID)
+			if err != nil {
+				return fmt.Errorf("promote next latest version: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 

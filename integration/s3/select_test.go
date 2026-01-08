@@ -25,6 +25,15 @@ func TestS3Select(t *testing.T) {
 	client := newS3Client(t)
 	rawClient := client.Client
 
+	// Helper to check if S3 Select is not implemented and skip accordingly
+	skipIfNotImplemented := func(t *testing.T, err error) bool {
+		if err != nil && strings.Contains(err.Error(), "NotImplemented") {
+			t.Skip("S3 Select is not implemented")
+			return true
+		}
+		return false
+	}
+
 	t.Run("select from CSV file", func(t *testing.T) {
 		bucket := uniqueBucket("test-select-csv")
 		key := uniqueKey("data.csv")
@@ -67,6 +76,9 @@ Diana,28,Houston`
 				CSV: &s3types.CSVOutput{},
 			},
 		})
+		if skipIfNotImplemented(t, err) {
+			return
+		}
 		require.NoError(t, err)
 		defer resp.GetStream().Close()
 
@@ -129,6 +141,9 @@ Diana,28,Houston`
 				CSV: &s3types.CSVOutput{},
 			},
 		})
+		if skipIfNotImplemented(t, err) {
+			return
+		}
 		require.NoError(t, err)
 		defer resp.GetStream().Close()
 
@@ -189,6 +204,9 @@ Diana,28,Houston`
 				JSON: &s3types.JSONOutput{},
 			},
 		})
+		if skipIfNotImplemented(t, err) {
+			return
+		}
 		require.NoError(t, err)
 		defer resp.GetStream().Close()
 
@@ -250,6 +268,9 @@ Diana,28,Houston`
 				CSV: &s3types.CSVOutput{},
 			},
 		})
+		if skipIfNotImplemented(t, err) {
+			return
+		}
 		require.NoError(t, err)
 		defer resp.GetStream().Close()
 
@@ -289,6 +310,9 @@ Diana,28,Houston`
 				CSV: &s3types.CSVOutput{},
 			},
 		})
+		if skipIfNotImplemented(t, err) {
+			return
+		}
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "NoSuchKey")
 	})

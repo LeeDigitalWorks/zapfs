@@ -302,11 +302,16 @@ func (s *serviceImpl) PutObject(ctx context.Context, req *PutObjectRequest) (*Pu
 		etag = hex.EncodeToString(streamingHasher.Sum(nil))
 	}
 
-	// Check if bucket has versioning enabled
+	// Check if bucket has versioning enabled or was ever versioned (suspended)
+	// When versioning is Enabled or Suspended, we keep previous versions
+	// Only when versioning was never enabled do we replace (delete old, insert new)
 	versioningEnabled := false
 	if s.bucketStore != nil {
 		if bucketInfo, exists := s.bucketStore.GetBucket(req.Bucket); exists {
-			versioningEnabled = bucketInfo.Versioning == s3types.VersioningEnabled
+			// Both Enabled and Suspended mean "preserve versions"
+			// Only empty/unset means "replace mode"
+			versioningEnabled = bucketInfo.Versioning == s3types.VersioningEnabled ||
+				bucketInfo.Versioning == s3types.VersioningSuspended
 		}
 	}
 
