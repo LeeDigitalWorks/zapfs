@@ -104,14 +104,12 @@ func (s *MetadataServer) CreateMultipartUploadHandler(d *data.Data, w http.Respo
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 
-	// SSE-KMS response headers
-	if result.SSEKMSKeyID != "" {
-		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
-		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
-		if result.SSEKMSContext != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
-		}
-	}
+	// SSE response headers
+	writeSSEResponseHeaders(w, SSEResponseFields{
+		SSEAlgorithm:  result.SSEAlgorithm,
+		SSEKMSKeyID:   result.SSEKMSKeyID,
+		SSEKMSContext: result.SSEKMSContext,
+	})
 
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)
@@ -251,14 +249,12 @@ func (s *MetadataServer) CompleteMultipartUploadHandler(d *data.Data, w http.Res
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
 
-	// SSE-KMS response headers
-	if result.SSEKMSKeyID != "" {
-		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
-		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
-		if result.SSEKMSContext != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
-		}
-	}
+	// SSE response headers
+	writeSSEResponseHeaders(w, SSEResponseFields{
+		SSEAlgorithm:  result.SSEAlgorithm,
+		SSEKMSKeyID:   result.SSEKMSKeyID,
+		SSEKMSContext: result.SSEKMSContext,
+	})
 
 	w.WriteHeader(http.StatusOK)
 	xml.NewEncoder(w).Encode(xmlResult)

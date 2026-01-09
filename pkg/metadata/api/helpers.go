@@ -1003,3 +1003,90 @@ func writeUserMetadataHeaders(w http.ResponseWriter, metadata map[string]string)
 		w.Header().Set("x-amz-meta-"+key, value)
 	}
 }
+
+// BucketStore defines the interface for bucket lookup operations.
+// Implemented by cache.BucketStore.
+type BucketStore interface {
+	GetBucket(bucket string) (s3types.Bucket, bool)
+}
+
+// BucketAccessResult contains the result of a bucket access validation.
+type BucketAccessResult struct {
+	Bucket  *s3types.Bucket  // The bucket info, or nil if not found
+	ErrCode *s3err.ErrorCode // Error code if validation failed, nil if OK
+}
+
+// validateBucketAccess validates bucket access by checking expected owner and request payer.
+// Returns the bucket info along with any error code.
+// This consolidates the repeated bucket access validation pattern across handlers.
+func validateBucketAccess(req *http.Request, bucketStore BucketStore, bucketName string) BucketAccessResult {
+	if bucketName == "" {
+		return BucketAccessResult{}
+	}
+
+	bucketInfo, exists := bucketStore.GetBucket(bucketName)
+	if !exists {
+		return BucketAccessResult{}
+	}
+
+	// Check expected bucket owner header
+	if errCode := checkExpectedBucketOwner(req, bucketInfo.OwnerID); errCode != nil {
+		return BucketAccessResult{Bucket: &bucketInfo, ErrCode: errCode}
+	}
+
+	// Check request payer header for requester-pays buckets
+	if errCode := checkRequestPayer(req, bucketInfo.RequestPayment); errCode != nil {
+		return BucketAccessResult{Bucket: &bucketInfo, ErrCode: errCode}
+	}
+
+	return BucketAccessResult{Bucket: &bucketInfo}
+}
+
+// validateBucketOwnerOnly validates bucket access by checking only the expected owner.
+// Used by handlers that don't need request payer validation (e.g., DeleteObject).
+func validateBucketOwnerOnly(req *http.Request, bucketStore BucketStore, bucketName string) BucketAccessResult {
+	if bucketName == "" {
+		return BucketAccessResult{}
+	}
+
+	bucketInfo, exists := bucketStore.GetBucket(bucketName)
+	if !exists {
+		return BucketAccessResult{}
+	}
+
+	// Check expected bucket owner header only
+	if errCode := checkExpectedBucketOwner(req, bucketInfo.OwnerID); errCode != nil {
+		return BucketAccessResult{Bucket: &bucketInfo, ErrCode: errCode}
+	}
+
+	return BucketAccessResult{Bucket: &bucketInfo}
+}
+
+// SSEResponseFields contains fields needed to write SSE response headers.
+// This interface allows different result types to provide SSE information.
+type SSEResponseFields struct {
+	SSEAlgorithm      string
+	SSECustomerKeyMD5 string
+	SSEKMSKeyID       string
+	SSEKMSContext     string
+}
+
+// writeSSEResponseHeaders writes SSE-C and SSE-KMS response headers based on the encryption type.
+// This consolidates the repeated SSE header writing pattern across handlers.
+func writeSSEResponseHeaders(w http.ResponseWriter, sse SSEResponseFields) {
+	// SSE-C response headers
+	if sse.SSECustomerKeyMD5 != "" {
+		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, sse.SSEAlgorithm)
+		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerKeyMD5, sse.SSECustomerKeyMD5)
+		return
+	}
+
+	// SSE-KMS response headers
+	if sse.SSEKMSKeyID != "" {
+		w.Header().Set(s3consts.XAmzServerSideEncryption, sse.SSEAlgorithm)
+		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, sse.SSEKMSKeyID)
+		if sse.SSEKMSContext != "" {
+			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, sse.SSEKMSContext)
+		}
+	}
+}

@@ -149,19 +149,10 @@ func (t *TxStore) GetExpiredRestores(ctx context.Context, now int64, limit int) 
 // PutObject creates or updates an object in the database.
 // This is TxStore-only as it requires transaction semantics.
 func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
-	chunkRefsJSON, err := json.Marshal(obj.ChunkRefs)
+	// Marshal JSON fields
+	chunkRefsJSON, ecGroupIDsJSON, metadataJSON, err := marshalObjectJSON(obj)
 	if err != nil {
-		return fmt.Errorf("marshal chunk refs: %w", err)
-	}
-
-	ecGroupIDsJSON, err := json.Marshal(obj.ECGroupIDs)
-	if err != nil {
-		return fmt.Errorf("marshal ec group ids: %w", err)
-	}
-
-	metadataJSON, err := json.Marshal(obj.Metadata)
-	if err != nil {
-		return fmt.Errorf("marshal metadata: %w", err)
+		return err
 	}
 
 	if obj.IsLatest {
@@ -185,31 +176,7 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 		}
 
 		// Insert new version
-		_, err = t.Exec(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context, metadata)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-		`,
-			obj.ID.String(),
-			obj.Bucket,
-			obj.Key,
-			obj.Size,
-			obj.Version,
-			obj.ETag,
-			ContentType(obj.ContentType),
-			obj.CreatedAt,
-			obj.DeletedAt,
-			obj.TTL,
-			obj.ProfileID,
-			StorageClass(obj.StorageClass),
-			string(chunkRefsJSON),
-			string(ecGroupIDsJSON),
-			t.BoolValue(true),
-			obj.SSEAlgorithm,
-			obj.SSECustomerKeyMD5,
-			obj.SSEKMSKeyID,
-			obj.SSEKMSContext,
-			string(metadataJSON),
-		)
+		err = insertObject(ctx, t, obj, chunkRefsJSON, ecGroupIDsJSON, metadataJSON)
 	} else {
 		// Non-versioning mode: delete old, then insert new
 		_, err = t.Exec(ctx, `
@@ -219,36 +186,63 @@ func (t *TxStore) PutObject(ctx context.Context, obj *types.ObjectRef) error {
 			return fmt.Errorf("delete old object: %w", err)
 		}
 
-		_, err = t.Exec(ctx, `
-			INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context, metadata)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-		`,
-			obj.ID.String(),
-			obj.Bucket,
-			obj.Key,
-			obj.Size,
-			obj.Version,
-			obj.ETag,
-			ContentType(obj.ContentType),
-			obj.CreatedAt,
-			obj.DeletedAt,
-			obj.TTL,
-			obj.ProfileID,
-			StorageClass(obj.StorageClass),
-			string(chunkRefsJSON),
-			string(ecGroupIDsJSON),
-			t.BoolValue(true),
-			obj.SSEAlgorithm,
-			obj.SSECustomerKeyMD5,
-			obj.SSEKMSKeyID,
-			obj.SSEKMSContext,
-			string(metadataJSON),
-		)
+		err = insertObject(ctx, t, obj, chunkRefsJSON, ecGroupIDsJSON, metadataJSON)
 	}
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
+}
+
+// marshalObjectJSON marshals the JSON fields of an object for database storage.
+func marshalObjectJSON(obj *types.ObjectRef) (chunkRefs, ecGroupIDs, metadata []byte, err error) {
+	chunkRefs, err = json.Marshal(obj.ChunkRefs)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("marshal chunk refs: %w", err)
+	}
+
+	ecGroupIDs, err = json.Marshal(obj.ECGroupIDs)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("marshal ec group ids: %w", err)
+	}
+
+	metadata, err = json.Marshal(obj.Metadata)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("marshal metadata: %w", err)
+	}
+
+	return chunkRefs, ecGroupIDs, metadata, nil
+}
+
+// insertObject inserts an object into the database.
+// This is a helper function to avoid duplicating the INSERT statement.
+func insertObject(ctx context.Context, t *TxStore, obj *types.ObjectRef, chunkRefsJSON, ecGroupIDsJSON, metadataJSON []byte) error {
+	_, err := t.Exec(ctx, `
+		INSERT INTO objects (id, bucket, object_key, size, version, etag, content_type, created_at, deleted_at, ttl, profile_id, storage_class, chunk_refs, ec_group_ids, is_latest, sse_algorithm, sse_customer_key_md5, sse_kms_key_id, sse_kms_context, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+	`,
+		obj.ID.String(),
+		obj.Bucket,
+		obj.Key,
+		obj.Size,
+		obj.Version,
+		obj.ETag,
+		ContentType(obj.ContentType),
+		obj.CreatedAt,
+		obj.DeletedAt,
+		obj.TTL,
+		obj.ProfileID,
+		StorageClass(obj.StorageClass),
+		string(chunkRefsJSON),
+		string(ecGroupIDsJSON),
+		t.BoolValue(true),
+		obj.SSEAlgorithm,
+		obj.SSECustomerKeyMD5,
+		obj.SSEKMSKeyID,
+		obj.SSEKMSContext,
+		string(metadataJSON),
+	)
+	return err
 }
 
 // ============================================================================

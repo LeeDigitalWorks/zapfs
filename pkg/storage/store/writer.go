@@ -108,7 +108,7 @@ func (fs *FileStore) WriteChunk(ctx context.Context, chunkID types.ChunkID, data
 	}
 
 	// Get backend (use provided or fall back to placer)
-	backend, ok := fs.backends[backendID]
+	backend, ok := fs.GetBackend(backendID)
 	if !ok {
 		var err error
 		backend, err = fs.placer.SelectBackend(ctx, uint64(len(data)), "")

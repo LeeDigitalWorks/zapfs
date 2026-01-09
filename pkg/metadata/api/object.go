@@ -32,21 +32,13 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
-	// Get bucket info for validation
-	var bucketInfo *s3types.Bucket
-	if bucket != "" {
-		if info, exists := s.bucketStore.GetBucket(bucket); exists {
-			bucketInfo = &info
-			if errCode := checkExpectedBucketOwner(d.Req, info.OwnerID); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-			if errCode := checkRequestPayer(d.Req, info.RequestPayment); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-		}
+	// Validate bucket access and get bucket info for further validation
+	bucketAccess := validateBucketAccess(d.Req, s.bucketStore, bucket)
+	if bucketAccess.ErrCode != nil {
+		writeXMLErrorResponse(w, d, *bucketAccess.ErrCode)
+		return
 	}
+	bucketInfo := bucketAccess.Bucket
 
 	// Validate ACL headers against ownership controls
 	if errCode := ValidateACLForOwnership(d.Req, bucketInfo); errCode != nil {
@@ -116,12 +108,9 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 	}
 
 	// If no SSE headers provided, check bucket default encryption
-	if req.SSEC == nil && req.SSEKMS == nil {
-		if bucketInfo, exists := s.bucketStore.GetBucket(bucket); exists && bucketInfo.Encryption != nil {
-			// Apply bucket default encryption
-			if kmsParams := getBucketDefaultEncryption(bucketInfo.Encryption); kmsParams != nil {
-				req.SSEKMS = kmsParams
-			}
+	if req.SSEC == nil && req.SSEKMS == nil && bucketInfo != nil && bucketInfo.Encryption != nil {
+		if kmsParams := getBucketDefaultEncryption(bucketInfo.Encryption); kmsParams != nil {
+			req.SSEKMS = kmsParams
 		}
 	}
 
@@ -153,20 +142,13 @@ func (s *MetadataServer) PutObjectHandler(d *data.Data, w http.ResponseWriter) {
 		w.Header().Set(s3consts.XAmzVersionID, result.VersionID)
 	}
 
-	// SSE-C response headers
-	if result.SSECustomerKeyMD5 != "" {
-		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, result.SSEAlgorithm)
-		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerKeyMD5, result.SSECustomerKeyMD5)
-	}
-
-	// SSE-KMS response headers
-	if result.SSEKMSKeyID != "" {
-		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
-		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
-		if result.SSEKMSContext != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
-		}
-	}
+	// SSE response headers
+	writeSSEResponseHeaders(w, SSEResponseFields{
+		SSEAlgorithm:      result.SSEAlgorithm,
+		SSECustomerKeyMD5: result.SSECustomerKeyMD5,
+		SSEKMSKeyID:       result.SSEKMSKeyID,
+		SSEKMSContext:     result.SSEKMSContext,
+	})
 
 	w.WriteHeader(http.StatusOK)
 
@@ -189,19 +171,10 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
-	// Check expected bucket owner header if provided
-	if bucket != "" {
-		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-		if exists {
-			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-			if errCode := checkRequestPayer(d.Req, bucketInfo.RequestPayment); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-		}
+	// Validate bucket access (expected owner and request payer)
+	if result := validateBucketAccess(d.Req, s.bucketStore, bucket); result.ErrCode != nil {
+		writeXMLErrorResponse(w, d, *result.ErrCode)
+		return
 	}
 
 	// Parse versionId query parameter
@@ -310,19 +283,13 @@ func (s *MetadataServer) GetObjectHandler(d *data.Data, w http.ResponseWriter) {
 		w.Header().Set("Accept-Ranges", result.AcceptRanges)
 	}
 
-	// SSE headers
-	if result.Metadata.SSEAlgorithm != "" {
-		if result.Metadata.SSECustomerKeyMD5 != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, result.Metadata.SSEAlgorithm)
-			w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerKeyMD5, result.Metadata.SSECustomerKeyMD5)
-		} else if result.Metadata.SSEKMSKeyID != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryption, result.Metadata.SSEAlgorithm)
-			w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.Metadata.SSEKMSKeyID)
-			if result.Metadata.SSEKMSContext != "" {
-				w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.Metadata.SSEKMSContext)
-			}
-		}
-	}
+	// SSE response headers
+	writeSSEResponseHeaders(w, SSEResponseFields{
+		SSEAlgorithm:      result.Metadata.SSEAlgorithm,
+		SSECustomerKeyMD5: result.Metadata.SSECustomerKeyMD5,
+		SSEKMSKeyID:       result.Metadata.SSEKMSKeyID,
+		SSEKMSContext:     result.Metadata.SSEKMSContext,
+	})
 
 	if result.IsPartial && result.Range != nil {
 		// Partial content response (206)
@@ -352,15 +319,10 @@ func (s *MetadataServer) DeleteObjectHandler(d *data.Data, w http.ResponseWriter
 	// Parse versionId query parameter
 	versionID := d.Req.URL.Query().Get("versionId")
 
-	// Check expected bucket owner header if provided
-	if bucket != "" {
-		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-		if exists {
-			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-		}
+	// Validate bucket owner (no request payer check for delete)
+	if result := validateBucketOwnerOnly(d.Req, s.bucketStore, bucket); result.ErrCode != nil {
+		writeXMLErrorResponse(w, d, *result.ErrCode)
+		return
 	}
 
 	// Call service layer with version ID
@@ -478,19 +440,11 @@ func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) 
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
 
-	// Check expected bucket owner header if provided
-	if bucket != "" {
-		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-		if exists {
-			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
-				w.WriteHeader(http.StatusForbidden)
-				return
-			}
-			if errCode := checkRequestPayer(d.Req, bucketInfo.RequestPayment); errCode != nil {
-				w.WriteHeader(http.StatusForbidden)
-				return
-			}
-		}
+	// Validate bucket access (expected owner and request payer)
+	// HEAD requests return 403 without body on error
+	if result := validateBucketAccess(d.Req, s.bucketStore, bucket); result.ErrCode != nil {
+		w.WriteHeader(http.StatusForbidden)
+		return
 	}
 
 	// Call service layer
@@ -582,19 +536,13 @@ func (s *MetadataServer) HeadObjectHandler(d *data.Data, w http.ResponseWriter) 
 		w.Header().Set(s3consts.XAmzRestore, formatRestoreHeader(result.Object))
 	}
 
-	// Return SSE headers if encrypted
-	if result.Metadata.SSEAlgorithm != "" {
-		if result.Metadata.SSECustomerKeyMD5 != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, result.Metadata.SSEAlgorithm)
-			w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerKeyMD5, result.Metadata.SSECustomerKeyMD5)
-		} else if result.Metadata.SSEKMSKeyID != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryption, result.Metadata.SSEAlgorithm)
-			w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.Metadata.SSEKMSKeyID)
-			if result.Metadata.SSEKMSContext != "" {
-				w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.Metadata.SSEKMSContext)
-			}
-		}
-	}
+	// SSE response headers
+	writeSSEResponseHeaders(w, SSEResponseFields{
+		SSEAlgorithm:      result.Metadata.SSEAlgorithm,
+		SSECustomerKeyMD5: result.Metadata.SSECustomerKeyMD5,
+		SSEKMSKeyID:       result.Metadata.SSEKMSKeyID,
+		SSEKMSContext:     result.Metadata.SSEKMSContext,
+	})
 
 	w.WriteHeader(http.StatusOK)
 
@@ -857,20 +805,13 @@ func (s *MetadataServer) CopyObjectHandler(d *data.Data, w http.ResponseWriter) 
 		ETag:         "\"" + result.ETag + "\"",
 	}
 
-	// SSE-C response headers
-	if result.SSECustomerKeyMD5 != "" {
-		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerAlgo, result.SSEAlgorithm)
-		w.Header().Set(s3consts.XAmzServerSideEncryptionCustomerKeyMD5, result.SSECustomerKeyMD5)
-	}
-
-	// SSE-KMS response headers
-	if result.SSEKMSKeyID != "" {
-		w.Header().Set(s3consts.XAmzServerSideEncryption, result.SSEAlgorithm)
-		w.Header().Set(s3consts.XAmzServerSideEncryptionAwsKmsKeyID, result.SSEKMSKeyID)
-		if result.SSEKMSContext != "" {
-			w.Header().Set(s3consts.XAmzServerSideEncryptionContext, result.SSEKMSContext)
-		}
-	}
+	// SSE response headers
+	writeSSEResponseHeaders(w, SSEResponseFields{
+		SSEAlgorithm:      result.SSEAlgorithm,
+		SSECustomerKeyMD5: result.SSECustomerKeyMD5,
+		SSEKMSKeyID:       result.SSEKMSKeyID,
+		SSEKMSContext:     result.SSEKMSContext,
+	})
 
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set(s3consts.XAmzRequestID, d.Req.Header.Get(s3consts.XAmzRequestID))
@@ -888,15 +829,10 @@ func (s *MetadataServer) DeleteObjectsHandler(d *data.Data, w http.ResponseWrite
 	ctx := d.Ctx
 	bucket := d.S3Info.Bucket
 
-	// Check expected bucket owner header if provided
-	if bucket != "" {
-		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-		if exists {
-			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-		}
+	// Validate bucket owner (no request payer check for delete)
+	if result := validateBucketOwnerOnly(d.Req, s.bucketStore, bucket); result.ErrCode != nil {
+		writeXMLErrorResponse(w, d, *result.ErrCode)
+		return
 	}
 
 	// Parse request body
@@ -1010,15 +946,10 @@ func (s *MetadataServer) GetObjectAttributesHandler(d *data.Data, w http.Respons
 		return
 	}
 
-	// Check expected bucket owner header if provided
-	if bucket != "" {
-		bucketInfo, exists := s.bucketStore.GetBucket(bucket)
-		if exists {
-			if errCode := checkExpectedBucketOwner(d.Req, bucketInfo.OwnerID); errCode != nil {
-				writeXMLErrorResponse(w, d, *errCode)
-				return
-			}
-		}
+	// Validate bucket owner
+	if result := validateBucketOwnerOnly(d.Req, s.bucketStore, bucket); result.ErrCode != nil {
+		writeXMLErrorResponse(w, d, *result.ErrCode)
+		return
 	}
 
 	// Get object metadata
