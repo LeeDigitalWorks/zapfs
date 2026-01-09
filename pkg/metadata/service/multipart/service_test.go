@@ -161,6 +161,27 @@ func TestCreateUpload(t *testing.T) {
 			wantErr:     true,
 			wantErrCode: multipart.ErrCodeInternalError,
 		},
+		{
+			name: "with user metadata",
+			req: &multipart.CreateUploadRequest{
+				Bucket:  "test-bucket",
+				Key:     "test-key",
+				OwnerID: "owner-123",
+				Metadata: map[string]string{
+					"custom-key":    "custom-value",
+					"streaming-key": "streaming-value",
+				},
+			},
+			setupMocks: func(mockDB *dbmocks.MockDB, mockStorage *mpmocks.MockStorage) {
+				mockDB.EXPECT().CreateMultipartUpload(mock.Anything, mock.MatchedBy(func(u *types.MultipartUpload) bool {
+					// Verify metadata is passed through to the upload
+					return u.Metadata != nil &&
+						u.Metadata["custom-key"] == "custom-value" &&
+						u.Metadata["streaming-key"] == "streaming-value"
+				})).Return(nil)
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range tests {

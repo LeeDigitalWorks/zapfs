@@ -422,23 +422,26 @@ type chunkGroup struct {
 	replicas []types.ChunkRef
 }
 
-// groupChunksByID groups chunk refs by ChunkID and sorts by offset.
-// Each group represents replicas of the same chunk data.
+// groupChunksByOffset groups chunk refs by offset and sorts by offset.
+// Each group represents replicas (from different file servers) for the same logical chunk position.
+// This correctly handles content-deduplicated chunks that appear at multiple offsets:
+// the same ChunkID may appear at different offsets and each needs to be read separately.
 func groupChunksByID(refs []types.ChunkRef) []chunkGroup {
-	// Build map of ChunkID -> replicas
-	groupMap := make(map[types.ChunkID]*chunkGroup)
+	// Build map of Offset -> replicas
+	// Chunks at the same offset are replicas (e.g., written to multiple file servers)
+	groupMap := make(map[uint64]*chunkGroup)
 	for _, ref := range refs {
 		if ref.FileServerAddr == "" {
 			continue
 		}
-		g, exists := groupMap[ref.ChunkID]
+		g, exists := groupMap[ref.Offset]
 		if !exists {
 			g = &chunkGroup{
 				chunkID:  ref.ChunkID,
 				offset:   ref.Offset,
 				replicas: make([]types.ChunkRef, 0, 1),
 			}
-			groupMap[ref.ChunkID] = g
+			groupMap[ref.Offset] = g
 		}
 		g.replicas = append(g.replicas, ref)
 	}

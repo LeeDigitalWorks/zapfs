@@ -49,6 +49,9 @@ type CreateUploadRequest struct {
 	ContentType  string
 	StorageClass string
 
+	// User-defined metadata (x-amz-meta-* headers)
+	Metadata map[string]string
+
 	// ACL for the final object (nil uses default private ACL)
 	ACL *s3types.AccessControlList
 

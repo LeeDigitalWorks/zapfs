@@ -105,6 +105,46 @@ func TestGroupChunksByID(t *testing.T) {
 		assert.Equal(t, types.ChunkID("chunk-1"), groups[0].chunkID)
 		assert.Equal(t, types.ChunkID("chunk-3"), groups[1].chunkID)
 	})
+
+	t.Run("same chunk ID at different offsets - content deduplication", func(t *testing.T) {
+		// This test verifies that when the same ChunkID appears at different offsets
+		// (due to content-based deduplication), each offset is treated as a separate
+		// read position. This happens when two parts of a multipart upload have
+		// identical content.
+		refs := []types.ChunkRef{
+			// Part 1 at offset 0
+			{ChunkID: "chunk-dedup", Offset: 0, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+			// Part 2 at offset 5MB has same content (same ChunkID)
+			{ChunkID: "chunk-dedup", Offset: 5 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+		}
+		groups := groupChunksByID(refs)
+
+		// Should have 2 groups - one for each offset, even though ChunkID is the same
+		require.Len(t, groups, 2, "same ChunkID at different offsets should create separate groups")
+		assert.Equal(t, uint64(0), groups[0].offset)
+		assert.Equal(t, uint64(5*1024*1024), groups[1].offset)
+		// Both groups should reference the same chunk
+		assert.Equal(t, types.ChunkID("chunk-dedup"), groups[0].chunkID)
+		assert.Equal(t, types.ChunkID("chunk-dedup"), groups[1].chunkID)
+	})
+
+	t.Run("same chunk ID at different offsets with replicas", func(t *testing.T) {
+		// Same as above but with replicas at each offset
+		refs := []types.ChunkRef{
+			// Part 1 at offset 0 - 2 replicas
+			{ChunkID: "chunk-dedup", Offset: 0, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+			{ChunkID: "chunk-dedup", Offset: 0, Size: 5 * 1024 * 1024, FileServerAddr: "file-2:8081"},
+			// Part 2 at offset 5MB - 2 replicas (same content)
+			{ChunkID: "chunk-dedup", Offset: 5 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-1:8081"},
+			{ChunkID: "chunk-dedup", Offset: 5 * 1024 * 1024, Size: 5 * 1024 * 1024, FileServerAddr: "file-2:8081"},
+		}
+		groups := groupChunksByID(refs)
+
+		require.Len(t, groups, 2, "same ChunkID at different offsets should create separate groups")
+		// Each group should have 2 replicas
+		assert.Len(t, groups[0].replicas, 2, "offset 0 should have 2 replicas")
+		assert.Len(t, groups[1].replicas, 2, "offset 5MB should have 2 replicas")
+	})
 }
 
 // =============================================================================
@@ -273,6 +313,40 @@ func TestReadObject(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read chunk chunk-2")
+	})
+
+	t.Run("deduplicated chunk appears at multiple offsets", func(t *testing.T) {
+		// This test verifies that when the same ChunkID appears at different offsets
+		// (due to content-based deduplication, e.g., multipart upload where parts have
+		// identical content), the chunk is read twice - once for each offset position.
+		mockFile := mocks.NewMockFile(t)
+		coord := &Coordinator{fileClientPool: mockFile}
+
+		chunkData := []byte("repeated-content-5MB")
+
+		// The same chunk should be read twice - once for each offset
+		mockFile.EXPECT().
+			GetChunk(mock.Anything, "file-1:8081", "chunk-dedup", mock.Anything).
+			Run(func(ctx context.Context, address string, chunkID string, writer clientpkg.ObjectWriter) {
+				writer(chunkData)
+			}).
+			Return(nil).
+			Times(2) // Should be called twice for the two different offsets
+
+		var buf bytes.Buffer
+		err := coord.ReadObject(context.Background(), &ReadRequest{
+			ChunkRefs: []types.ChunkRef{
+				// Same ChunkID at offset 0
+				{ChunkID: "chunk-dedup", Offset: 0, Size: uint64(len(chunkData)), FileServerAddr: "file-1:8081"},
+				// Same ChunkID at offset 20 (simulating 2nd part of multipart with identical content)
+				{ChunkID: "chunk-dedup", Offset: uint64(len(chunkData)), Size: uint64(len(chunkData)), FileServerAddr: "file-1:8081"},
+			},
+		}, &buf)
+
+		assert.NoError(t, err)
+		// Output should contain the chunk data twice
+		expected := append(chunkData, chunkData...)
+		assert.Equal(t, expected, buf.Bytes())
 	})
 }
 

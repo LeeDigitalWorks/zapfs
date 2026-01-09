@@ -54,6 +54,7 @@ func (s *MetadataServer) CreateMultipartUploadHandler(d *data.Data, w http.Respo
 		OwnerID:      d.S3Info.OwnerID,
 		ContentType:  d.Req.Header.Get("Content-Type"),
 		StorageClass: d.Req.Header.Get("x-amz-storage-class"),
+		Metadata:     parseUserMetadataHeaders(d.Req),
 		ACL:          acl,
 	}
 

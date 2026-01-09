@@ -108,6 +108,7 @@ func (s *serviceImpl) CreateUpload(ctx context.Context, req *CreateUploadRequest
 		Initiated:    time.Now().UnixNano(),
 		ContentType:  req.ContentType,
 		StorageClass: storageClass,
+		Metadata:     req.Metadata,
 		ACLJSON:      aclJSON,
 	}
 
@@ -646,6 +647,7 @@ func (s *serviceImpl) CompleteUpload(ctx context.Context, req *CompleteUploadReq
 			CreatedAt:    time.Now().UnixNano(),
 			ChunkRefs:    allChunkRefs,
 			StorageClass: upload.StorageClass,
+			Metadata:     upload.Metadata,
 		}
 
 		// Copy SSE metadata from upload to final object
