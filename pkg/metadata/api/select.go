@@ -73,12 +73,8 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 		return
 	}
 
-	// Phase 1: Only support CSV input/output
-	// JSON and Parquet support will be added in future phases
-	if req.InputSerialization.JSON != nil {
-		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
-		return
-	}
+	// Phase 2A: Support CSV and JSON input, CSV output only
+	// Parquet support will be added in future phases
 	if req.InputSerialization.Parquet != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
@@ -112,11 +108,17 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	defer result.Body.Close()
 
 	// Convert API types to s3select types
-	csvInput := convertCSVInput(req.InputSerialization.CSV)
 	csvOutput := convertCSVOutput(req.OutputSerialization.CSV)
 
-	// Create CSV reader
-	reader := s3select.NewCSVReader(result.Body, csvInput)
+	// Create reader based on input format
+	var reader s3select.RecordReader
+	if req.InputSerialization.CSV != nil {
+		csvInput := convertCSVInput(req.InputSerialization.CSV)
+		reader = s3select.NewCSVReader(result.Body, csvInput)
+	} else if req.InputSerialization.JSON != nil {
+		jsonInput := convertJSONInput(req.InputSerialization.JSON)
+		reader = s3select.NewJSONReader(result.Body, jsonInput)
+	}
 	defer reader.Close()
 
 	// Create executor
@@ -145,7 +147,7 @@ func writeSelectError(w http.ResponseWriter, d *data.Data, err *s3select.SelectE
 		s3Code = s3err.ErrInvalidRequest
 	case "UnsupportedSyntax":
 		s3Code = s3err.ErrNotImplemented
-	case "CSVParsingError":
+	case "CSVParsingError", "JSONParsingError":
 		s3Code = s3err.ErrInvalidRequest
 	case "UnsupportedFormat":
 		s3Code = s3err.ErrNotImplemented
@@ -182,6 +184,16 @@ func convertCSVOutput(out *SelectCSVOutput) *s3select.CSVOutput {
 		RecordDelimiter:      out.RecordDelimiter,
 		FieldDelimiter:       out.FieldDelimiter,
 		QuoteCharacter:       out.QuoteCharacter,
+	}
+}
+
+// convertJSONInput converts API SelectJSONInput to s3select.JSONInput.
+func convertJSONInput(in *SelectJSONInput) *s3select.JSONInput {
+	if in == nil {
+		return &s3select.JSONInput{}
+	}
+	return &s3select.JSONInput{
+		Type: in.Type,
 	}
 }
 
