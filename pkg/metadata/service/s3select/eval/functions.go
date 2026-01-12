@@ -611,25 +611,32 @@ func equals(a, b any) bool {
 
 // convertToGoTimeFormat converts common SQL date format patterns to Go format
 func convertToGoTimeFormat(format string) string {
-	// Map common SQL format patterns to Go layout
-	replacements := map[string]string{
-		"YYYY": "2006",
-		"yyyy": "2006",
-		"YY":   "06",
-		"yy":   "06",
-		"MM":   "01",
-		"DD":   "02",
-		"dd":   "02",
-		"HH":   "15",
-		"hh":   "03",
-		"mm":   "04",
-		"ss":   "05",
-		"SS":   "05",
+	// Replacements must be applied in order (longer patterns first)
+	// to avoid partial replacement issues (e.g., "YY" replacing part of "YYYY")
+	replacements := []struct {
+		pattern   string
+		goPattern string
+	}{
+		// Year patterns - longer first
+		{"YYYY", "2006"},
+		{"yyyy", "2006"},
+		{"YY", "06"},
+		{"yy", "06"},
+		// Month/Day patterns
+		{"MM", "01"},
+		{"DD", "02"},
+		{"dd", "02"},
+		// Time patterns
+		{"HH", "15"},
+		{"hh", "03"},
+		{"mm", "04"},
+		{"ss", "05"},
+		{"SS", "05"},
 	}
 
 	result := format
-	for pattern, goPattern := range replacements {
-		result = strings.ReplaceAll(result, pattern, goPattern)
+	for _, r := range replacements {
+		result = strings.ReplaceAll(result, r.pattern, r.goPattern)
 	}
 	return result
 }
