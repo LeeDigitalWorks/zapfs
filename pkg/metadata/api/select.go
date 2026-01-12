@@ -5,6 +5,7 @@ package api
 
 import (
 	"encoding/xml"
+	"io"
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
@@ -107,6 +108,22 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	}
 	defer result.Body.Close()
 
+	// Wrap with decompression reader if compression type is specified
+	var inputReader io.Reader = result.Body
+	if req.InputSerialization.CompressionType != "" {
+		decompressor, err := s3select.WrapReader(result.Body, req.InputSerialization.CompressionType)
+		if err != nil {
+			if selectErr, ok := err.(*s3select.SelectError); ok {
+				writeSelectError(w, d, selectErr)
+				return
+			}
+			writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
+			return
+		}
+		defer decompressor.Close()
+		inputReader = decompressor
+	}
+
 	// Convert API types to s3select types
 	csvOutput := convertCSVOutput(req.OutputSerialization.CSV)
 
@@ -114,10 +131,10 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	var reader s3select.RecordReader
 	if req.InputSerialization.CSV != nil {
 		csvInput := convertCSVInput(req.InputSerialization.CSV)
-		reader = s3select.NewCSVReader(result.Body, csvInput)
+		reader = s3select.NewCSVReader(inputReader, csvInput)
 	} else if req.InputSerialization.JSON != nil {
 		jsonInput := convertJSONInput(req.InputSerialization.JSON)
-		reader = s3select.NewJSONReader(result.Body, jsonInput)
+		reader = s3select.NewJSONReader(inputReader, jsonInput)
 	}
 	defer reader.Close()
 
