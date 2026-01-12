@@ -23,6 +23,25 @@ type csvRecordReader struct {
 	closed        bool
 }
 
+// NewCSVReader creates a new CSV record reader.
+// This is the public constructor for external use.
+func NewCSVReader(r io.Reader, opts *CSVInput) RecordReader {
+	reader, err := newCSVReader(r, opts, 1024*1024) // 1MB default max record size
+	if err != nil {
+		// Return a reader that will return the error on first Read
+		return &errorReader{err: err}
+	}
+	return reader
+}
+
+// errorReader returns an error on first read.
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read() (Record, error) { return nil, r.err }
+func (r *errorReader) Close() error          { return nil }
+
 // newCSVReader creates a new CSV record reader.
 func newCSVReader(r io.Reader, opts *CSVInput, maxRecordSize int) (RecordReader, error) {
 	cr := csv.NewReader(r)
