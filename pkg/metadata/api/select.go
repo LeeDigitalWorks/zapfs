@@ -4,7 +4,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/xml"
+	"io"
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
@@ -73,16 +75,12 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 		return
 	}
 
-	// Phase 1: Only support CSV input/output
-	// JSON and Parquet support will be added in future phases
-	if req.InputSerialization.JSON != nil {
-		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parquet does not support compression (it has internal compression)
+	if req.InputSerialization.Parquet != nil && req.InputSerialization.CompressionType != "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
 		return
 	}
-	if req.InputSerialization.Parquet != nil {
-		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
-		return
-	}
+	// JSON output not yet supported
 	if req.OutputSerialization.JSON != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
@@ -111,12 +109,57 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	}
 	defer result.Body.Close()
 
+	// Wrap with decompression reader if compression type is specified
+	var inputReader io.Reader = result.Body
+	if req.InputSerialization.CompressionType != "" {
+		decompressor, err := s3select.WrapReader(result.Body, req.InputSerialization.CompressionType)
+		if err != nil {
+			if selectErr, ok := err.(*s3select.SelectError); ok {
+				writeSelectError(w, d, selectErr)
+				return
+			}
+			writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
+			return
+		}
+		defer decompressor.Close()
+		inputReader = decompressor
+	}
+
 	// Convert API types to s3select types
-	csvInput := convertCSVInput(req.InputSerialization.CSV)
 	csvOutput := convertCSVOutput(req.OutputSerialization.CSV)
 
-	// Create CSV reader
-	reader := s3select.NewCSVReader(result.Body, csvInput)
+	// Create reader based on input format
+	var reader s3select.RecordReader
+	if req.InputSerialization.CSV != nil {
+		csvInput := convertCSVInput(req.InputSerialization.CSV)
+		reader = s3select.NewCSVReader(inputReader, csvInput)
+	} else if req.InputSerialization.JSON != nil {
+		jsonInput := convertJSONInput(req.InputSerialization.JSON)
+		reader = s3select.NewJSONReader(inputReader, jsonInput)
+	} else if req.InputSerialization.Parquet != nil {
+		// Parquet requires io.ReaderAt for random access (metadata at end of file)
+		// Read entire object into memory
+		data, err := io.ReadAll(inputReader)
+		if err != nil {
+			logger.Error().Err(err).Str("bucket", bucket).Str("key", key).Msg("failed to read parquet object")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+			return
+		}
+		parquetReader, err := s3select.NewParquetReader(
+			bytes.NewReader(data),
+			int64(len(data)),
+			nil, // Parquet is self-describing, no options needed
+		)
+		if err != nil {
+			if selectErr, ok := err.(*s3select.SelectError); ok {
+				writeSelectError(w, d, selectErr)
+				return
+			}
+			writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
+			return
+		}
+		reader = parquetReader
+	}
 	defer reader.Close()
 
 	// Create executor
@@ -145,7 +188,7 @@ func writeSelectError(w http.ResponseWriter, d *data.Data, err *s3select.SelectE
 		s3Code = s3err.ErrInvalidRequest
 	case "UnsupportedSyntax":
 		s3Code = s3err.ErrNotImplemented
-	case "CSVParsingError":
+	case "CSVParsingError", "JSONParsingError", "ParquetParsingError":
 		s3Code = s3err.ErrInvalidRequest
 	case "UnsupportedFormat":
 		s3Code = s3err.ErrNotImplemented
@@ -182,6 +225,16 @@ func convertCSVOutput(out *SelectCSVOutput) *s3select.CSVOutput {
 		RecordDelimiter:      out.RecordDelimiter,
 		FieldDelimiter:       out.FieldDelimiter,
 		QuoteCharacter:       out.QuoteCharacter,
+	}
+}
+
+// convertJSONInput converts API SelectJSONInput to s3select.JSONInput.
+func convertJSONInput(in *SelectJSONInput) *s3select.JSONInput {
+	if in == nil {
+		return &s3select.JSONInput{}
+	}
+	return &s3select.JSONInput{
+		Type: in.Type,
 	}
 }
 

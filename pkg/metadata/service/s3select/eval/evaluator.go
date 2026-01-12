@@ -10,11 +10,15 @@ import (
 )
 
 // Evaluator evaluates S3 Select expressions.
-type Evaluator struct{}
+type Evaluator struct {
+	funcs *FuncRegistry
+}
 
 // New creates a new evaluator.
 func New() *Evaluator {
-	return &Evaluator{}
+	return &Evaluator{
+		funcs: NewFuncRegistry(),
+	}
 }
 
 // Evaluate evaluates an expression against a record.
@@ -44,6 +48,9 @@ func (e *Evaluator) Evaluate(expr s3select.Expression, record s3select.Record) (
 
 	case *s3select.UnaryOp:
 		return e.evalUnaryOp(ex, record)
+
+	case *s3select.FunctionCall:
+		return e.evalFunctionCall(ex, record)
 
 	default:
 		return nil, &s3select.SelectError{
@@ -182,4 +189,35 @@ func (e *Evaluator) toBool(v any) bool {
 	default:
 		return true
 	}
+}
+
+func (e *Evaluator) evalFunctionCall(fc *s3select.FunctionCall, record s3select.Record) (any, error) {
+	fn := e.funcs.Get(fc.Name)
+	if fn == nil {
+		return nil, &s3select.SelectError{
+			Code:    "InvalidFunction",
+			Message: fmt.Sprintf("unknown function: %s", fc.Name),
+		}
+	}
+
+	// Evaluate all arguments
+	args := make([]any, len(fc.Args))
+	for i, argExpr := range fc.Args {
+		val, err := e.Evaluate(argExpr, record)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = val
+	}
+
+	// Call the function
+	result, err := fn(args...)
+	if err != nil {
+		return nil, &s3select.SelectError{
+			Code:    "FunctionError",
+			Message: fmt.Sprintf("%s: %v", fc.Name, err),
+		}
+	}
+
+	return result, nil
 }

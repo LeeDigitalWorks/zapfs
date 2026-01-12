@@ -142,7 +142,12 @@ func (s *serviceImpl) createRecordReader(r io.Reader, input InputSerialization) 
 	case input.JSON != nil:
 		return newJSONReader(r, input.JSON, s.config.MaxRecordSize)
 	case input.Parquet != nil:
-		return newParquetReader(r, input.Parquet)
+		// Parquet requires io.ReaderAt for random access (metadata at end of file).
+		// Use NewParquetReader directly in the handler with buffered data.
+		return nil, &SelectError{
+			Code:    "UnsupportedFormat",
+			Message: "Parquet format requires random access; use NewParquetReader with io.ReaderAt",
+		}
 	default:
 		return nil, &SelectError{
 			Code:    "InvalidInputFormat",
