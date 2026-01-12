@@ -46,6 +46,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/xdg-go/scram v1.1.2
+	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2
 	go.uber.org/goleak v1.3.0
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sys v0.39.0

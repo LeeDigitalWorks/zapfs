@@ -1,0 +1,117 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package parser
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select"
+	"github.com/xwb1989/sqlparser"
+)
+
+// Parser parses S3 Select SQL expressions.
+type Parser struct{}
+
+// New creates a new S3 Select parser.
+func New() *Parser {
+	return &Parser{}
+}
+
+// Parse parses an S3 Select SQL expression.
+func (p *Parser) Parse(sql string) (*s3select.Query, error) {
+	stmt, err := sqlparser.Parse(sql)
+	if err != nil {
+		return nil, &s3select.SelectError{
+			Code:    "InvalidQuery",
+			Message: fmt.Sprintf("SQL parse error: %v", err),
+		}
+	}
+
+	sel, ok := stmt.(*sqlparser.Select)
+	if !ok {
+		return nil, &s3select.SelectError{
+			Code:    "InvalidQuery",
+			Message: "only SELECT statements are supported",
+		}
+	}
+
+	query := &s3select.Query{}
+
+	// Parse FROM clause
+	if len(sel.From) != 1 {
+		return nil, &s3select.SelectError{
+			Code:    "InvalidQuery",
+			Message: "exactly one FROM table required",
+		}
+	}
+
+	tableName, alias := p.parseTableExpr(sel.From[0])
+	if !strings.EqualFold(tableName, "s3object") {
+		return nil, &s3select.SelectError{
+			Code:    "InvalidQuery",
+			Message: "FROM clause must reference s3object",
+		}
+	}
+	if alias != "" {
+		query.FromAlias = alias
+	} else {
+		query.FromAlias = tableName
+	}
+
+	// Parse SELECT projections
+	for _, expr := range sel.SelectExprs {
+		proj, err := p.parseSelectExpr(expr)
+		if err != nil {
+			return nil, err
+		}
+		query.Projections = append(query.Projections, proj)
+	}
+
+	return query, nil
+}
+
+func (p *Parser) parseTableExpr(expr sqlparser.TableExpr) (name, alias string) {
+	switch t := expr.(type) {
+	case *sqlparser.AliasedTableExpr:
+		if tbl, ok := t.Expr.(sqlparser.TableName); ok {
+			name = tbl.Name.String()
+		}
+		alias = t.As.String()
+	}
+	return
+}
+
+func (p *Parser) parseSelectExpr(expr sqlparser.SelectExpr) (s3select.Projection, error) {
+	switch e := expr.(type) {
+	case *sqlparser.StarExpr:
+		return s3select.Projection{Expr: &s3select.StarExpr{}}, nil
+	case *sqlparser.AliasedExpr:
+		parsed, err := p.parseExpr(e.Expr)
+		if err != nil {
+			return s3select.Projection{}, err
+		}
+		return s3select.Projection{
+			Expr:  parsed,
+			Alias: e.As.String(),
+		}, nil
+	default:
+		return s3select.Projection{}, &s3select.SelectError{
+			Code:    "InvalidQuery",
+			Message: fmt.Sprintf("unsupported select expression: %T", expr),
+		}
+	}
+}
+
+func (p *Parser) parseExpr(expr sqlparser.Expr) (s3select.Expression, error) {
+	switch e := expr.(type) {
+	case *sqlparser.ColName:
+		return &s3select.ColumnRef{Name: e.Name.String()}, nil
+	default:
+		return nil, &s3select.SelectError{
+			Code:    "InvalidQuery",
+			Message: fmt.Sprintf("unsupported expression: %T", expr),
+		}
+	}
+}
