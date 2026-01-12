@@ -10,11 +10,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select/eventstream"
 )
 
 const defaultChunkSize = 256 * 1024 // 256KB
+
+// DefaultProgressInterval is the default interval for sending progress events.
+const DefaultProgressInterval = 10 * time.Second
 
 // Executor executes S3 Select queries.
 type Executor struct {
@@ -22,19 +26,62 @@ type Executor struct {
 	reader    RecordReader
 	output    *CSVOutput
 	chunkSize int
+
+	// Progress tracking
+	bytesScanned   int64
+	bytesProcessed int64
+	bytesReturned  int64
+
+	// Progress reporting
+	progressEnabled  bool
+	progressInterval time.Duration
+	lastProgressTime time.Time
+}
+
+// ExecutorOption is a functional option for configuring an Executor.
+type ExecutorOption func(*Executor)
+
+// WithProgress enables progress event reporting at the specified interval.
+func WithProgress(enabled bool, interval time.Duration) ExecutorOption {
+	return func(e *Executor) {
+		e.progressEnabled = enabled
+		if interval > 0 {
+			e.progressInterval = interval
+		} else {
+			e.progressInterval = DefaultProgressInterval
+		}
+	}
+}
+
+// WithChunkSize sets the chunk size for record batching.
+func WithChunkSize(size int) ExecutorOption {
+	return func(e *Executor) {
+		if size > 0 {
+			e.chunkSize = size
+		}
+	}
 }
 
 // NewExecutor creates a query executor.
-func NewExecutor(query *Query, reader RecordReader, output *CSVOutput) *Executor {
+func NewExecutor(query *Query, reader RecordReader, output *CSVOutput, opts ...ExecutorOption) *Executor {
 	if output == nil {
 		output = &CSVOutput{}
 	}
-	return &Executor{
-		query:     query,
-		reader:    reader,
-		output:    output,
-		chunkSize: defaultChunkSize,
+	e := &Executor{
+		query:            query,
+		reader:           reader,
+		output:           output,
+		chunkSize:        defaultChunkSize,
+		progressInterval: DefaultProgressInterval,
+		lastProgressTime: time.Now(),
 	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	return e
 }
 
 // Execute runs the query and writes results to the writer.
@@ -44,6 +91,21 @@ func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
 		return e.executeAggregate(ctx, w)
 	}
 	return e.executeRegular(ctx, w)
+}
+
+// maybeWriteProgress writes a progress event if enabled and enough time has passed.
+func (e *Executor) maybeWriteProgress(encoder *eventstream.Encoder) {
+	if !e.progressEnabled {
+		return
+	}
+	if time.Since(e.lastProgressTime) >= e.progressInterval {
+		encoder.WriteProgress(eventstream.ProgressStats{
+			BytesScanned:   e.bytesScanned,
+			BytesProcessed: e.bytesProcessed,
+			BytesReturned:  e.bytesReturned,
+		})
+		e.lastProgressTime = time.Now()
+	}
 }
 
 // hasAggregates checks if the query contains any aggregate functions.
@@ -144,6 +206,11 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 			return err
 		}
 
+		// Track bytes scanned (estimate based on record size)
+		recordSize := int64(e.estimateRecordSize(record))
+		e.bytesScanned += recordSize
+		e.bytesProcessed += recordSize
+
 		// Apply WHERE filter
 		if e.query.Where != nil {
 			match, err := e.evaluateBool(e.query.Where, record)
@@ -152,6 +219,8 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 				return err
 			}
 			if !match {
+				// Check for progress reporting
+				e.maybeWriteProgress(encoder)
 				continue
 			}
 		}
@@ -176,6 +245,9 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 
 			agg.accumulator.Accumulate(value, agg.isCountStar)
 		}
+
+		// Check for progress reporting
+		e.maybeWriteProgress(encoder)
 	}
 
 	// Build result row from aggregate results
@@ -200,14 +272,13 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 	csvWriter.Write(row)
 	csvWriter.Flush()
 
-	var bytesReturned int64
 	if buf.Len() > 0 {
-		bytesReturned = int64(buf.Len())
+		e.bytesReturned = int64(buf.Len())
 		encoder.WriteRecords(buf.Bytes())
 	}
 
 	// Write stats and end
-	encoder.WriteStats(0, 0, bytesReturned)
+	encoder.WriteStats(e.bytesScanned, e.bytesProcessed, e.bytesReturned)
 	encoder.WriteEnd()
 
 	return nil
@@ -225,7 +296,6 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 		csvWriter.Comma = rune(e.output.FieldDelimiter[0])
 	}
 
-	var bytesScanned, bytesProcessed, bytesReturned int64
 	recordCount := int64(0)
 
 	for {
@@ -246,6 +316,11 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 			return err
 		}
 
+		// Track bytes scanned (estimate based on record size)
+		recordSize := int64(e.estimateRecordSize(record))
+		e.bytesScanned += recordSize
+		e.bytesProcessed += recordSize
+
 		// Apply WHERE filter
 		if e.query.Where != nil {
 			match, err := e.evaluateBool(e.query.Where, record)
@@ -254,6 +329,8 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 				return err
 			}
 			if !match {
+				// Check for progress reporting
+				e.maybeWriteProgress(encoder)
 				continue
 			}
 		}
@@ -276,24 +353,36 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 		// Flush chunk if needed
 		csvWriter.Flush()
 		if buf.Len() >= e.chunkSize {
-			bytesReturned += int64(buf.Len())
+			e.bytesReturned += int64(buf.Len())
 			encoder.WriteRecords(buf.Bytes())
 			buf.Reset()
 		}
+
+		// Check for progress reporting
+		e.maybeWriteProgress(encoder)
 	}
 
 	// Final flush
 	csvWriter.Flush()
 	if buf.Len() > 0 {
-		bytesReturned += int64(buf.Len())
+		e.bytesReturned += int64(buf.Len())
 		encoder.WriteRecords(buf.Bytes())
 	}
 
 	// Write stats and end
-	encoder.WriteStats(bytesScanned, bytesProcessed, bytesReturned)
+	encoder.WriteStats(e.bytesScanned, e.bytesProcessed, e.bytesReturned)
 	encoder.WriteEnd()
 
 	return nil
+}
+
+// estimateRecordSize estimates the size of a record in bytes.
+func (e *Executor) estimateRecordSize(record Record) int {
+	size := 0
+	for _, v := range record.Values() {
+		size += len(toString(v))
+	}
+	return size
 }
 
 func (e *Executor) projectRecord(record Record) ([]string, error) {
