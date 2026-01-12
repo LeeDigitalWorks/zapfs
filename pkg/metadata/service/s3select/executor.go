@@ -28,9 +28,10 @@ type Executor struct {
 	chunkSize int
 
 	// Progress tracking
-	bytesScanned   int64
-	bytesProcessed int64
-	bytesReturned  int64
+	bytesScanned     int64
+	bytesProcessed   int64
+	bytesReturned    int64
+	recordsProcessed int64
 
 	// Progress reporting
 	progressEnabled  bool
@@ -246,6 +247,9 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 			agg.accumulator.Accumulate(value, agg.isCountStar)
 		}
 
+		// Track records processed
+		e.recordsProcessed++
+
 		// Check for progress reporting
 		e.maybeWriteProgress(encoder)
 	}
@@ -344,6 +348,7 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 
 		csvWriter.Write(row)
 		recordCount++
+		e.recordsProcessed++
 
 		// Check LIMIT
 		if e.query.Limit > 0 && recordCount >= e.query.Limit {
@@ -600,4 +605,9 @@ func toString(v any) string {
 	default:
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+// Stats returns the execution statistics.
+func (e *Executor) Stats() (bytesScanned, bytesProcessed, bytesReturned, recordsProcessed int64) {
+	return e.bytesScanned, e.bytesProcessed, e.bytesReturned, e.recordsProcessed
 }
