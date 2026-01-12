@@ -5,7 +5,6 @@ package s3select
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 )
@@ -155,95 +154,6 @@ func (r *csvRecord) Values() []any {
 	result := make([]any, len(r.values))
 	for i, v := range r.values {
 		result[i] = v
-	}
-	return result
-}
-
-// ============================================================================
-// JSON Reader
-// ============================================================================
-
-// jsonRecordReader reads JSON records.
-type jsonRecordReader struct {
-	decoder       *json.Decoder
-	isDocument    bool
-	documentRead  bool
-	maxRecordSize int
-	closed        bool
-}
-
-// newJSONReader creates a new JSON record reader.
-func newJSONReader(r io.Reader, opts *JSONInput, maxRecordSize int) (RecordReader, error) {
-	reader := &jsonRecordReader{
-		decoder:       json.NewDecoder(r),
-		isDocument:    opts.Type == "DOCUMENT",
-		maxRecordSize: maxRecordSize,
-	}
-	return reader, nil
-}
-
-// Read returns the next JSON record.
-func (r *jsonRecordReader) Read() (Record, error) {
-	if r.closed {
-		return nil, io.EOF
-	}
-
-	// For DOCUMENT type, entire JSON is one record
-	if r.isDocument && r.documentRead {
-		return nil, io.EOF
-	}
-
-	var data map[string]any
-	if err := r.decoder.Decode(&data); err != nil {
-		return nil, err
-	}
-
-	if r.isDocument {
-		r.documentRead = true
-	}
-
-	return &jsonRecord{data: data}, nil
-}
-
-// Close closes the JSON reader.
-func (r *jsonRecordReader) Close() error {
-	r.closed = true
-	return nil
-}
-
-// jsonRecord represents a JSON record.
-type jsonRecord struct {
-	data map[string]any
-	keys []string // cached keys for ordering
-}
-
-func (r *jsonRecord) Get(name string) any {
-	return r.data[name]
-}
-
-func (r *jsonRecord) GetByIndex(index int) any {
-	keys := r.ColumnNames()
-	if index >= 0 && index < len(keys) {
-		return r.data[keys[index]]
-	}
-	return nil
-}
-
-func (r *jsonRecord) ColumnNames() []string {
-	if r.keys == nil {
-		r.keys = make([]string, 0, len(r.data))
-		for k := range r.data {
-			r.keys = append(r.keys, k)
-		}
-	}
-	return r.keys
-}
-
-func (r *jsonRecord) Values() []any {
-	keys := r.ColumnNames()
-	result := make([]any, len(keys))
-	for i, k := range keys {
-		result[i] = r.data[k]
 	}
 	return result
 }
