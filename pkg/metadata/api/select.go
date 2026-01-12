@@ -4,6 +4,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -74,12 +75,12 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 		return
 	}
 
-	// Phase 2A: Support CSV and JSON input, CSV output only
-	// Parquet support will be added in future phases
-	if req.InputSerialization.Parquet != nil {
-		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Parquet does not support compression (it has internal compression)
+	if req.InputSerialization.Parquet != nil && req.InputSerialization.CompressionType != "" {
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
 		return
 	}
+	// JSON output not yet supported
 	if req.OutputSerialization.JSON != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
 		return
@@ -135,6 +136,29 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	} else if req.InputSerialization.JSON != nil {
 		jsonInput := convertJSONInput(req.InputSerialization.JSON)
 		reader = s3select.NewJSONReader(inputReader, jsonInput)
+	} else if req.InputSerialization.Parquet != nil {
+		// Parquet requires io.ReaderAt for random access (metadata at end of file)
+		// Read entire object into memory
+		data, err := io.ReadAll(inputReader)
+		if err != nil {
+			logger.Error().Err(err).Str("bucket", bucket).Str("key", key).Msg("failed to read parquet object")
+			writeXMLErrorResponse(w, d, s3err.ErrInternalError)
+			return
+		}
+		parquetReader, err := s3select.NewParquetReader(
+			bytes.NewReader(data),
+			int64(len(data)),
+			nil, // Parquet is self-describing, no options needed
+		)
+		if err != nil {
+			if selectErr, ok := err.(*s3select.SelectError); ok {
+				writeSelectError(w, d, selectErr)
+				return
+			}
+			writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
+			return
+		}
+		reader = parquetReader
 	}
 	defer reader.Close()
 
@@ -164,7 +188,7 @@ func writeSelectError(w http.ResponseWriter, d *data.Data, err *s3select.SelectE
 		s3Code = s3err.ErrInvalidRequest
 	case "UnsupportedSyntax":
 		s3Code = s3err.ErrNotImplemented
-	case "CSVParsingError", "JSONParsingError":
+	case "CSVParsingError", "JSONParsingError", "ParquetParsingError":
 		s3Code = s3err.ErrInvalidRequest
 	case "UnsupportedFormat":
 		s3Code = s3err.ErrNotImplemented
