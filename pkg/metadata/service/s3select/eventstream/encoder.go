@@ -54,12 +54,21 @@ func (e *Encoder) WriteStats(bytesScanned, bytesProcessed, bytesReturned int64) 
 	return e.encoder.Encode(e.writer, msg)
 }
 
+// ProgressStats represents progress statistics for S3 Select.
+type ProgressStats struct {
+	BytesScanned   int64
+	BytesProcessed int64
+	BytesReturned  int64
+}
+
 // WriteProgress writes a Progress event.
-func (e *Encoder) WriteProgress(bytesScanned, bytesProcessed, bytesReturned int64) error {
-	payload := fmt.Sprintf(
-		`<Progress><BytesScanned>%d</BytesScanned><BytesProcessed>%d</BytesProcessed><BytesReturned>%d</BytesReturned></Progress>`,
-		bytesScanned, bytesProcessed, bytesReturned,
-	)
+func (e *Encoder) WriteProgress(stats ProgressStats) error {
+	payload := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<Progress>
+    <BytesScanned>%d</BytesScanned>
+    <BytesProcessed>%d</BytesProcessed>
+    <BytesReturned>%d</BytesReturned>
+</Progress>`, stats.BytesScanned, stats.BytesProcessed, stats.BytesReturned)
 	msg := eventstream.Message{
 		Headers: eventstream.Headers{
 			{Name: ":event-type", Value: eventstream.StringValue("Progress")},
@@ -71,8 +80,8 @@ func (e *Encoder) WriteProgress(bytesScanned, bytesProcessed, bytesReturned int6
 	return e.encoder.Encode(e.writer, msg)
 }
 
-// WriteContinuation writes a Cont (keep-alive) event.
-func (e *Encoder) WriteContinuation() error {
+// WriteCont writes a Cont (keep-alive) event.
+func (e *Encoder) WriteCont() error {
 	msg := eventstream.Message{
 		Headers: eventstream.Headers{
 			{Name: ":event-type", Value: eventstream.StringValue("Cont")},
@@ -80,6 +89,11 @@ func (e *Encoder) WriteContinuation() error {
 		},
 	}
 	return e.encoder.Encode(e.writer, msg)
+}
+
+// WriteContinuation is an alias for WriteCont for backward compatibility.
+func (e *Encoder) WriteContinuation() error {
+	return e.WriteCont()
 }
 
 // WriteEnd writes an End event.

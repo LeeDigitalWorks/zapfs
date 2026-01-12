@@ -99,3 +99,59 @@ func TestEncoder_WriteError(t *testing.T) {
 	assert.Equal(t, "error", msgType)
 	assert.Equal(t, "InvalidQuery", errCode)
 }
+
+func TestEncoder_WriteProgress(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+
+	err := enc.WriteProgress(ProgressStats{
+		BytesScanned:   1000,
+		BytesProcessed: 800,
+		BytesReturned:  200,
+	})
+	require.NoError(t, err)
+
+	dec := eventstream.NewDecoder()
+	msg, err := dec.Decode(&buf, nil)
+	require.NoError(t, err)
+
+	var eventType, contentType string
+	for _, h := range msg.Headers {
+		if h.Name == ":event-type" {
+			eventType = h.Value.String()
+		}
+		if h.Name == ":content-type" {
+			contentType = h.Value.String()
+		}
+	}
+	assert.Equal(t, "Progress", eventType)
+	assert.Equal(t, "text/xml", contentType)
+	assert.Contains(t, string(msg.Payload), "<BytesScanned>1000</BytesScanned>")
+	assert.Contains(t, string(msg.Payload), "<BytesProcessed>800</BytesProcessed>")
+	assert.Contains(t, string(msg.Payload), "<BytesReturned>200</BytesReturned>")
+}
+
+func TestEncoder_WriteCont(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+
+	err := enc.WriteCont()
+	require.NoError(t, err)
+
+	dec := eventstream.NewDecoder()
+	msg, err := dec.Decode(&buf, nil)
+	require.NoError(t, err)
+
+	var eventType, msgType string
+	for _, h := range msg.Headers {
+		if h.Name == ":event-type" {
+			eventType = h.Value.String()
+		}
+		if h.Name == ":message-type" {
+			msgType = h.Value.String()
+		}
+	}
+	assert.Equal(t, "Cont", eventType)
+	assert.Equal(t, "event", msgType)
+	assert.Empty(t, msg.Payload) // Cont events have no payload
+}
