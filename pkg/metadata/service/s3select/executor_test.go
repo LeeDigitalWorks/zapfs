@@ -1,0 +1,164 @@
+// Copyright 2025 ZapFS Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package s3select
+
+import (
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func decodeEvents(t *testing.T, buf *bytes.Buffer) (records []byte, stats bool, end bool) {
+	dec := eventstream.NewDecoder()
+	for buf.Len() > 0 {
+		msg, err := dec.Decode(buf, nil)
+		if err != nil {
+			break
+		}
+		var eventType string
+		for _, h := range msg.Headers {
+			if h.Name == ":event-type" {
+				eventType = h.Value.String()
+			}
+		}
+		switch eventType {
+		case "Records":
+			records = append(records, msg.Payload...)
+		case "Stats":
+			stats = true
+		case "End":
+			end = true
+		}
+	}
+	return
+}
+
+func TestExecutor_SelectStar(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\n"
+	query := &Query{
+		Projections: []Projection{{Expr: &StarExpr{}}},
+		FromAlias:   "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, stats, end := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "Alice")
+	assert.Contains(t, string(records), "Bob")
+	assert.True(t, stats)
+	assert.True(t, end)
+}
+
+func TestExecutor_SelectColumns(t *testing.T) {
+	input := "name,age,city\nAlice,30,NYC\nBob,25,LA\n"
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &ColumnRef{Name: "name"}},
+			{Expr: &ColumnRef{Name: "city"}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "Alice")
+	assert.Contains(t, string(records), "NYC")
+	assert.NotContains(t, string(records), "30") // age excluded
+}
+
+func TestExecutor_WhereFilter(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\nCharlie,35\n"
+	query := &Query{
+		Projections: []Projection{{Expr: &StarExpr{}}},
+		FromAlias:   "s3object",
+		Where: &BinaryOp{
+			Left:  &ColumnRef{Name: "age"},
+			Op:    ">",
+			Right: &Literal{Value: int64(28)},
+		},
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "Alice")
+	assert.Contains(t, string(records), "Charlie")
+	assert.NotContains(t, string(records), "Bob") // age 25 < 28
+}
+
+func TestExecutor_Limit(t *testing.T) {
+	input := "name\nA\nB\nC\nD\nE\n"
+	query := &Query{
+		Projections: []Projection{{Expr: &StarExpr{}}},
+		FromAlias:   "s3object",
+		Limit:       2,
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	// Count newlines to verify only 2 records
+	count := strings.Count(string(records), "\n")
+	assert.Equal(t, 2, count)
+}
+
+func TestExecutor_ContextCancellation(t *testing.T) {
+	input := "name\nA\nB\nC\n"
+	query := &Query{
+		Projections: []Projection{{Expr: &StarExpr{}}},
+		FromAlias:   "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := exec.Execute(ctx, &buf)
+	assert.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+}
