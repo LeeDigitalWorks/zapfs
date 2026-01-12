@@ -221,6 +221,13 @@ func (rn *RaftNode) Stats() map[string]string {
 	return rn.raft.Stats()
 }
 
+// Snapshot forces the Raft layer to take a snapshot.
+// Used after recovery to persist the restored state.
+func (rn *RaftNode) Snapshot() error {
+	future := rn.raft.Snapshot()
+	return future.Error()
+}
+
 // Shutdown gracefully shuts down the Raft node
 func (rn *RaftNode) Shutdown() error {
 	close(rn.shutdownCh)
