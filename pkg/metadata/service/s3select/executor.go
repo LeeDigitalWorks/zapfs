@@ -9,11 +9,16 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select/eventstream"
 )
 
 const defaultChunkSize = 256 * 1024 // 256KB
+
+// DefaultProgressInterval is the default interval for sending progress events.
+const DefaultProgressInterval = 10 * time.Second
 
 // Executor executes S3 Select queries.
 type Executor struct {
@@ -21,23 +26,270 @@ type Executor struct {
 	reader    RecordReader
 	output    *CSVOutput
 	chunkSize int
+
+	// Progress tracking
+	bytesScanned     int64
+	bytesProcessed   int64
+	bytesReturned    int64
+	recordsProcessed int64
+
+	// Progress reporting
+	progressEnabled  bool
+	progressInterval time.Duration
+	lastProgressTime time.Time
+}
+
+// ExecutorOption is a functional option for configuring an Executor.
+type ExecutorOption func(*Executor)
+
+// WithProgress enables progress event reporting at the specified interval.
+func WithProgress(enabled bool, interval time.Duration) ExecutorOption {
+	return func(e *Executor) {
+		e.progressEnabled = enabled
+		if interval > 0 {
+			e.progressInterval = interval
+		} else {
+			e.progressInterval = DefaultProgressInterval
+		}
+	}
+}
+
+// WithChunkSize sets the chunk size for record batching.
+func WithChunkSize(size int) ExecutorOption {
+	return func(e *Executor) {
+		if size > 0 {
+			e.chunkSize = size
+		}
+	}
 }
 
 // NewExecutor creates a query executor.
-func NewExecutor(query *Query, reader RecordReader, output *CSVOutput) *Executor {
+func NewExecutor(query *Query, reader RecordReader, output *CSVOutput, opts ...ExecutorOption) *Executor {
 	if output == nil {
 		output = &CSVOutput{}
 	}
-	return &Executor{
-		query:     query,
-		reader:    reader,
-		output:    output,
-		chunkSize: defaultChunkSize,
+	e := &Executor{
+		query:            query,
+		reader:           reader,
+		output:           output,
+		chunkSize:        defaultChunkSize,
+		progressInterval: DefaultProgressInterval,
+		lastProgressTime: time.Now(),
 	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	return e
 }
 
 // Execute runs the query and writes results to the writer.
 func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
+	// Check if this is an aggregate query
+	if e.hasAggregates() {
+		return e.executeAggregate(ctx, w)
+	}
+	return e.executeRegular(ctx, w)
+}
+
+// maybeWriteProgress writes a progress event if enabled and enough time has passed.
+func (e *Executor) maybeWriteProgress(encoder *eventstream.Encoder) {
+	if !e.progressEnabled {
+		return
+	}
+	if time.Since(e.lastProgressTime) >= e.progressInterval {
+		encoder.WriteProgress(eventstream.ProgressStats{
+			BytesScanned:   e.bytesScanned,
+			BytesProcessed: e.bytesProcessed,
+			BytesReturned:  e.bytesReturned,
+		})
+		e.lastProgressTime = time.Now()
+	}
+}
+
+// hasAggregates checks if the query contains any aggregate functions.
+func (e *Executor) hasAggregates() bool {
+	for _, p := range e.query.Projections {
+		if e.exprHasAggregate(p.Expr) {
+			return true
+		}
+	}
+	return false
+}
+
+// exprHasAggregate checks if an expression contains aggregate functions.
+func (e *Executor) exprHasAggregate(expr Expression) bool {
+	if expr == nil {
+		return false
+	}
+
+	switch ex := expr.(type) {
+	case *FunctionCall:
+		return IsAggregateFunction(ex.Name)
+	case *BinaryOp:
+		return e.exprHasAggregate(ex.Left) || e.exprHasAggregate(ex.Right)
+	case *UnaryOp:
+		return e.exprHasAggregate(ex.Expr)
+	default:
+		return false
+	}
+}
+
+// aggregateInfo holds information about an aggregate in a projection.
+type aggregateInfo struct {
+	accumulator Accumulator
+	argExpr     Expression // nil for COUNT(*)
+	isCountStar bool
+}
+
+// executeAggregate executes a query with aggregate functions.
+func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
+	encoder := eventstream.NewEncoder(w)
+
+	// Initialize accumulators for each aggregate in projections
+	aggregates := make([]*aggregateInfo, len(e.query.Projections))
+	for i, p := range e.query.Projections {
+		fc, ok := p.Expr.(*FunctionCall)
+		if !ok {
+			// Non-aggregate in aggregate query - not supported yet
+			// For now, we'll evaluate it against an empty record
+			aggregates[i] = nil
+			continue
+		}
+
+		acc, err := NewAccumulator(fc.Name)
+		if err != nil {
+			// Not an aggregate function - skip
+			aggregates[i] = nil
+			continue
+		}
+
+		// Check if this is COUNT(*)
+		isCountStar := false
+		var argExpr Expression
+		if strings.ToUpper(fc.Name) == "COUNT" {
+			if len(fc.Args) == 0 {
+				isCountStar = true
+			} else if _, ok := fc.Args[0].(*StarExpr); ok {
+				isCountStar = true
+			} else {
+				argExpr = fc.Args[0]
+			}
+		} else if len(fc.Args) > 0 {
+			argExpr = fc.Args[0]
+		}
+
+		aggregates[i] = &aggregateInfo{
+			accumulator: acc,
+			argExpr:     argExpr,
+			isCountStar: isCountStar,
+		}
+	}
+
+	// Process all records
+	for {
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Read next record
+		record, err := e.reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			encoder.WriteError("InternalError", err.Error())
+			return err
+		}
+
+		// Track bytes scanned (estimate based on record size)
+		recordSize := int64(e.estimateRecordSize(record))
+		e.bytesScanned += recordSize
+		e.bytesProcessed += recordSize
+
+		// Apply WHERE filter
+		if e.query.Where != nil {
+			match, err := e.evaluateBool(e.query.Where, record)
+			if err != nil {
+				encoder.WriteError("InvalidQuery", err.Error())
+				return err
+			}
+			if !match {
+				// Check for progress reporting
+				e.maybeWriteProgress(encoder)
+				continue
+			}
+		}
+
+		// Feed values to accumulators
+		for _, agg := range aggregates {
+			if agg == nil {
+				continue
+			}
+
+			var value any
+			if agg.isCountStar {
+				value = nil // Doesn't matter for COUNT(*)
+			} else if agg.argExpr != nil {
+				val, err := e.evaluate(agg.argExpr, record)
+				if err != nil {
+					encoder.WriteError("InvalidQuery", err.Error())
+					return err
+				}
+				value = val
+			}
+
+			agg.accumulator.Accumulate(value, agg.isCountStar)
+		}
+
+		// Track records processed
+		e.recordsProcessed++
+
+		// Check for progress reporting
+		e.maybeWriteProgress(encoder)
+	}
+
+	// Build result row from aggregate results
+	var buf bytes.Buffer
+	csvWriter := csv.NewWriter(&buf)
+
+	// Configure output delimiter
+	if e.output.FieldDelimiter != "" && len(e.output.FieldDelimiter) > 0 {
+		csvWriter.Comma = rune(e.output.FieldDelimiter[0])
+	}
+
+	row := make([]string, len(e.query.Projections))
+	for i, agg := range aggregates {
+		if agg != nil {
+			row[i] = toString(agg.accumulator.Result())
+		} else {
+			// Non-aggregate expression - evaluate against nil record
+			row[i] = ""
+		}
+	}
+
+	csvWriter.Write(row)
+	csvWriter.Flush()
+
+	if buf.Len() > 0 {
+		e.bytesReturned = int64(buf.Len())
+		encoder.WriteRecords(buf.Bytes())
+	}
+
+	// Write stats and end
+	encoder.WriteStats(e.bytesScanned, e.bytesProcessed, e.bytesReturned)
+	encoder.WriteEnd()
+
+	return nil
+}
+
+// executeRegular executes a regular (non-aggregate) query.
+func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 	encoder := eventstream.NewEncoder(w)
 
 	var buf bytes.Buffer
@@ -48,7 +300,6 @@ func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
 		csvWriter.Comma = rune(e.output.FieldDelimiter[0])
 	}
 
-	var bytesScanned, bytesProcessed, bytesReturned int64
 	recordCount := int64(0)
 
 	for {
@@ -69,6 +320,11 @@ func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
 			return err
 		}
 
+		// Track bytes scanned (estimate based on record size)
+		recordSize := int64(e.estimateRecordSize(record))
+		e.bytesScanned += recordSize
+		e.bytesProcessed += recordSize
+
 		// Apply WHERE filter
 		if e.query.Where != nil {
 			match, err := e.evaluateBool(e.query.Where, record)
@@ -77,6 +333,8 @@ func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
 				return err
 			}
 			if !match {
+				// Check for progress reporting
+				e.maybeWriteProgress(encoder)
 				continue
 			}
 		}
@@ -90,6 +348,7 @@ func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
 
 		csvWriter.Write(row)
 		recordCount++
+		e.recordsProcessed++
 
 		// Check LIMIT
 		if e.query.Limit > 0 && recordCount >= e.query.Limit {
@@ -99,24 +358,36 @@ func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
 		// Flush chunk if needed
 		csvWriter.Flush()
 		if buf.Len() >= e.chunkSize {
-			bytesReturned += int64(buf.Len())
+			e.bytesReturned += int64(buf.Len())
 			encoder.WriteRecords(buf.Bytes())
 			buf.Reset()
 		}
+
+		// Check for progress reporting
+		e.maybeWriteProgress(encoder)
 	}
 
 	// Final flush
 	csvWriter.Flush()
 	if buf.Len() > 0 {
-		bytesReturned += int64(buf.Len())
+		e.bytesReturned += int64(buf.Len())
 		encoder.WriteRecords(buf.Bytes())
 	}
 
 	// Write stats and end
-	encoder.WriteStats(bytesScanned, bytesProcessed, bytesReturned)
+	encoder.WriteStats(e.bytesScanned, e.bytesProcessed, e.bytesReturned)
 	encoder.WriteEnd()
 
 	return nil
+}
+
+// estimateRecordSize estimates the size of a record in bytes.
+func (e *Executor) estimateRecordSize(record Record) int {
+	size := 0
+	for _, v := range record.Values() {
+		size += len(toString(v))
+	}
+	return size
 }
 
 func (e *Executor) projectRecord(record Record) ([]string, error) {
@@ -334,4 +605,9 @@ func toString(v any) string {
 	default:
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+// Stats returns the execution statistics.
+func (e *Executor) Stats() (bytesScanned, bytesProcessed, bytesReturned, recordsProcessed int64) {
+	return e.bytesScanned, e.bytesProcessed, e.bytesReturned, e.recordsProcessed
 }
