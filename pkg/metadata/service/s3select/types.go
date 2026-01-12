@@ -366,3 +366,56 @@ type Evaluator interface {
 	// Used for WHERE clause evaluation.
 	EvaluateBool(expr Expression, record Record) (bool, error)
 }
+
+// ============================================================================
+// Parquet Record
+// ============================================================================
+
+// ParquetRecord represents a record from a Parquet file.
+type ParquetRecord struct {
+	columns []string       // column names in order
+	values  []any          // values in column order
+	nameIdx map[string]int // column name to index mapping
+}
+
+// NewParquetRecord creates a new Parquet record from column names and values.
+func NewParquetRecord(columns []string, values []any) *ParquetRecord {
+	nameIdx := make(map[string]int, len(columns))
+	for i, name := range columns {
+		nameIdx[name] = i
+	}
+	return &ParquetRecord{
+		columns: columns,
+		values:  values,
+		nameIdx: nameIdx,
+	}
+}
+
+// Get returns the value for a column by name.
+func (r *ParquetRecord) Get(name string) any {
+	if idx, ok := r.nameIdx[name]; ok && idx < len(r.values) {
+		return r.values[idx]
+	}
+	return nil
+}
+
+// GetByIndex returns the value for a column by index.
+func (r *ParquetRecord) GetByIndex(index int) any {
+	if index >= 0 && index < len(r.values) {
+		return r.values[index]
+	}
+	return nil
+}
+
+// ColumnNames returns all column names in order.
+func (r *ParquetRecord) ColumnNames() []string {
+	return r.columns
+}
+
+// Values returns all values in order.
+func (r *ParquetRecord) Values() []any {
+	return r.values
+}
+
+// Compile-time check that ParquetRecord implements Record.
+var _ Record = (*ParquetRecord)(nil)
