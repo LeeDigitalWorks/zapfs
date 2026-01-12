@@ -4,6 +4,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select"
@@ -48,4 +49,43 @@ func TestParser_RejectsWrongTable(t *testing.T) {
 	_, err := p.Parse("SELECT * FROM othertable")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "s3object")
+}
+
+func TestParser_WhereClause(t *testing.T) {
+	p := New()
+	query, err := p.Parse("SELECT * FROM s3object WHERE age > 25")
+	require.NoError(t, err)
+	require.NotNil(t, query.Where)
+
+	binOp, ok := query.Where.(*s3select.BinaryOp)
+	require.True(t, ok)
+	assert.Equal(t, ">", binOp.Op)
+}
+
+func TestParser_WhereWithAnd(t *testing.T) {
+	p := New()
+	query, err := p.Parse("SELECT * FROM s3object WHERE age > 25 AND name = 'Alice'")
+	require.NoError(t, err)
+	require.NotNil(t, query.Where)
+
+	binOp, ok := query.Where.(*s3select.BinaryOp)
+	require.True(t, ok)
+	assert.Equal(t, "and", strings.ToLower(binOp.Op))
+}
+
+func TestParser_WhereWithOr(t *testing.T) {
+	p := New()
+	query, err := p.Parse("SELECT * FROM s3object WHERE age < 20 OR age > 60")
+	require.NoError(t, err)
+	require.NotNil(t, query.Where)
+}
+
+func TestParser_StringLiteral(t *testing.T) {
+	p := New()
+	query, err := p.Parse("SELECT * FROM s3object WHERE name = 'Alice'")
+	require.NoError(t, err)
+
+	binOp := query.Where.(*s3select.BinaryOp)
+	lit := binOp.Right.(*s3select.Literal)
+	assert.Equal(t, "Alice", lit.Value)
 }

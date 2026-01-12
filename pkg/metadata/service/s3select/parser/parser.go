@@ -69,6 +69,15 @@ func (p *Parser) Parse(sql string) (*s3select.Query, error) {
 		query.Projections = append(query.Projections, proj)
 	}
 
+	// Parse WHERE clause
+	if sel.Where != nil {
+		where, err := p.parseExpr(sel.Where.Expr)
+		if err != nil {
+			return nil, err
+		}
+		query.Where = where
+	}
+
 	return query, nil
 }
 
@@ -108,10 +117,71 @@ func (p *Parser) parseExpr(expr sqlparser.Expr) (s3select.Expression, error) {
 	switch e := expr.(type) {
 	case *sqlparser.ColName:
 		return &s3select.ColumnRef{Name: e.Name.String()}, nil
+
+	case *sqlparser.SQLVal:
+		return p.parseLiteral(e)
+
+	case *sqlparser.ComparisonExpr:
+		left, err := p.parseExpr(e.Left)
+		if err != nil {
+			return nil, err
+		}
+		right, err := p.parseExpr(e.Right)
+		if err != nil {
+			return nil, err
+		}
+		return &s3select.BinaryOp{
+			Left:  left,
+			Op:    e.Operator,
+			Right: right,
+		}, nil
+
+	case *sqlparser.AndExpr:
+		left, err := p.parseExpr(e.Left)
+		if err != nil {
+			return nil, err
+		}
+		right, err := p.parseExpr(e.Right)
+		if err != nil {
+			return nil, err
+		}
+		return &s3select.BinaryOp{Left: left, Op: "AND", Right: right}, nil
+
+	case *sqlparser.OrExpr:
+		left, err := p.parseExpr(e.Left)
+		if err != nil {
+			return nil, err
+		}
+		right, err := p.parseExpr(e.Right)
+		if err != nil {
+			return nil, err
+		}
+		return &s3select.BinaryOp{Left: left, Op: "OR", Right: right}, nil
+
+	case *sqlparser.ParenExpr:
+		return p.parseExpr(e.Expr)
+
 	default:
 		return nil, &s3select.SelectError{
 			Code:    "InvalidQuery",
 			Message: fmt.Sprintf("unsupported expression: %T", expr),
 		}
+	}
+}
+
+func (p *Parser) parseLiteral(val *sqlparser.SQLVal) (s3select.Expression, error) {
+	switch val.Type {
+	case sqlparser.StrVal:
+		return &s3select.Literal{Value: string(val.Val)}, nil
+	case sqlparser.IntVal:
+		var i int64
+		fmt.Sscanf(string(val.Val), "%d", &i)
+		return &s3select.Literal{Value: i}, nil
+	case sqlparser.FloatVal:
+		var f float64
+		fmt.Sscanf(string(val.Val), "%f", &f)
+		return &s3select.Literal{Value: f}, nil
+	default:
+		return &s3select.Literal{Value: string(val.Val)}, nil
 	}
 }
