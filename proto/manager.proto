@@ -49,6 +49,11 @@ service ManagerService {
   rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
   rpc CalculateRebalancePlan(CalculateRebalancePlanRequest) returns (CalculateRebalancePlanResponse);
   rpc ExecuteRebalance(ExecuteRebalanceRequest) returns (stream RebalanceProgress);
+
+  // RecoverCollections rebuilds collection state from metadata service databases.
+  // Used for disaster recovery when Raft data is lost but metadata DBs are intact.
+  // Must be called on the leader node.
+  rpc RecoverCollections(RecoverCollectionsRequest) returns (RecoverCollectionsResponse);
 }
 
 enum ServiceType {
@@ -645,4 +650,28 @@ message FederationListBucketsRequest {}
 
 message FederationListBucketsResponse {
   repeated FederationGetBucketStatusResponse buckets = 1;
+}
+
+// ===== DISASTER RECOVERY =====
+
+// RecoverCollectionsRequest initiates recovery from metadata services.
+message RecoverCollectionsRequest {
+  // Addresses of metadata services to query (e.g., "localhost:8083")
+  // If empty, uses currently registered metadata services.
+  repeated string metadata_addresses = 1;
+
+  // If true, only report what would be recovered without applying changes.
+  bool dry_run = 2;
+}
+
+// RecoverCollectionsResponse contains the result of recovery operation.
+message RecoverCollectionsResponse {
+  bool success = 1;
+  int32 collections_recovered = 2;   // New collections added
+  int32 collections_skipped = 3;     // Already existed in manager
+  int32 collections_failed = 4;      // Failed to recover
+  string message = 5;
+  repeated string recovered_names = 6;  // Names of recovered collections
+  repeated string skipped_names = 7;    // Names of skipped collections
+  repeated string failed_names = 8;     // Names that failed
 }
