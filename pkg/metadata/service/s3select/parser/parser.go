@@ -60,6 +60,26 @@ func (p *Parser) Parse(sql string) (*s3select.Query, error) {
 		query.FromAlias = tableName
 	}
 
+	// Reject unsupported clauses
+	if sel.GroupBy != nil {
+		return nil, &s3select.SelectError{
+			Code:    "UnsupportedSyntax",
+			Message: "GROUP BY is not supported",
+		}
+	}
+	if sel.OrderBy != nil {
+		return nil, &s3select.SelectError{
+			Code:    "UnsupportedSyntax",
+			Message: "ORDER BY is not supported",
+		}
+	}
+	if sel.Having != nil {
+		return nil, &s3select.SelectError{
+			Code:    "UnsupportedSyntax",
+			Message: "HAVING is not supported",
+		}
+	}
+
 	// Parse SELECT projections
 	for _, expr := range sel.SelectExprs {
 		proj, err := p.parseSelectExpr(expr)
@@ -76,6 +96,13 @@ func (p *Parser) Parse(sql string) (*s3select.Query, error) {
 			return nil, err
 		}
 		query.Where = where
+	}
+
+	// Parse LIMIT clause
+	if sel.Limit != nil && sel.Limit.Rowcount != nil {
+		if val, ok := sel.Limit.Rowcount.(*sqlparser.SQLVal); ok {
+			fmt.Sscanf(string(val.Val), "%d", &query.Limit)
+		}
 	}
 
 	return query, nil
