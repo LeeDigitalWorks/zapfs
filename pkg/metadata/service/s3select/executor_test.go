@@ -162,3 +162,314 @@ func TestExecutor_ContextCancellation(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, context.Canceled, err)
 }
+
+func TestExecutor_Aggregates_CountStar(t *testing.T) {
+	input := "name,age,salary\nAlice,30,50000\nBob,25,60000\nCharlie,35,55000\n"
+
+	// SELECT COUNT(*) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "COUNT", Args: []Expression{&StarExpr{}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, stats, end := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "3") // 3 rows
+	assert.True(t, stats)
+	assert.True(t, end)
+}
+
+func TestExecutor_Aggregates_CountColumn(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,\nCharlie,35\n"
+
+	// SELECT COUNT(age) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "COUNT", Args: []Expression{&ColumnRef{Name: "age"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	// Bob has empty age, which should be treated as empty string, not nil
+	// CSV reader returns empty string for empty fields
+	assert.Contains(t, string(records), "3")
+}
+
+func TestExecutor_Aggregates_Sum(t *testing.T) {
+	input := "name,salary\nAlice,50000\nBob,60000\nCharlie,55000\n"
+
+	// SELECT SUM(salary) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "SUM", Args: []Expression{&ColumnRef{Name: "salary"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "165000") // 50000 + 60000 + 55000
+}
+
+func TestExecutor_Aggregates_Avg(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\nCharlie,35\n"
+
+	// SELECT AVG(age) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "AVG", Args: []Expression{&ColumnRef{Name: "age"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "30") // (30 + 25 + 35) / 3 = 30
+}
+
+func TestExecutor_Aggregates_Min(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\nCharlie,35\n"
+
+	// SELECT MIN(age) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "MIN", Args: []Expression{&ColumnRef{Name: "age"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "25") // Min age
+}
+
+func TestExecutor_Aggregates_Max(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\nCharlie,35\n"
+
+	// SELECT MAX(age) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "MAX", Args: []Expression{&ColumnRef{Name: "age"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	assert.Contains(t, string(records), "35") // Max age
+}
+
+func TestExecutor_Aggregates_MultipleAggregates(t *testing.T) {
+	input := "name,age,salary\nAlice,30,50000\nBob,25,60000\nCharlie,35,55000\n"
+
+	// SELECT COUNT(*), SUM(salary), AVG(age) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "COUNT", Args: []Expression{&StarExpr{}}}},
+			{Expr: &FunctionCall{Name: "SUM", Args: []Expression{&ColumnRef{Name: "salary"}}}},
+			{Expr: &FunctionCall{Name: "AVG", Args: []Expression{&ColumnRef{Name: "age"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, stats, end := decodeEvents(t, &buf)
+	result := string(records)
+	assert.Contains(t, result, "3")      // COUNT(*)
+	assert.Contains(t, result, "165000") // SUM(salary)
+	assert.Contains(t, result, "30")     // AVG(age)
+	assert.True(t, stats)
+	assert.True(t, end)
+}
+
+func TestExecutor_Aggregates_WithWhereClause(t *testing.T) {
+	input := "name,age,salary\nAlice,30,50000\nBob,25,60000\nCharlie,35,55000\n"
+
+	// SELECT COUNT(*), SUM(salary) FROM s3object WHERE age > 27
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "COUNT", Args: []Expression{&StarExpr{}}}},
+			{Expr: &FunctionCall{Name: "SUM", Args: []Expression{&ColumnRef{Name: "salary"}}}},
+		},
+		FromAlias: "s3object",
+		Where: &BinaryOp{
+			Left:  &ColumnRef{Name: "age"},
+			Op:    ">",
+			Right: &Literal{Value: int64(27)},
+		},
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	result := string(records)
+	assert.Contains(t, result, "2")      // COUNT(*) - Alice and Charlie
+	assert.Contains(t, result, "105000") // SUM(salary) - 50000 + 55000
+}
+
+func TestExecutor_Aggregates_EmptyResult(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\n"
+
+	// SELECT SUM(age) FROM s3object WHERE age > 100
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "SUM", Args: []Expression{&ColumnRef{Name: "age"}}}},
+		},
+		FromAlias: "s3object",
+		Where: &BinaryOp{
+			Left:  &ColumnRef{Name: "age"},
+			Op:    ">",
+			Right: &Literal{Value: int64(100)},
+		},
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, stats, end := decodeEvents(t, &buf)
+	// SUM returns nil (empty string) for empty set
+	assert.NotNil(t, records)
+	assert.True(t, stats)
+	assert.True(t, end)
+}
+
+func TestExecutor_Aggregates_CountEmptyResult(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\n"
+
+	// SELECT COUNT(*) FROM s3object WHERE age > 100
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "COUNT", Args: []Expression{&StarExpr{}}}},
+		},
+		FromAlias: "s3object",
+		Where: &BinaryOp{
+			Left:  &ColumnRef{Name: "age"},
+			Op:    ">",
+			Right: &Literal{Value: int64(100)},
+		},
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	// COUNT returns 0 for empty set, not nil
+	assert.Contains(t, string(records), "0")
+}
+
+func TestExecutor_Aggregates_MinMaxStrings(t *testing.T) {
+	input := "name,city\nAlice,NYC\nBob,LA\nCharlie,Chicago\n"
+
+	// SELECT MIN(city), MAX(city) FROM s3object
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "MIN", Args: []Expression{&ColumnRef{Name: "city"}}}},
+			{Expr: &FunctionCall{Name: "MAX", Args: []Expression{&ColumnRef{Name: "city"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	result := string(records)
+	assert.Contains(t, result, "Chicago") // MIN alphabetically
+	assert.Contains(t, result, "NYC")     // MAX alphabetically
+}

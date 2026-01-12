@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select/eventstream"
 )
@@ -38,6 +39,182 @@ func NewExecutor(query *Query, reader RecordReader, output *CSVOutput) *Executor
 
 // Execute runs the query and writes results to the writer.
 func (e *Executor) Execute(ctx context.Context, w io.Writer) error {
+	// Check if this is an aggregate query
+	if e.hasAggregates() {
+		return e.executeAggregate(ctx, w)
+	}
+	return e.executeRegular(ctx, w)
+}
+
+// hasAggregates checks if the query contains any aggregate functions.
+func (e *Executor) hasAggregates() bool {
+	for _, p := range e.query.Projections {
+		if e.exprHasAggregate(p.Expr) {
+			return true
+		}
+	}
+	return false
+}
+
+// exprHasAggregate checks if an expression contains aggregate functions.
+func (e *Executor) exprHasAggregate(expr Expression) bool {
+	if expr == nil {
+		return false
+	}
+
+	switch ex := expr.(type) {
+	case *FunctionCall:
+		return IsAggregateFunction(ex.Name)
+	case *BinaryOp:
+		return e.exprHasAggregate(ex.Left) || e.exprHasAggregate(ex.Right)
+	case *UnaryOp:
+		return e.exprHasAggregate(ex.Expr)
+	default:
+		return false
+	}
+}
+
+// aggregateInfo holds information about an aggregate in a projection.
+type aggregateInfo struct {
+	accumulator Accumulator
+	argExpr     Expression // nil for COUNT(*)
+	isCountStar bool
+}
+
+// executeAggregate executes a query with aggregate functions.
+func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
+	encoder := eventstream.NewEncoder(w)
+
+	// Initialize accumulators for each aggregate in projections
+	aggregates := make([]*aggregateInfo, len(e.query.Projections))
+	for i, p := range e.query.Projections {
+		fc, ok := p.Expr.(*FunctionCall)
+		if !ok {
+			// Non-aggregate in aggregate query - not supported yet
+			// For now, we'll evaluate it against an empty record
+			aggregates[i] = nil
+			continue
+		}
+
+		acc, err := NewAccumulator(fc.Name)
+		if err != nil {
+			// Not an aggregate function - skip
+			aggregates[i] = nil
+			continue
+		}
+
+		// Check if this is COUNT(*)
+		isCountStar := false
+		var argExpr Expression
+		if strings.ToUpper(fc.Name) == "COUNT" {
+			if len(fc.Args) == 0 {
+				isCountStar = true
+			} else if _, ok := fc.Args[0].(*StarExpr); ok {
+				isCountStar = true
+			} else {
+				argExpr = fc.Args[0]
+			}
+		} else if len(fc.Args) > 0 {
+			argExpr = fc.Args[0]
+		}
+
+		aggregates[i] = &aggregateInfo{
+			accumulator: acc,
+			argExpr:     argExpr,
+			isCountStar: isCountStar,
+		}
+	}
+
+	// Process all records
+	for {
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Read next record
+		record, err := e.reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			encoder.WriteError("InternalError", err.Error())
+			return err
+		}
+
+		// Apply WHERE filter
+		if e.query.Where != nil {
+			match, err := e.evaluateBool(e.query.Where, record)
+			if err != nil {
+				encoder.WriteError("InvalidQuery", err.Error())
+				return err
+			}
+			if !match {
+				continue
+			}
+		}
+
+		// Feed values to accumulators
+		for _, agg := range aggregates {
+			if agg == nil {
+				continue
+			}
+
+			var value any
+			if agg.isCountStar {
+				value = nil // Doesn't matter for COUNT(*)
+			} else if agg.argExpr != nil {
+				val, err := e.evaluate(agg.argExpr, record)
+				if err != nil {
+					encoder.WriteError("InvalidQuery", err.Error())
+					return err
+				}
+				value = val
+			}
+
+			agg.accumulator.Accumulate(value, agg.isCountStar)
+		}
+	}
+
+	// Build result row from aggregate results
+	var buf bytes.Buffer
+	csvWriter := csv.NewWriter(&buf)
+
+	// Configure output delimiter
+	if e.output.FieldDelimiter != "" && len(e.output.FieldDelimiter) > 0 {
+		csvWriter.Comma = rune(e.output.FieldDelimiter[0])
+	}
+
+	row := make([]string, len(e.query.Projections))
+	for i, agg := range aggregates {
+		if agg != nil {
+			row[i] = toString(agg.accumulator.Result())
+		} else {
+			// Non-aggregate expression - evaluate against nil record
+			row[i] = ""
+		}
+	}
+
+	csvWriter.Write(row)
+	csvWriter.Flush()
+
+	var bytesReturned int64
+	if buf.Len() > 0 {
+		bytesReturned = int64(buf.Len())
+		encoder.WriteRecords(buf.Bytes())
+	}
+
+	// Write stats and end
+	encoder.WriteStats(0, 0, bytesReturned)
+	encoder.WriteEnd()
+
+	return nil
+}
+
+// executeRegular executes a regular (non-aggregate) query.
+func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 	encoder := eventstream.NewEncoder(w)
 
 	var buf bytes.Buffer
