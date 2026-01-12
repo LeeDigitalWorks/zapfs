@@ -7,7 +7,11 @@ import (
 	"encoding/xml"
 	"net/http"
 
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/object"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select"
+	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select/parser"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
 )
 
@@ -35,9 +39,6 @@ import (
 //	</SelectObjectContentRequest>
 //
 // Response: Event stream with Records, Stats, Progress, and End events.
-//
-// Implementation Status: Stub - returns NotImplemented
-// See pkg/metadata/service/s3select/ for implementation framework.
 func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.ResponseWriter) {
 	bucket := d.S3Info.Bucket
 	key := d.S3Info.Key
@@ -72,25 +73,116 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 		return
 	}
 
-	// Check if object exists (would be done before processing)
-	_ = bucket
-	_ = key
+	// Phase 1: Only support CSV input/output
+	// JSON and Parquet support will be added in future phases
+	if req.InputSerialization.JSON != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+		return
+	}
+	if req.InputSerialization.Parquet != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+		return
+	}
+	if req.OutputSerialization.JSON != nil {
+		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+		return
+	}
 
-	// TODO: Implement S3 Select
-	// 1. Get object from storage
-	// 2. Create s3select.Service
-	// 3. Parse SQL expression
-	// 4. Execute query and stream results
-	// 5. Write event stream response
-	//
-	// See pkg/metadata/service/s3select/ for the implementation framework.
-	// Key components needed:
-	// - SQL parser for S3 Select subset
-	// - CSV/JSON/Parquet readers
-	// - Expression evaluator
-	// - Event stream writer (AWS binary protocol)
+	// Parse the SQL expression
+	p := parser.New()
+	query, err := p.Parse(req.Expression)
+	if err != nil {
+		if selectErr, ok := err.(*s3select.SelectError); ok {
+			writeSelectError(w, d, selectErr)
+			return
+		}
+		writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
+		return
+	}
 
-	writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
+	// Get the object from storage
+	result, err := s.svc.Objects().GetObject(d.Ctx, &object.GetObjectRequest{
+		Bucket: bucket,
+		Key:    key,
+	})
+	if err != nil {
+		s.handleObjectError(w, d, err)
+		return
+	}
+	defer result.Body.Close()
+
+	// Convert API types to s3select types
+	csvInput := convertCSVInput(req.InputSerialization.CSV)
+	csvOutput := convertCSVOutput(req.OutputSerialization.CSV)
+
+	// Create CSV reader
+	reader := s3select.NewCSVReader(result.Body, csvInput)
+	defer reader.Close()
+
+	// Create executor
+	exec := s3select.NewExecutor(query, reader, csvOutput)
+
+	// Set response headers for event stream
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+
+	// Execute the query and stream results
+	if err := exec.Execute(d.Ctx, w); err != nil {
+		// Error occurred during execution - at this point headers are already sent
+		// The executor should have already written an error event to the stream
+		// We just log and return
+		logger.Error().Err(err).Str("bucket", bucket).Str("key", key).Msg("s3 select execution error")
+	}
+}
+
+// writeSelectError converts a SelectError to an S3 error response.
+func writeSelectError(w http.ResponseWriter, d *data.Data, err *s3select.SelectError) {
+	// Map SelectError codes to S3 error codes
+	var s3Code s3err.ErrorCode
+	switch err.Code {
+	case "InvalidQuery", "InvalidExpression":
+		s3Code = s3err.ErrInvalidRequest
+	case "UnsupportedSyntax":
+		s3Code = s3err.ErrNotImplemented
+	case "CSVParsingError":
+		s3Code = s3err.ErrInvalidRequest
+	case "UnsupportedFormat":
+		s3Code = s3err.ErrNotImplemented
+	default:
+		s3Code = s3err.ErrInternalError
+	}
+	writeXMLErrorResponse(w, d, s3Code)
+}
+
+// convertCSVInput converts API SelectCSVInput to s3select.CSVInput.
+func convertCSVInput(in *SelectCSVInput) *s3select.CSVInput {
+	if in == nil {
+		return &s3select.CSVInput{}
+	}
+	return &s3select.CSVInput{
+		FileHeaderInfo:             in.FileHeaderInfo,
+		Comments:                   in.Comments,
+		QuoteEscapeCharacter:       in.QuoteEscapeCharacter,
+		RecordDelimiter:            in.RecordDelimiter,
+		FieldDelimiter:             in.FieldDelimiter,
+		QuoteCharacter:             in.QuoteCharacter,
+		AllowQuotedRecordDelimiter: in.AllowQuotedRecordDelimiter,
+	}
+}
+
+// convertCSVOutput converts API SelectCSVOutput to s3select.CSVOutput.
+func convertCSVOutput(out *SelectCSVOutput) *s3select.CSVOutput {
+	if out == nil {
+		return &s3select.CSVOutput{}
+	}
+	return &s3select.CSVOutput{
+		QuoteFields:          out.QuoteFields,
+		QuoteEscapeCharacter: out.QuoteEscapeCharacter,
+		RecordDelimiter:      out.RecordDelimiter,
+		FieldDelimiter:       out.FieldDelimiter,
+		QuoteCharacter:       out.QuoteCharacter,
+	}
 }
 
 // ============================================================================
