@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -22,10 +23,11 @@ const DefaultProgressInterval = 10 * time.Second
 
 // Executor executes S3 Select queries.
 type Executor struct {
-	query     *Query
-	reader    RecordReader
-	output    *CSVOutput
-	chunkSize int
+	query      *Query
+	reader     RecordReader
+	output     *CSVOutput
+	jsonOutput *JSONOutput
+	chunkSize  int
 
 	// Progress tracking
 	bytesScanned     int64
@@ -51,6 +53,16 @@ func WithProgress(enabled bool, interval time.Duration) ExecutorOption {
 		} else {
 			e.progressInterval = DefaultProgressInterval
 		}
+	}
+}
+
+// WithJSONOutput configures the executor for JSON output.
+func WithJSONOutput(output *JSONOutput) ExecutorOption {
+	return func(e *Executor) {
+		if output == nil {
+			output = &JSONOutput{}
+		}
+		e.jsonOutput = output
 	}
 }
 
@@ -256,12 +268,6 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 
 	// Build result row from aggregate results
 	var buf bytes.Buffer
-	csvWriter := csv.NewWriter(&buf)
-
-	// Configure output delimiter
-	if e.output.FieldDelimiter != "" && len(e.output.FieldDelimiter) > 0 {
-		csvWriter.Comma = rune(e.output.FieldDelimiter[0])
-	}
 
 	row := make([]string, len(e.query.Projections))
 	for i, agg := range aggregates {
@@ -273,8 +279,38 @@ func (e *Executor) executeAggregate(ctx context.Context, w io.Writer) error {
 		}
 	}
 
-	csvWriter.Write(row)
-	csvWriter.Flush()
+	if e.jsonOutput != nil {
+		// JSON output for aggregates
+		obj := make(map[string]any, len(e.query.Projections))
+		for i, p := range e.query.Projections {
+			key := p.Alias
+			if key == "" {
+				if fc, ok := p.Expr.(*FunctionCall); ok {
+					key = fc.Name
+				} else {
+					key = fmt.Sprintf("_%d", i+1)
+				}
+			}
+			obj[key] = row[i]
+		}
+		jsonBytes, _ := json.Marshal(obj)
+		buf.Write(jsonBytes)
+		delimiter := "\n"
+		if e.jsonOutput.RecordDelimiter != "" {
+			delimiter = e.jsonOutput.RecordDelimiter
+		}
+		buf.WriteString(delimiter)
+	} else {
+		csvWriter := csv.NewWriter(&buf)
+
+		// Configure output delimiter
+		if e.output.FieldDelimiter != "" && len(e.output.FieldDelimiter) > 0 {
+			csvWriter.Comma = rune(e.output.FieldDelimiter[0])
+		}
+
+		csvWriter.Write(row)
+		csvWriter.Flush()
+	}
 
 	if buf.Len() > 0 {
 		e.bytesReturned = int64(buf.Len())
@@ -293,11 +329,23 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 	encoder := eventstream.NewEncoder(w)
 
 	var buf bytes.Buffer
-	csvWriter := csv.NewWriter(&buf)
 
-	// Configure output delimiter
-	if e.output.FieldDelimiter != "" && len(e.output.FieldDelimiter) > 0 {
-		csvWriter.Comma = rune(e.output.FieldDelimiter[0])
+	// Set up output writer based on format
+	useJSON := e.jsonOutput != nil
+	var csvWriter *csv.Writer
+	if !useJSON {
+		csvWriter = csv.NewWriter(&buf)
+
+		// Configure output delimiter
+		if e.output.FieldDelimiter != "" && len(e.output.FieldDelimiter) > 0 {
+			csvWriter.Comma = rune(e.output.FieldDelimiter[0])
+		}
+	}
+
+	// JSON record delimiter
+	jsonDelimiter := "\n"
+	if useJSON && e.jsonOutput.RecordDelimiter != "" {
+		jsonDelimiter = e.jsonOutput.RecordDelimiter
 	}
 
 	recordCount := int64(0)
@@ -346,7 +394,21 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 			return err
 		}
 
-		csvWriter.Write(row)
+		if useJSON {
+			// Write JSON record
+			if recordCount > 0 {
+				buf.WriteString(jsonDelimiter)
+			}
+			obj := e.buildJSONObject(record, row)
+			jsonBytes, err := json.Marshal(obj)
+			if err != nil {
+				encoder.WriteError("InternalError", err.Error())
+				return err
+			}
+			buf.Write(jsonBytes)
+		} else {
+			csvWriter.Write(row)
+		}
 		recordCount++
 		e.recordsProcessed++
 
@@ -356,7 +418,9 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 		}
 
 		// Flush chunk if needed
-		csvWriter.Flush()
+		if !useJSON {
+			csvWriter.Flush()
+		}
 		if buf.Len() >= e.chunkSize {
 			e.bytesReturned += int64(buf.Len())
 			encoder.WriteRecords(buf.Bytes())
@@ -368,7 +432,12 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 	}
 
 	// Final flush
-	csvWriter.Flush()
+	if !useJSON {
+		csvWriter.Flush()
+	}
+	if useJSON && recordCount > 0 {
+		buf.WriteString(jsonDelimiter)
+	}
 	if buf.Len() > 0 {
 		e.bytesReturned += int64(buf.Len())
 		encoder.WriteRecords(buf.Bytes())
@@ -379,6 +448,74 @@ func (e *Executor) executeRegular(ctx context.Context, w io.Writer) error {
 	encoder.WriteEnd()
 
 	return nil
+}
+
+// buildJSONObject creates a JSON object from a record and its projected row values.
+func (e *Executor) buildJSONObject(record Record, row []string) map[string]any {
+	obj := make(map[string]any, len(row))
+
+	// Handle SELECT *
+	if len(e.query.Projections) == 1 {
+		if _, ok := e.query.Projections[0].Expr.(*StarExpr); ok {
+			names := record.ColumnNames()
+			values := record.Values()
+			for i, name := range names {
+				if i < len(values) {
+					key := name
+					if key == "" {
+						key = fmt.Sprintf("_%d", i+1)
+					}
+					obj[key] = values[i]
+				}
+			}
+			return obj
+		}
+	}
+
+	if len(e.query.Projections) == 0 {
+		names := record.ColumnNames()
+		values := record.Values()
+		for i, name := range names {
+			if i < len(values) {
+				key := name
+				if key == "" {
+					key = fmt.Sprintf("_%d", i+1)
+				}
+				obj[key] = values[i]
+			}
+		}
+		return obj
+	}
+
+	for i, p := range e.query.Projections {
+		if _, ok := p.Expr.(*StarExpr); ok {
+			names := record.ColumnNames()
+			values := record.Values()
+			for j, name := range names {
+				if j < len(values) {
+					key := name
+					if key == "" {
+						key = fmt.Sprintf("_%d", j+1)
+					}
+					obj[key] = values[j]
+				}
+			}
+			return obj
+		}
+
+		key := p.Alias
+		if key == "" {
+			if col, ok := p.Expr.(*ColumnRef); ok && col.Name != "" {
+				key = col.Name
+			} else {
+				key = fmt.Sprintf("_%d", i+1)
+			}
+		}
+		if i < len(row) {
+			obj[key] = row[i]
+		}
+	}
+	return obj
 }
 
 // estimateRecordSize estimates the size of a record in bytes.

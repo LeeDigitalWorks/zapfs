@@ -188,6 +188,69 @@ func (p *Parser) parseExpr(expr sqlparser.Expr) (s3select.Expression, error) {
 	case *sqlparser.ParenExpr:
 		return p.parseExpr(e.Expr)
 
+	case *sqlparser.FuncExpr:
+		args := make([]s3select.Expression, 0, len(e.Exprs))
+		for _, argExpr := range e.Exprs {
+			aliased, ok := argExpr.(*sqlparser.AliasedExpr)
+			if !ok {
+				// Handle StarExpr for COUNT(*)
+				if _, isStar := argExpr.(*sqlparser.StarExpr); isStar {
+					args = append(args, &s3select.StarExpr{})
+					continue
+				}
+				return nil, &s3select.SelectError{
+					Code:    "InvalidQuery",
+					Message: fmt.Sprintf("unsupported function argument: %T", argExpr),
+				}
+			}
+			parsed, err := p.parseExpr(aliased.Expr)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, parsed)
+		}
+		return &s3select.FunctionCall{
+			Name: strings.ToUpper(e.Name.String()),
+			Args: args,
+		}, nil
+
+	case *sqlparser.ConvertExpr:
+		inner, err := p.parseExpr(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		typeName := ""
+		if e.Type != nil {
+			typeName = e.Type.Type
+		}
+		return &s3select.FunctionCall{
+			Name: "CAST",
+			Args: []s3select.Expression{
+				inner,
+				&s3select.Literal{Value: typeName},
+			},
+		}, nil
+
+	case *sqlparser.UnaryExpr:
+		inner, err := p.parseExpr(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		return &s3select.UnaryOp{Op: e.Operator, Expr: inner}, nil
+
+	case *sqlparser.NotExpr:
+		inner, err := p.parseExpr(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+		return &s3select.UnaryOp{Op: "NOT", Expr: inner}, nil
+
+	case *sqlparser.NullVal:
+		return &s3select.Literal{Value: nil}, nil
+
+	case sqlparser.BoolVal:
+		return &s3select.Literal{Value: bool(e)}, nil
+
 	default:
 		return nil, &s3select.SelectError{
 			Code:    "InvalidQuery",

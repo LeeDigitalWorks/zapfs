@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
@@ -80,12 +81,6 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 		writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
 		return
 	}
-	// JSON output not yet supported
-	if req.OutputSerialization.JSON != nil {
-		writeXMLErrorResponse(w, d, s3err.ErrNotImplemented)
-		return
-	}
-
 	// Parse the SQL expression
 	p := parser.New()
 	query, err := p.Parse(req.Expression)
@@ -126,7 +121,13 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	}
 
 	// Convert API types to s3select types
-	csvOutput := convertCSVOutput(req.OutputSerialization.CSV)
+	var csvOutput *s3select.CSVOutput
+	var jsonOutputOpt s3select.ExecutorOption
+	if req.OutputSerialization.JSON != nil {
+		jsonOutputOpt = s3select.WithJSONOutput(convertJSONOutput(req.OutputSerialization.JSON))
+	} else {
+		csvOutput = convertCSVOutput(req.OutputSerialization.CSV)
+	}
 
 	// Create reader based on input format
 	var reader s3select.RecordReader
@@ -162,8 +163,24 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	}
 	defer reader.Close()
 
+	// Build executor options
+	var opts []s3select.ExecutorOption
+	if req.RequestProgress != nil && req.RequestProgress.Enabled {
+		opts = append(opts, s3select.WithProgress(true, 0))
+	}
+	if jsonOutputOpt != nil {
+		opts = append(opts, jsonOutputOpt)
+	}
+
 	// Create executor
-	exec := s3select.NewExecutor(query, reader, csvOutput)
+	exec := s3select.NewExecutor(query, reader, csvOutput, opts...)
+
+	// Determine input format for metrics
+	inputFormat := s3select.GetInputFormat(
+		req.InputSerialization.CSV != nil,
+		req.InputSerialization.JSON != nil,
+		req.InputSerialization.Parquet != nil,
+	)
 
 	// Set response headers for event stream
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -171,12 +188,19 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 	w.WriteHeader(http.StatusOK)
 
 	// Execute the query and stream results
-	if err := exec.Execute(d.Ctx, w); err != nil {
+	start := time.Now()
+	err = exec.Execute(d.Ctx, w)
+	if err != nil {
 		// Error occurred during execution - at this point headers are already sent
 		// The executor should have already written an error event to the stream
 		// We just log and return
 		logger.Error().Err(err).Str("bucket", bucket).Str("key", key).Msg("s3 select execution error")
+		s3select.RecordError(inputFormat, "ExecutionError")
 	}
+
+	// Record metrics
+	bytesScanned, _, bytesReturned, recordsProcessed := exec.Stats()
+	s3select.RecordRequest(inputFormat, time.Since(start), bytesScanned, bytesReturned, recordsProcessed, err)
 }
 
 // writeSelectError converts a SelectError to an S3 error response.
@@ -225,6 +249,16 @@ func convertCSVOutput(out *SelectCSVOutput) *s3select.CSVOutput {
 		RecordDelimiter:      out.RecordDelimiter,
 		FieldDelimiter:       out.FieldDelimiter,
 		QuoteCharacter:       out.QuoteCharacter,
+	}
+}
+
+// convertJSONOutput converts API SelectJSONOutput to s3select.JSONOutput.
+func convertJSONOutput(out *SelectJSONOutput) *s3select.JSONOutput {
+	if out == nil {
+		return &s3select.JSONOutput{}
+	}
+	return &s3select.JSONOutput{
+		RecordDelimiter: out.RecordDelimiter,
 	}
 }
 
