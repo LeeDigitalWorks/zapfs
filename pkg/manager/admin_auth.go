@@ -5,6 +5,7 @@ package manager
 
 import (
 	"context"
+	"crypto/subtle"
 	"strings"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
@@ -64,7 +65,7 @@ func NewAdminAuthInterceptor(token string, protectedMethods []string) grpc.Unary
 		}
 
 		provided := strings.TrimPrefix(authHeader, "Bearer ")
-		if provided != token {
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 			logger.Warn().Str("method", info.FullMethod).Msg("Admin RPC rejected: invalid token")
 			return nil, status.Error(codes.Unauthenticated, "invalid admin token")
 		}

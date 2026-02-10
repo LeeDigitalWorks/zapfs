@@ -24,12 +24,12 @@ type MasterKey struct {
 	key []byte
 }
 
-// Key returns the raw key bytes for use with external encryption routines.
+// Key returns a copy of the raw key bytes for use with external encryption routines.
 func (m *MasterKey) Key() []byte {
 	if m == nil {
 		return nil
 	}
-	return m.key
+	return append([]byte{}, m.key...)
 }
 
 var (

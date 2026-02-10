@@ -525,7 +525,11 @@ func startManagerGRPCServer(opts ManagerServerOpts, ms *manager.ManagerServer) *
 	if opts.AdminToken != "" {
 		interceptor := manager.NewAdminAuthInterceptor(opts.AdminToken, manager.AdminProtectedMethods())
 		grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(interceptor))
-		logger.Info().Msg("Admin gRPC auth enabled")
+		if opts.CertFile == "" || opts.KeyFile == "" {
+			logger.Warn().Msg("Admin gRPC auth enabled WITHOUT TLS — admin token will be sent in cleartext. Use --cert_file and --key_file in production.")
+		} else {
+			logger.Info().Msg("Admin gRPC auth enabled with TLS")
+		}
 	} else {
 		logger.Warn().Msg("Admin gRPC auth disabled (set --admin_token for production)")
 	}

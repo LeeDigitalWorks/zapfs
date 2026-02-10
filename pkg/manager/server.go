@@ -45,6 +45,14 @@ type ClusterCapacity struct {
 // ManagerServer is the main manager server that coordinates the ZapFS cluster.
 // It implements both ManagerServiceServer (cluster management) and IAMServiceServer
 // (credential sync to metadata services).
+//
+// Lock ordering (to prevent deadlocks):
+//
+//	state.Lock() > collectionsRecoveryRequiredMu > clusterCapacityMu
+//
+// The state lock must always be acquired first. The secondary mutexes
+// (collectionsRecoveryRequiredMu, clusterCapacityMu) protect independent
+// caches and may be acquired while state is held, but never the reverse.
 type ManagerServer struct {
 	manager_pb.UnimplementedManagerServiceServer
 	iam_pb.UnimplementedIAMServiceServer
@@ -98,8 +106,11 @@ type ManagerServer struct {
 	// Backup scheduler (enterprise)
 	backupScheduler *BackupScheduler
 
-	// Encryption key for federation secrets in Raft state (nil = no encryption)
-	masterKey []byte
+	// Encryption key for federation secrets in Raft state (nil = no encryption).
+	// Must be set via SetMasterKey before the Raft node processes any federation commands.
+	// Protected by masterKeyOnce to ensure safe publication to the Raft goroutine.
+	masterKey     []byte
+	masterKeyOnce sync.Once
 
 	// Shutdown
 	shutdownCh chan struct{}
@@ -440,15 +451,24 @@ func (ms *ManagerServer) Shutdown() {
 // SetMasterKey sets the encryption key for federation secrets in Raft state.
 // When set, federation credentials (AccessKeyId, SecretAccessKey) are encrypted
 // before being stored in the FSM state and decrypted when read.
+// Must be called before the Raft node processes any federation commands.
+// Can only be called once; subsequent calls are no-ops.
 // Pass nil to disable encryption (credentials stored in plaintext).
 func (ms *ManagerServer) SetMasterKey(key []byte) {
-	ms.masterKey = key
+	ms.masterKeyOnce.Do(func() {
+		ms.masterKey = key
+	})
 }
 
 // DecryptFederationCredentials decrypts the AccessKeyId and SecretAccessKey
 // from a FederationInfo that was stored in encrypted form in Raft state.
 // Returns the decrypted accessKeyID and secretAccessKey.
 // If no masterKey is set or the values are not encrypted, returns them as-is.
+//
+// Note: The metadata service's DB layer (vitess/postgres) has its own independent
+// encryption via iam.EncryptCredentialSecret/DecryptCredentialSecret. This method
+// is for code that reads directly from the Raft FSM state (e.g., manager-side
+// federation operations, diagnostics, or snapshot inspection).
 func (ms *ManagerServer) DecryptFederationCredentials(fedInfo *FederationInfo) (accessKeyID, secretAccessKey string, err error) {
 	if fedInfo == nil || fedInfo.External == nil {
 		return "", "", nil

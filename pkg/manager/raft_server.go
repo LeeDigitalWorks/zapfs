@@ -74,8 +74,19 @@ func (t *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration)
 	if err != nil {
 		return nil, err
 	}
+	// Set deadline for the TLS handshake to prevent a slow/malicious
+	// peer from blocking the Raft transport goroutine indefinitely.
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		conn.Close()
+		return nil, err
+	}
 	tlsConn := tls.Client(conn, t.tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	// Clear the deadline so the connection can be used normally.
+	if err := conn.SetDeadline(time.Time{}); err != nil {
 		conn.Close()
 		return nil, err
 	}

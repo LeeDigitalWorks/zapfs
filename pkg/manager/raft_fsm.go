@@ -727,16 +727,17 @@ func (ms *ManagerServer) applyRegisterFederation(data json.RawMessage) interface
 
 	// Encrypt federation credentials before storing in Raft state
 	if req.External != nil && len(ms.masterKey) > 0 {
-		if encrypted, err := encryptSecret(ms.masterKey, req.External.AccessKeyId); err == nil {
-			req.External.AccessKeyId = encrypted
-		} else {
-			logger.Error().Err(err).Str("bucket", req.LocalBucket).Msg("Failed to encrypt federation access key")
+		encrypted, err := encryptSecret(ms.masterKey, req.External.AccessKeyId)
+		if err != nil {
+			return fmt.Errorf("encrypt federation access key for %s: %w", req.LocalBucket, err)
 		}
-		if encrypted, err := encryptSecret(ms.masterKey, req.External.SecretAccessKey); err == nil {
-			req.External.SecretAccessKey = encrypted
-		} else {
-			logger.Error().Err(err).Str("bucket", req.LocalBucket).Msg("Failed to encrypt federation secret key")
+		req.External.AccessKeyId = encrypted
+
+		encrypted, err = encryptSecret(ms.masterKey, req.External.SecretAccessKey)
+		if err != nil {
+			return fmt.Errorf("encrypt federation secret key for %s: %w", req.LocalBucket, err)
 		}
+		req.External.SecretAccessKey = encrypted
 	}
 
 	// Store federation config
@@ -923,16 +924,17 @@ func (ms *ManagerServer) applyUpdateFederationCredentials(data json.RawMessage) 
 	accessKeyID := req.AccessKeyID
 	secretAccessKey := req.SecretAccessKey
 	if len(ms.masterKey) > 0 {
-		if encrypted, err := encryptSecret(ms.masterKey, accessKeyID); err == nil {
-			accessKeyID = encrypted
-		} else {
-			logger.Error().Err(err).Str("bucket", req.Bucket).Msg("Failed to encrypt federation access key")
+		encrypted, err := encryptSecret(ms.masterKey, accessKeyID)
+		if err != nil {
+			return fmt.Errorf("encrypt federation access key for %s: %w", req.Bucket, err)
 		}
-		if encrypted, err := encryptSecret(ms.masterKey, secretAccessKey); err == nil {
-			secretAccessKey = encrypted
-		} else {
-			logger.Error().Err(err).Str("bucket", req.Bucket).Msg("Failed to encrypt federation secret key")
+		accessKeyID = encrypted
+
+		encrypted, err = encryptSecret(ms.masterKey, secretAccessKey)
+		if err != nil {
+			return fmt.Errorf("encrypt federation secret key for %s: %w", req.Bucket, err)
 		}
+		secretAccessKey = encrypted
 	}
 
 	fedInfo.External.AccessKeyId = accessKeyID
