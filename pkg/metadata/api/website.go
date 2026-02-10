@@ -60,9 +60,13 @@ func (s *MetadataServer) PutBucketWebsiteHandler(d *data.Data, w http.ResponseWr
 	bucket := d.S3Info.Bucket
 
 	// Read website config from body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil || len(body) == 0 {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 

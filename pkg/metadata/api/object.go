@@ -836,9 +836,13 @@ func (s *MetadataServer) DeleteObjectsHandler(d *data.Data, w http.ResponseWrite
 	}
 
 	// Parse request body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 
@@ -1166,6 +1170,13 @@ func (s *MetadataServer) PostObjectHandler(d *data.Data, w http.ResponseWriter) 
 	if formData.SuccessActionRedirect != "" {
 		// Redirect to the specified URL with bucket, key, etag as query params
 		redirectURL := formData.SuccessActionRedirect
+
+		// Validate the redirect URL to prevent open redirect attacks
+		if !isSafeRedirectURL(redirectURL, d.Req) {
+			writeXMLErrorResponse(w, d, s3err.ErrInvalidRequest)
+			return
+		}
+
 		if strings.Contains(redirectURL, "?") {
 			redirectURL += "&"
 		} else {
@@ -1311,4 +1322,22 @@ func formatRestoreHeader(obj *types.ObjectRef) string {
 	default:
 		return ""
 	}
+}
+
+// isSafeRedirectURL validates that a redirect URL is safe.
+// Only allows http/https schemes with the same host as the request, or relative URLs.
+func isSafeRedirectURL(redirectURL string, req *http.Request) bool {
+	u, err := url.Parse(redirectURL)
+	if err != nil {
+		return false
+	}
+	// Block non-http(s) schemes (javascript:, data:, etc.)
+	if u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	// If it has a host, it must match the request host
+	if u.Host != "" && u.Host != req.Host {
+		return false
+	}
+	return true
 }

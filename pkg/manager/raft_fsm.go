@@ -234,7 +234,7 @@ func (ms *ManagerServer) applyRegisterService(data json.RawMessage) interface{} 
 
 func (ms *ManagerServer) applyUnregisterService(data json.RawMessage) interface{} {
 	var req manager_pb.UnregisterServiceRequest
-	if err := json.Unmarshal(data, &req); err != nil {
+	if err := protojson.Unmarshal(data, &req); err != nil {
 		return err
 	}
 

@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/types"
-	"github.com/LeeDigitalWorks/zapfs/pkg/utils"
 )
 
 func (fs *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -71,12 +70,9 @@ func (fs *FileServer) GetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
-	buf := utils.SyncPoolGetBuffer()
-	buf.Reset()
-	defer utils.SyncPoolPutBuffer(buf)
-
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.CopyBuffer(w, reader, buf.Bytes()); err != nil {
+	buf := make([]byte, 32*1024) // 32KB copy buffer
+	if _, err := io.CopyBuffer(w, reader, buf); err != nil {
 		return
 	}
 }

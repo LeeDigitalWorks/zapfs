@@ -14,6 +14,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/LeeDigitalWorks/zapfs/pkg/logger"
 )
 
 // MasterKey provides encryption/decryption for secret keys at rest.
@@ -41,7 +43,7 @@ func GetMasterKey() (*MasterKey, error) {
 				return
 			}
 			globalMasterKey = &MasterKey{key: key}
-			// Note: In dev mode, secrets won't survive restart
+			logger.Warn().Msg("ZAPFS_IAM_MASTER_KEY not set - using ephemeral key, secrets will not survive restart")
 			return
 		}
 

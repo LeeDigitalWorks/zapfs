@@ -72,9 +72,13 @@ func (s *MetadataServer) PutObjectLockConfigurationHandler(d *data.Data, w http.
 	bucket := d.S3Info.Bucket
 
 	// Read config from body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil || len(body) == 0 {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 
@@ -178,9 +182,13 @@ func (s *MetadataServer) PutObjectRetentionHandler(d *data.Data, w http.Response
 	}
 
 	// Read retention from body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil || len(body) == 0 {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 
@@ -323,9 +331,13 @@ func (s *MetadataServer) PutObjectLegalHoldHandler(d *data.Data, w http.Response
 	}
 
 	// Read legal hold from body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil || len(body) == 0 {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 

@@ -82,10 +82,13 @@ func (s *MetadataServer) PutBucketAclHandler(d *data.Data, w http.ResponseWriter
 		acl = headerACL
 	} else {
 		// No headers - parse ACL from body
-		body, err := io.ReadAll(d.Req.Body)
+		body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 		if err != nil || len(body) == 0 {
 			// No body and no headers - use private
 			acl = s3types.NewPrivateACL(bucketInfo.OwnerID, bucketInfo.OwnerID)
+		} else if int64(len(body)) > maxXMLBodySize {
+			writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
+			return
 		} else {
 			acl, err = parseACLXML(body, bucketInfo.OwnerID)
 			if err != nil {
@@ -173,10 +176,13 @@ func (s *MetadataServer) PutObjectAclHandler(d *data.Data, w http.ResponseWriter
 		acl = headerACL
 	} else {
 		// No headers - parse ACL from body
-		body, err := io.ReadAll(d.Req.Body)
+		body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 		if err != nil || len(body) == 0 {
 			// No body and no headers - use private
 			acl = s3types.NewPrivateACL(ownerID, ownerID)
+		} else if int64(len(body)) > maxXMLBodySize {
+			writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
+			return
 		} else {
 			acl, err = parseACLXML(body, ownerID)
 			if err != nil {

@@ -421,33 +421,32 @@ func matchWildcard(pattern, value string) bool {
 	return wildcardMatch(pattern, value)
 }
 
-// wildcardMatch performs full wildcard matching
+// wildcardMatch matches a value against a pattern with '*' and '?' wildcards.
+// Uses an iterative approach to avoid exponential backtracking.
 func wildcardMatch(pattern, value string) bool {
-	// Simple recursive implementation
-	// For production, consider using a more efficient algorithm
-	for len(pattern) > 0 {
-		switch pattern[0] {
-		case '*':
-			// Try matching zero or more characters
-			for i := 0; i <= len(value); i++ {
-				if wildcardMatch(pattern[1:], value[i:]) {
-					return true
-				}
-			}
+	px, vx := 0, 0
+	starPx, starVx := -1, 0
+
+	for vx < len(value) {
+		if px < len(pattern) && (pattern[px] == '?' || pattern[px] == value[vx]) {
+			px++
+			vx++
+		} else if px < len(pattern) && pattern[px] == '*' {
+			starPx = px
+			starVx = vx
+			px++
+		} else if starPx >= 0 {
+			starVx++
+			vx = starVx
+			px = starPx + 1
+		} else {
 			return false
-		case '?':
-			if len(value) == 0 {
-				return false
-			}
-			pattern = pattern[1:]
-			value = value[1:]
-		default:
-			if len(value) == 0 || pattern[0] != value[0] {
-				return false
-			}
-			pattern = pattern[1:]
-			value = value[1:]
 		}
 	}
-	return len(value) == 0
+
+	for px < len(pattern) && pattern[px] == '*' {
+		px++
+	}
+
+	return px == len(pattern)
 }

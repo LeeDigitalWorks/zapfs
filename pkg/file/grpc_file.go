@@ -55,8 +55,7 @@ func putStreamBuffer(buf *[]byte) {
 
 // uuidCache caches objectID -> UUID mappings to avoid repeated SHA-1 hashing.
 // UUID v5 uses SHA-1 which is ~200ns per call; caching reduces this to ~35ns.
-// Uses LockFreeMap with GrowOnly since this cache only grows (never shrinks).
-var uuidCache = utils.NewLockFreeMap[string, uuid.UUID](utils.WithLockFreeGrowOnly[string, uuid.UUID]())
+var uuidCache = utils.NewLockFreeMap[string, uuid.UUID]()
 
 // objectIDToUUID converts a string object ID to a deterministic UUID.
 // Uses UUID v5 (SHA-1 based) to ensure the same objectID always maps to the same UUID.
@@ -92,42 +91,43 @@ func newPutObjectStreamReader(stream file_pb.FileService_PutObjectServer) *grpcS
 }
 
 func (r *grpcStreamReader) Read(p []byte) (n int, err error) {
-	// If we have leftover data from a previous chunk, use it first
-	if len(r.currentData) > 0 {
-		n = copy(p, r.currentData)
-		r.currentData = r.currentData[n:]
+	for {
+		// If we have leftover data from a previous chunk, use it first
+		if len(r.currentData) > 0 {
+			n = copy(p, r.currentData)
+			r.currentData = r.currentData[n:]
+			return n, nil
+		}
+
+		// If we're done, return EOF
+		if r.done {
+			return 0, io.EOF
+		}
+
+		// Receive next chunk from stream
+		chunk, err := r.recvFunc()
+		if err == io.EOF {
+			r.done = true
+			return 0, io.EOF
+		}
+		if err != nil {
+			return 0, err
+		}
+
+		if chunk == nil {
+			continue // Loop instead of recursive call
+		}
+
+		// Copy as much as we can to p
+		n = copy(p, chunk)
+		if n < len(chunk) {
+			// Save the rest for the next Read call
+			r.currentData = make([]byte, len(chunk)-n)
+			copy(r.currentData, chunk[n:])
+		}
+
 		return n, nil
 	}
-
-	// If we're done, return EOF
-	if r.done {
-		return 0, io.EOF
-	}
-
-	// Receive next chunk from stream
-	chunk, err := r.recvFunc()
-	if err == io.EOF {
-		r.done = true
-		return 0, io.EOF
-	}
-	if err != nil {
-		return 0, err
-	}
-
-	if chunk == nil {
-		// Empty message, try again
-		return r.Read(p)
-	}
-
-	// Copy as much as we can to p
-	n = copy(p, chunk)
-	if n < len(chunk) {
-		// Save the rest for the next Read call
-		r.currentData = make([]byte, len(chunk)-n)
-		copy(r.currentData, chunk[n:])
-	}
-
-	return n, nil
 }
 
 // PutObject receives a stream of chunks and writes them to local storage.

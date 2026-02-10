@@ -31,7 +31,7 @@ func (ms *ManagerServer) GetCollectionsByOwner(owner string) []string {
 	return ms.state.GetCollectionsByOwner(owner)
 }
 
-// Helper: insert into sorted slice (maintains sort order)
+// Helper: insert into sorted slice (maintains sort order, skips duplicates)
 func insertSorted(slice *[]string, value string) {
 	// Binary search for insertion point
 	i := 0
@@ -43,6 +43,11 @@ func insertSorted(slice *[]string, value string) {
 		} else {
 			j = h
 		}
+	}
+
+	// If value already exists at position i, skip
+	if i < len(*slice) && (*slice)[i] == value {
+		return
 	}
 
 	// Insert at position i

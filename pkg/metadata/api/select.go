@@ -47,7 +47,7 @@ func (s *MetadataServer) SelectObjectContentHandler(d *data.Data, w http.Respons
 
 	// Parse request body
 	var req SelectObjectContentRequest
-	if err := xml.NewDecoder(d.Req.Body).Decode(&req); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(d.Req.Body, maxXMLBodySize+1)).Decode(&req); err != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
 		return
 	}

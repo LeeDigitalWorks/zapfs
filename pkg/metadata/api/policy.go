@@ -65,10 +65,14 @@ func (s *MetadataServer) PutBucketPolicyHandler(d *data.Data, w http.ResponseWri
 	bucket := d.S3Info.Bucket
 
 	// Read policy JSON from body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil || len(body) == 0 {
 		logger.Warn().Err(err).Int("bodyLen", len(body)).Msg("PutBucketPolicy: failed to read body")
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedPolicy)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 

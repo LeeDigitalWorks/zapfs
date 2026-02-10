@@ -6,12 +6,17 @@ package api
 import (
 	"bytes"
 	"encoding/xml"
+	"html"
 	"io"
 	"net/http"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/data"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3consts"
 	"github.com/LeeDigitalWorks/zapfs/pkg/s3api/s3err"
+)
+
+const (
+	maxXMLBodySize = 1 << 20 // 1 MB
 )
 
 type wrappedResponseRecorder struct {
@@ -74,7 +79,7 @@ func buildHTMLErrorPage(code, message string, httpCode int) string {
 	return `<!DOCTYPE html>
 <html>
 <head>
-    <title>` + http.StatusText(httpCode) + `</title>
+    <title>` + html.EscapeString(http.StatusText(httpCode)) + `</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 40px; }
         h1 { color: #c00; }
@@ -82,9 +87,9 @@ func buildHTMLErrorPage(code, message string, httpCode int) string {
     </style>
 </head>
 <body>
-    <h1>` + http.StatusText(httpCode) + `</h1>
-    <p>` + message + `</p>
-    <p class="error-code">Error Code: ` + code + `</p>
+    <h1>` + html.EscapeString(http.StatusText(httpCode)) + `</h1>
+    <p>` + html.EscapeString(message) + `</p>
+    <p class="error-code">Error Code: ` + html.EscapeString(code) + `</p>
 </body>
 </html>`
 }
@@ -149,9 +154,15 @@ func writeNoContent(w http.ResponseWriter, d *data.Data) {
 // parseXMLBody reads and parses the request body as XML into the provided target.
 // Returns the parsed error code if parsing fails, or ErrNone on success.
 func parseXMLBody(d *data.Data, target any) s3err.ErrorCode {
-	body, err := io.ReadAll(d.Req.Body)
-	if err != nil || len(body) == 0 {
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
+	if err != nil {
 		return s3err.ErrMalformedXML
+	}
+	if len(body) == 0 {
+		return s3err.ErrMalformedXML
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		return s3err.ErrEntityTooLarge
 	}
 
 	if err := xml.Unmarshal(body, target); err != nil {

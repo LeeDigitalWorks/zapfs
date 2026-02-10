@@ -73,10 +73,14 @@ func (s *MetadataServer) GetBucketLoggingHandler(d *data.Data, w http.ResponseWr
 // Actual log collection and delivery requires enterprise license with FeatureAccessLog.
 func (s *MetadataServer) PutBucketLoggingHandler(d *data.Data, w http.ResponseWriter) {
 	// Parse request body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read request body")
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 

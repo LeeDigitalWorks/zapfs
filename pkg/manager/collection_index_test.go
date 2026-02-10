@@ -55,8 +55,8 @@ func TestInsertSorted_Duplicate(t *testing.T) {
 	slice := []string{"apple", "cherry"}
 	insertSorted(&slice, "apple") // Duplicate
 
-	// Duplicates get inserted (maintaining sort order)
-	assert.Equal(t, []string{"apple", "apple", "cherry"}, slice)
+	// Duplicates are skipped
+	assert.Equal(t, []string{"apple", "cherry"}, slice)
 }
 
 func TestInsertSorted_ManyElements(t *testing.T) {

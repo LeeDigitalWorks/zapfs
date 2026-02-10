@@ -1943,3 +1943,29 @@ func TestParseObjectAttributes(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSafeRedirectURL(t *testing.T) {
+	t.Parallel()
+
+	req := &http.Request{Host: "mybucket.s3.example.com"}
+
+	tests := []struct {
+		name string
+		url  string
+		safe bool
+	}{
+		{"relative path", "/success", true},
+		{"same host http", "http://mybucket.s3.example.com/done", true},
+		{"same host https", "https://mybucket.s3.example.com/done", true},
+		{"external host", "https://evil.com/phish", false},
+		{"javascript scheme", "javascript:alert(1)", false},
+		{"data scheme", "data:text/html,<script>alert(1)</script>", false},
+		{"empty", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.safe, isSafeRedirectURL(tt.url, req))
+		})
+	}
+}

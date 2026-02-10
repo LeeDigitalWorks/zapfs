@@ -113,9 +113,13 @@ func (s *MetadataServer) PutBucketNotificationConfigurationHandler(d *data.Data,
 	}
 
 	// Parse request body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil {
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 

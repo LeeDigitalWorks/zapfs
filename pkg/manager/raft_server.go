@@ -49,6 +49,9 @@ type Config struct {
 	CommitTimeout    time.Duration
 	MaxAppendEntries int
 
+	// Snapshot
+	SnapshotRetain int
+
 	// Cluster
 	Bootstrap       bool
 	BootstrapExpect int
@@ -100,13 +103,17 @@ func (rn *RaftNode) setupRaft() error {
 	}
 
 	// Snapshot store
-	snapshotStore, err := raft.NewFileSnapshotStore(rn.config.DataDir, 2, nil)
+	snapshotRetain := rn.config.SnapshotRetain
+	if snapshotRetain <= 0 {
+		snapshotRetain = 2
+	}
+	snapshotStore, err := raft.NewFileSnapshotStore(rn.config.DataDir, snapshotRetain, nil)
 	if err != nil {
 		return fmt.Errorf("snapshot store: %w", err)
 	}
 
 	// Log store and stable store (BoltDB)
-	logStore, err := raftboltdb.NewBoltStore(rn.config.DataDir + "/raft.db")
+	logStore, err := raftboltdb.NewBoltStore(filepath.Join(rn.config.DataDir, "raft.db"))
 	if err != nil {
 		return fmt.Errorf("bolt store: %w", err)
 	}

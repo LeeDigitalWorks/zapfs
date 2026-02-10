@@ -347,18 +347,20 @@ func (s *FSMState) rebuildIndexes() {
 // AddCollectionToIndexes adds a collection to the derived indexes.
 // Must be called with the write lock held.
 func (s *FSMState) AddCollectionToIndexes(col *manager_pb.Collection) {
-	// Owner index (sorted)
+	// Owner index (sorted, deduplicated via insertSorted)
 	ownerColls := s.CollectionsByOwner[col.Owner]
-	ownerColls = append(ownerColls, col.Name)
+	prevLen := len(ownerColls)
 	insertSorted(&ownerColls, col.Name)
 	s.CollectionsByOwner[col.Owner] = ownerColls
 
-	// Increment owner count
-	s.OwnerCollectionCount[col.Owner]++
+	// Only increment owner count if a new entry was actually inserted
+	if len(ownerColls) > prevLen {
+		s.OwnerCollectionCount[col.Owner]++
+	}
 
-	// Tier index
+	// Tier index (sorted, deduplicated via insertSorted)
 	tierColls := s.CollectionsByTier[col.Tier]
-	tierColls = append(tierColls, col.Name)
+	insertSorted(&tierColls, col.Name)
 	s.CollectionsByTier[col.Tier] = tierColls
 
 	// Time index

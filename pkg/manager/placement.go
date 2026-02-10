@@ -52,7 +52,10 @@ func (ms *ManagerServer) selectReplicationTargets(fileSize uint64, numReplicas u
 				// So we don't filter by tier here
 
 				// Check if backend has enough space
-				freeBytes := backend.TotalBytes - backend.UsedBytes
+				var freeBytes uint64
+				if backend.TotalBytes > backend.UsedBytes {
+					freeBytes = backend.TotalBytes - backend.UsedBytes
+				}
 				if freeBytes < fileSize {
 					continue
 				}

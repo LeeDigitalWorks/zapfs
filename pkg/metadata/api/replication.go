@@ -67,10 +67,14 @@ func (s *MetadataServer) PutBucketReplicationHandler(d *data.Data, w http.Respon
 	bucket := d.S3Info.Bucket
 
 	// Parse request body
-	body, err := io.ReadAll(d.Req.Body)
+	body, err := io.ReadAll(io.LimitReader(d.Req.Body, maxXMLBodySize+1))
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to read replication config body")
 		writeXMLErrorResponse(w, d, s3err.ErrMalformedXML)
+		return
+	}
+	if int64(len(body)) > maxXMLBodySize {
+		writeXMLErrorResponse(w, d, s3err.ErrEntityTooLarge)
 		return
 	}
 

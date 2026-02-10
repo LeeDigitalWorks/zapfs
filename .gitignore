@@ -38,3 +38,4 @@ workspace/
 
 # Air hot reload temp directory
 tmp/
+docs/plans/
