@@ -4,6 +4,7 @@
 package manager
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -55,6 +56,43 @@ type Config struct {
 	// Cluster
 	Bootstrap       bool
 	BootstrapExpect int
+
+	// TLS for Raft transport (optional — nil means plaintext)
+	TLSConfig *tls.Config
+}
+
+// tlsStreamLayer implements raft.StreamLayer for TLS-encrypted Raft transport.
+type tlsStreamLayer struct {
+	net.Listener
+	tlsConfig *tls.Config
+	advertise net.Addr
+}
+
+// Dial creates an outgoing TLS connection to a Raft peer.
+func (t *tlsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", string(address), timeout)
+	if err != nil {
+		return nil, err
+	}
+	tlsConn := tls.Client(conn, t.tlsConfig)
+	if err := tlsConn.Handshake(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return tlsConn, nil
+}
+
+// Accept waits for and returns the next incoming connection.
+func (t *tlsStreamLayer) Accept() (net.Conn, error) {
+	return t.Listener.Accept()
+}
+
+// Addr returns the advertise address if set, otherwise the listener address.
+func (t *tlsStreamLayer) Addr() net.Addr {
+	if t.advertise != nil {
+		return t.advertise
+	}
+	return t.Listener.Addr()
 }
 
 func NewRaftNode(fsm raft.FSM, config *Config) (*RaftNode, error) {
@@ -125,9 +163,26 @@ func (rn *RaftNode) setupRaft() error {
 		return fmt.Errorf("resolve tcp addr: %w", err)
 	}
 
-	transport, err := raft.NewTCPTransport(rn.config.BindAddr, addr, 3, 10*time.Second, nil)
-	if err != nil {
-		return fmt.Errorf("tcp transport: %w", err)
+	var transport *raft.NetworkTransport
+	if rn.config.TLSConfig != nil {
+		// TLS-enabled transport
+		listener, err := tls.Listen("tcp", rn.config.BindAddr, rn.config.TLSConfig)
+		if err != nil {
+			return fmt.Errorf("tls listen: %w", err)
+		}
+		stream := &tlsStreamLayer{
+			Listener:  listener,
+			tlsConfig: rn.config.TLSConfig,
+			advertise: addr,
+		}
+		transport = raft.NewNetworkTransport(stream, 3, 10*time.Second, nil)
+	} else {
+		// Plaintext transport (backward compatible)
+		t, err := raft.NewTCPTransport(rn.config.BindAddr, addr, 3, 10*time.Second, nil)
+		if err != nil {
+			return fmt.Errorf("tcp transport: %w", err)
+		}
+		transport = t
 	}
 	rn.transport = transport
 

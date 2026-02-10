@@ -552,6 +552,78 @@ func TestExecutor_ProgressEvents(t *testing.T) {
 	assert.True(t, hasProgress, "Expected at least one Progress event")
 }
 
+func TestExecutor_WhereWithCAST(t *testing.T) {
+	// This mirrors the integration test: SELECT name, age FROM s3object WHERE CAST(age AS INT) > 28
+	input := "name,age,city\nAlice,30,New York\nBob,25,Los Angeles\nCharlie,35,Chicago\nDiana,28,Houston\n"
+
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &ColumnRef{Name: "name"}},
+			{Expr: &ColumnRef{Name: "age"}},
+		},
+		FromAlias: "s3object",
+		Where: &BinaryOp{
+			Left: &FunctionCall{
+				Name: "CAST",
+				Args: []Expression{
+					&ColumnRef{Name: "age"},
+					&Literal{Value: "int"},
+				},
+			},
+			Op:    ">",
+			Right: &Literal{Value: int64(28)},
+		},
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, stats, end := decodeEvents(t, &buf)
+	result := string(records)
+	assert.Contains(t, result, "Alice")    // age 30 > 28
+	assert.Contains(t, result, "Charlie")  // age 35 > 28
+	assert.NotContains(t, result, "Bob")   // age 25 < 28
+	assert.NotContains(t, result, "Diana") // age 28 not > 28
+	assert.True(t, stats)
+	assert.True(t, end)
+}
+
+func TestExecutor_FunctionCallInProjection(t *testing.T) {
+	input := "name,age\nAlice,30\nBob,25\n"
+
+	query := &Query{
+		Projections: []Projection{
+			{Expr: &FunctionCall{Name: "UPPER", Args: []Expression{&ColumnRef{Name: "name"}}}},
+			{Expr: &FunctionCall{Name: "CAST", Args: []Expression{&ColumnRef{Name: "age"}, &Literal{Value: "int"}}}},
+		},
+		FromAlias: "s3object",
+	}
+
+	reader := NewCSVReader(strings.NewReader(input), &CSVInput{
+		FileHeaderInfo: "USE",
+	})
+
+	var buf bytes.Buffer
+	exec := NewExecutor(query, reader, &CSVOutput{})
+
+	err := exec.Execute(context.Background(), &buf)
+	require.NoError(t, err)
+
+	records, _, _ := decodeEvents(t, &buf)
+	result := string(records)
+	assert.Contains(t, result, "ALICE") // UPPER(name)
+	assert.Contains(t, result, "BOB")   // UPPER(name)
+	assert.Contains(t, result, "30")    // CAST(age AS INT)
+	assert.Contains(t, result, "25")    // CAST(age AS INT)
+}
+
 func TestExecutor_StatsIncludeBytesTracked(t *testing.T) {
 	input := "name,age\nAlice,30\nBob,25\n"
 	query := &Query{

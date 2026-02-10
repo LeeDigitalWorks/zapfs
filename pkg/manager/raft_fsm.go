@@ -725,6 +725,20 @@ func (ms *ManagerServer) applyRegisterFederation(data json.RawMessage) interface
 		col.BucketMode = req.Mode
 	}
 
+	// Encrypt federation credentials before storing in Raft state
+	if req.External != nil && len(ms.masterKey) > 0 {
+		if encrypted, err := encryptSecret(ms.masterKey, req.External.AccessKeyId); err == nil {
+			req.External.AccessKeyId = encrypted
+		} else {
+			logger.Error().Err(err).Str("bucket", req.LocalBucket).Msg("Failed to encrypt federation access key")
+		}
+		if encrypted, err := encryptSecret(ms.masterKey, req.External.SecretAccessKey); err == nil {
+			req.External.SecretAccessKey = encrypted
+		} else {
+			logger.Error().Err(err).Str("bucket", req.LocalBucket).Msg("Failed to encrypt federation secret key")
+		}
+	}
+
 	// Store federation config
 	ms.state.FederationConfigs[req.LocalBucket] = &FederationInfo{
 		External:          req.External,
@@ -905,8 +919,24 @@ func (ms *ManagerServer) applyUpdateFederationCredentials(data json.RawMessage) 
 		return fmt.Errorf("bucket %s is not federated", req.Bucket)
 	}
 
-	fedInfo.External.AccessKeyId = req.AccessKeyID
-	fedInfo.External.SecretAccessKey = req.SecretAccessKey
+	// Encrypt credentials before storing in Raft state
+	accessKeyID := req.AccessKeyID
+	secretAccessKey := req.SecretAccessKey
+	if len(ms.masterKey) > 0 {
+		if encrypted, err := encryptSecret(ms.masterKey, accessKeyID); err == nil {
+			accessKeyID = encrypted
+		} else {
+			logger.Error().Err(err).Str("bucket", req.Bucket).Msg("Failed to encrypt federation access key")
+		}
+		if encrypted, err := encryptSecret(ms.masterKey, secretAccessKey); err == nil {
+			secretAccessKey = encrypted
+		} else {
+			logger.Error().Err(err).Str("bucket", req.Bucket).Msg("Failed to encrypt federation secret key")
+		}
+	}
+
+	fedInfo.External.AccessKeyId = accessKeyID
+	fedInfo.External.SecretAccessKey = secretAccessKey
 	fedInfo.UpdatedAt = req.UpdatedAt
 
 	logger.Debug().

@@ -22,7 +22,7 @@ import (
 func TestNewLeaderForwarder(t *testing.T) {
 	t.Parallel()
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	require.NotNil(t, lf)
 
 	assert.Equal(t, 5*time.Second, lf.dialTimeout)
@@ -34,7 +34,7 @@ func TestNewLeaderForwarder(t *testing.T) {
 func TestLeaderForwarder_Close(t *testing.T) {
 	t.Parallel()
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	require.NotNil(t, lf)
 
 	// Close on empty forwarder should not panic
@@ -48,7 +48,7 @@ func TestLeaderForwarder_Close(t *testing.T) {
 func TestLeaderForwarder_ConnectionFailure(t *testing.T) {
 	t.Parallel()
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	lf.dialTimeout = 100 * time.Millisecond // Short timeout for faster test
 	defer lf.Close()
 
@@ -68,7 +68,7 @@ func TestLeaderForwarder_ConnectionFailure(t *testing.T) {
 func TestLeaderForwarder_Timeout(t *testing.T) {
 	t.Parallel()
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	lf.dialTimeout = 50 * time.Millisecond // Very short timeout
 	defer lf.Close()
 
@@ -86,7 +86,7 @@ func TestLeaderForwarder_Timeout(t *testing.T) {
 func TestLeaderForwarder_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	lf.dialTimeout = 100 * time.Millisecond
 	defer lf.Close()
 
@@ -198,7 +198,7 @@ func TestLeaderForwarder_ForwardCreateCollection_Success(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -225,7 +225,7 @@ func TestLeaderForwarder_ForwardDeleteCollection_Success(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -252,7 +252,7 @@ func TestLeaderForwarder_ForwardRegisterService_Success(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -273,7 +273,7 @@ func TestLeaderForwarder_ForwardUnregisterService_Success(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -294,7 +294,7 @@ func TestLeaderForwarder_ForwardRaftAddServer_Success(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -316,7 +316,7 @@ func TestLeaderForwarder_ForwardRaftRemoveServer_Success(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -343,7 +343,7 @@ func TestLeaderForwarder_CacheConnection(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -391,7 +391,7 @@ func TestLeaderForwarder_LeaderChange_RefreshConnection(t *testing.T) {
 	}
 	addr2 := startTestGRPCServer(t, server2)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -426,7 +426,7 @@ func TestLeaderForwarder_RPCError(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()
@@ -461,7 +461,7 @@ func TestLeaderForwarder_ContextCancellation(t *testing.T) {
 
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -481,7 +481,7 @@ func TestLeaderForwarder_DoubleCheckedLocking_Race(t *testing.T) {
 	server := &testManagerServer{}
 	addr := startTestGRPCServer(t, server)
 
-	lf := NewLeaderForwarder()
+	lf := NewLeaderForwarder("")
 	defer lf.Close()
 
 	ctx := context.Background()

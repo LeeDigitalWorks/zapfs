@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -66,6 +68,9 @@ type ManagerServerOpts struct {
 	// Placement defaults
 	DefaultNumReplicas uint32 // Default replication factor when not specified per-request
 
+	// Admin gRPC auth
+	AdminToken string // Shared secret for admin gRPC RPCs
+
 	// Federation (S3 passthrough/migration)
 	FederationEnabled              bool
 	FederationExternalTimeout      time.Duration
@@ -98,6 +103,9 @@ func init() {
 	f.String("node_id", "", "Unique node ID (defaults to hostname)")
 	f.String("raft_dir", "/tmp/raft", "Raft data directory")
 	f.String("raft_addr", "", "Raft bind address for peer communication (default: ip:grpc_port+1)")
+	f.String("raft_cert_file", "", "TLS certificate for Raft peer communication")
+	f.String("raft_key_file", "", "TLS private key for Raft peer communication")
+	f.String("raft_ca_file", "", "CA certificate for verifying Raft peers (enables mTLS)")
 	f.Duration("leader_timeout", 5*time.Second, "Time to wait for leader election")
 	f.Bool("bootstrap", false, "Bootstrap a new Raft cluster")
 	f.Int("bootstrap_expect", 1, "Expected number of servers in cluster")
@@ -141,6 +149,9 @@ func init() {
 	// IAM configuration
 	f.Bool("allow_dev_credentials", false, "Allow insecure dev credentials when no IAM config is provided (NEVER use in production)")
 
+	// Admin gRPC auth
+	f.String("admin_token", "", "Shared secret for admin gRPC RPCs (RaftAddServer, RaftRemoveServer, etc.)")
+
 	// Federation (S3 passthrough/migration)
 	f.Bool("federation.enabled", false, "Enable S3 federation features")
 	f.Duration("federation.external_timeout", 5*time.Minute, "Timeout for external S3 requests")
@@ -164,17 +175,62 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 		logger.Fatal().Err(err).Msg("failed to create raft directory")
 	}
 
+	// Build Raft TLS config if cert and key are provided
+	var raftTLSConfig *tls.Config
+	raftCertFile, _ := cmd.Flags().GetString("raft_cert_file")
+	raftKeyFile, _ := cmd.Flags().GetString("raft_key_file")
+	raftCAFile, _ := cmd.Flags().GetString("raft_ca_file")
+
+	if raftCertFile != "" && raftKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(raftCertFile, raftKeyFile)
+		if err != nil {
+			logger.Fatal().Err(err).Msg("failed to load Raft TLS certificate")
+			return
+		}
+		raftTLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		if raftCAFile != "" {
+			caCert, err := os.ReadFile(raftCAFile)
+			if err != nil {
+				logger.Fatal().Err(err).Msg("failed to read Raft CA certificate")
+				return
+			}
+			pool := x509.NewCertPool()
+			if !pool.AppendCertsFromPEM(caCert) {
+				logger.Fatal().Msg("invalid Raft CA certificate")
+				return
+			}
+			raftTLSConfig.ClientCAs = pool
+			raftTLSConfig.RootCAs = pool
+			raftTLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+		}
+	}
+
 	raftConfig := &manager.Config{
 		NodeID:          opts.NodeID,
 		BindAddr:        opts.RaftBindAddr,
 		DataDir:         opts.RaftDir,
 		Bootstrap:       opts.Bootstrap,
 		BootstrapExpect: opts.BootstrapExpect,
+		TLSConfig:       raftTLSConfig,
 	}
 
 	// Check for existing Raft state BEFORE creating the Raft node
 	// This is important because NewManagerServer creates the raft.db file
 	hasExistingState := manager.HasExistingRaftState(opts.RaftDir)
+
+	// Log Raft transport security mode
+	if raftTLSConfig != nil {
+		if raftCAFile != "" {
+			logger.Info().Msg("Raft transport: mTLS enabled (peer verification)")
+		} else {
+			logger.Info().Msg("Raft transport: TLS enabled (encryption only)")
+		}
+	} else {
+		logger.Warn().Msg("Raft transport: plaintext (set --raft_cert_file and --raft_key_file for TLS)")
+	}
 
 	logger.Info().
 		Str("node_id", raftConfig.NodeID).
@@ -200,9 +256,17 @@ func runManagerServer(cmd *cobra.Command, args []string) {
 	// Get license checker for limit enforcement (noopChecker for community edition)
 	licenseChecker := license.GetChecker()
 
-	managerServer, err := manager.NewManagerServer(opts.RegionID, raftConfig, opts.LeaderTimeout, iamService, licenseChecker, opts.DefaultNumReplicas)
+	managerServer, err := manager.NewManagerServer(opts.RegionID, raftConfig, opts.LeaderTimeout, iamService, licenseChecker, opts.DefaultNumReplicas, opts.AdminToken)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to create manager server")
+	}
+
+	// Configure master key for federation secret encryption (reuses ZAPFS_IAM_MASTER_KEY)
+	if mk, err := iam.GetMasterKey(); err == nil && mk != nil {
+		managerServer.SetMasterKey(mk.Key())
+		logger.Info().Msg("Federation secret encryption enabled (using IAM master key)")
+	} else if err != nil {
+		logger.Warn().Err(err).Msg("Federation secret encryption disabled (failed to load master key)")
 	}
 
 	// Configure multi-region if specified (enterprise feature)
@@ -317,6 +381,7 @@ func loadManagerOpts(cmd *cobra.Command) ManagerServerOpts {
 		RegionID:           f.String("region_id"),
 		LeaderTimeout:      f.Duration("leader_timeout"),
 		DefaultNumReplicas: f.Uint32("default_num_replicas"),
+		AdminToken:         f.String("admin_token"),
 		// Federation
 		FederationEnabled:              f.Bool("federation.enabled"),
 		FederationExternalTimeout:      f.Duration("federation.external_timeout"),
@@ -406,8 +471,23 @@ func startManagerAdminServer(opts ManagerServerOpts, ms *manager.ManagerServer, 
 
 	// Health and status endpoints
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"healthy"}`))
+		healthy := ms.IsClusterReady()
+		w.Header().Set("Content-Type", "application/json")
+		if healthy {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":     "healthy",
+				"has_leader": ms.HasLeader(),
+				"is_leader":  ms.IsLeader(),
+			})
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":     "degraded",
+				"has_leader": ms.HasLeader(),
+				"is_leader":  ms.IsLeader(),
+			})
+		}
 	})
 
 	// Cluster state endpoint - useful for debugging readiness issues
@@ -441,6 +521,15 @@ func startManagerGRPCServer(opts ManagerServerOpts, ms *manager.ManagerServer) *
 	}
 
 	grpcOpts := loadTLSServerOpts(opts.CertFile, opts.KeyFile)
+
+	if opts.AdminToken != "" {
+		interceptor := manager.NewAdminAuthInterceptor(opts.AdminToken, manager.AdminProtectedMethods())
+		grpcOpts = append(grpcOpts, grpc.ChainUnaryInterceptor(interceptor))
+		logger.Info().Msg("Admin gRPC auth enabled")
+	} else {
+		logger.Warn().Msg("Admin gRPC auth disabled (set --admin_token for production)")
+	}
+
 	grpcServer := proto.NewGRPCServer(grpcOpts...)
 	reflection.Register(grpcServer)
 	manager_pb.RegisterManagerServiceServer(grpcServer, ms)
@@ -481,12 +570,18 @@ func joinCluster(opts ManagerServerOpts, leaderGRPCAddr string) error {
 		Str("raft_addr", opts.RaftBindAddr).
 		Msg("Connecting to leader via gRPC to join cluster")
 
-	dialOpt, err := utils.GetServerDialOption(opts.CertFile, opts.KeyFile, "")
+	dialOpts := []grpc.DialOption{}
+	tlsOpt, err := utils.GetServerDialOption(opts.CertFile, opts.KeyFile, "")
 	if err != nil {
 		return fmt.Errorf("failed to create TLS config: %w", err)
 	}
+	dialOpts = append(dialOpts, tlsOpt)
 
-	client, err := proto.NewManagerClient(leaderGRPCAddr, false, 1, dialOpt)
+	if opts.AdminToken != "" {
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(&tokenCredential{token: opts.AdminToken}))
+	}
+
+	client, err := proto.NewManagerClient(leaderGRPCAddr, false, 1, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to create manager client: %w", err)
 	}
@@ -506,4 +601,17 @@ func joinCluster(opts ManagerServerOpts, leaderGRPCAddr string) error {
 
 	logger.Info().Str("leader", leaderGRPCAddr).Str("node_id", opts.NodeID).Msg("Successfully joined Raft cluster")
 	return nil
+}
+
+// tokenCredential implements credentials.PerRPCCredentials for bearer token auth.
+type tokenCredential struct {
+	token string
+}
+
+func (t *tokenCredential) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + t.token}, nil
+}
+
+func (t *tokenCredential) RequireTransportSecurity() bool {
+	return false
 }

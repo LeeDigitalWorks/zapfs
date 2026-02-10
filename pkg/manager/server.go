@@ -98,6 +98,9 @@ type ManagerServer struct {
 	// Backup scheduler (enterprise)
 	backupScheduler *BackupScheduler
 
+	// Encryption key for federation secrets in Raft state (nil = no encryption)
+	masterKey []byte
+
 	// Shutdown
 	shutdownCh chan struct{}
 	shutdownWg sync.WaitGroup
@@ -123,7 +126,7 @@ const (
 )
 
 // NewManagerServer creates a new manager server with the given configuration
-func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseChecker license.Checker, defaultNumReplicas uint32) (*ManagerServer, error) {
+func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Duration, iamService *iam.Service, licenseChecker license.Checker, defaultNumReplicas uint32, adminToken string) (*ManagerServer, error) {
 	if defaultNumReplicas == 0 {
 		defaultNumReplicas = 3 // sensible default
 	}
@@ -134,7 +137,7 @@ func NewManagerServer(regionID string, raftConfig *Config, leaderTimeout time.Du
 
 	ms := &ManagerServer{
 		state:              NewFSMState(regionID, defaultNumReplicas),
-		leaderForwarder:    NewLeaderForwarder(),
+		leaderForwarder:    NewLeaderForwarder(adminToken),
 		iamService:         iamService,
 		licenseChecker:     licenseChecker,
 		iamSubs:            make(map[uint64]chan *iam_pb.CredentialEvent),
@@ -365,6 +368,22 @@ func (ms *ManagerServer) IsClusterReady() bool {
 	return ms.raftNode.HasLeader()
 }
 
+// HasLeader returns true if the Raft cluster currently has an elected leader.
+func (ms *ManagerServer) HasLeader() bool {
+	if ms.raftNode == nil {
+		return false
+	}
+	return ms.raftNode.HasLeader()
+}
+
+// IsLeader returns true if this node is the current Raft leader.
+func (ms *ManagerServer) IsLeader() bool {
+	if ms.raftNode == nil {
+		return false
+	}
+	return ms.raftNode.IsLeader()
+}
+
 // WaitForClusterReady blocks until the cluster has a leader or context is cancelled
 func (ms *ManagerServer) WaitForClusterReady(timeout time.Duration) error {
 	if ms.raftNode == nil {
@@ -416,6 +435,40 @@ func (ms *ManagerServer) Shutdown() {
 
 	close(ms.shutdownCh)
 	ms.shutdownWg.Wait()
+}
+
+// SetMasterKey sets the encryption key for federation secrets in Raft state.
+// When set, federation credentials (AccessKeyId, SecretAccessKey) are encrypted
+// before being stored in the FSM state and decrypted when read.
+// Pass nil to disable encryption (credentials stored in plaintext).
+func (ms *ManagerServer) SetMasterKey(key []byte) {
+	ms.masterKey = key
+}
+
+// DecryptFederationCredentials decrypts the AccessKeyId and SecretAccessKey
+// from a FederationInfo that was stored in encrypted form in Raft state.
+// Returns the decrypted accessKeyID and secretAccessKey.
+// If no masterKey is set or the values are not encrypted, returns them as-is.
+func (ms *ManagerServer) DecryptFederationCredentials(fedInfo *FederationInfo) (accessKeyID, secretAccessKey string, err error) {
+	if fedInfo == nil || fedInfo.External == nil {
+		return "", "", nil
+	}
+
+	accessKeyID = fedInfo.External.AccessKeyId
+	secretAccessKey = fedInfo.External.SecretAccessKey
+
+	if len(ms.masterKey) > 0 {
+		accessKeyID, err = decryptSecret(ms.masterKey, accessKeyID)
+		if err != nil {
+			return "", "", fmt.Errorf("decrypt access key: %w", err)
+		}
+		secretAccessKey, err = decryptSecret(ms.masterKey, secretAccessKey)
+		if err != nil {
+			return "", "", fmt.Errorf("decrypt secret key: %w", err)
+		}
+	}
+
+	return accessKeyID, secretAccessKey, nil
 }
 
 // healthCheckLoop periodically checks the health of registered services

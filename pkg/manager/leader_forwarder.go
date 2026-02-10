@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -60,12 +61,16 @@ type LeaderForwarder struct {
 	client           manager_pb.ManagerServiceClient
 	federationClient manager_pb.FederationServiceClient
 
+	adminToken  string // Shared secret for admin RPCs (empty = disabled)
 	dialTimeout time.Duration
 }
 
-// NewLeaderForwarder creates a new leader forwarder
-func NewLeaderForwarder() *LeaderForwarder {
+// NewLeaderForwarder creates a new leader forwarder.
+// adminToken is optional; if non-empty it will be sent as a Bearer token
+// when forwarding admin RPCs to the leader.
+func NewLeaderForwarder(adminToken string) *LeaderForwarder {
 	return &LeaderForwarder{
+		adminToken:  adminToken,
 		dialTimeout: 5 * time.Second,
 	}
 }
@@ -172,6 +177,16 @@ func (lf *LeaderForwarder) Close() {
 	}
 }
 
+// withAdminAuth returns a context with the admin bearer token attached as
+// outgoing gRPC metadata. If no admin token is configured, the original
+// context is returned unchanged.
+func (lf *LeaderForwarder) withAdminAuth(ctx context.Context) context.Context {
+	if lf.adminToken == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+lf.adminToken)
+}
+
 // ForwardCreateCollection forwards a CreateCollection request to the leader
 func (lf *LeaderForwarder) ForwardCreateCollection(ctx context.Context, leaderAddr string, req *manager_pb.CreateCollectionRequest) (*manager_pb.CreateCollectionResponse, error) {
 	start := time.Now()
@@ -271,7 +286,7 @@ func (lf *LeaderForwarder) ForwardRaftAddServer(ctx context.Context, leaderAddr 
 		return nil, err
 	}
 
-	resp, err := client.RaftAddServer(ctx, req)
+	resp, err := client.RaftAddServer(lf.withAdminAuth(ctx), req)
 
 	forwardedRequestsDuration.WithLabelValues("RaftAddServer").Observe(time.Since(start).Seconds())
 
@@ -293,7 +308,7 @@ func (lf *LeaderForwarder) ForwardRaftRemoveServer(ctx context.Context, leaderAd
 		return nil, err
 	}
 
-	resp, err := client.RaftRemoveServer(ctx, req)
+	resp, err := client.RaftRemoveServer(lf.withAdminAuth(ctx), req)
 
 	forwardedRequestsDuration.WithLabelValues("RaftRemoveServer").Observe(time.Since(start).Seconds())
 

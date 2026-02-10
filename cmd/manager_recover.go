@@ -53,6 +53,8 @@ func init() {
 	f.Bool("dry-run", false, "Show what would be recovered without making changes")
 	f.Bool("yes", false, "Skip confirmation prompt")
 	f.Duration("timeout", 5*time.Minute, "Operation timeout")
+	f.String("admin-token", "", "Admin token for authenticating to the manager (must match manager's --admin_token)")
+
 }
 
 func runManagerRecover(cmd *cobra.Command, args []string) {
@@ -61,14 +63,20 @@ func runManagerRecover(cmd *cobra.Command, args []string) {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	skipConfirm, _ := cmd.Flags().GetBool("yes")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
+	adminToken, _ := cmd.Flags().GetString("admin-token")
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Connect to manager
-	conn, err := grpc.NewClient(managerAddr,
+	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	}
+	if adminToken != "" {
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(&tokenCredential{token: adminToken}))
+	}
+
+	conn, err := grpc.NewClient(managerAddr, dialOpts...)
 	if err != nil {
 		logger.Error().Err(err).Str("addr", managerAddr).Msg("failed to create gRPC client")
 		os.Exit(1)

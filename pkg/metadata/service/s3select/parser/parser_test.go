@@ -181,6 +181,124 @@ func TestParseFunctionCall_Args(t *testing.T) {
 	})
 }
 
+func TestParseCAST_S3Types(t *testing.T) {
+	p := New()
+
+	tests := []struct {
+		sql          string
+		desc         string
+		expectedType string
+	}{
+		{"SELECT CAST(age AS INT) FROM s3object", "CAST AS INT", "int"},
+		{"SELECT CAST(age AS INTEGER) FROM s3object", "CAST AS INTEGER", "int"},
+		{"SELECT CAST(val AS FLOAT) FROM s3object", "CAST AS FLOAT", "decimal"},
+		{"SELECT CAST(val AS DOUBLE) FROM s3object", "CAST AS DOUBLE", "decimal"},
+		{"SELECT CAST(val AS BOOL) FROM s3object", "CAST AS BOOL", "int"},
+		{"SELECT CAST(val AS BOOLEAN) FROM s3object", "CAST AS BOOLEAN", "int"},
+		{"SELECT CAST(val AS STRING) FROM s3object", "CAST AS STRING", "string"},
+		{"SELECT CAST(val AS VARCHAR) FROM s3object", "CAST AS VARCHAR", "string"},
+		{"SELECT CAST(val AS TIMESTAMP) FROM s3object", "CAST AS TIMESTAMP", "timestamp"},
+		{"SELECT CAST(age AS DECIMAL) FROM s3object", "CAST AS DECIMAL (native)", "decimal"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			query, err := p.Parse(tt.sql)
+			require.NoError(t, err, "should parse: %s", tt.sql)
+			require.NotNil(t, query)
+			require.Len(t, query.Projections, 1)
+			fc, ok := query.Projections[0].Expr.(*s3select.FunctionCall)
+			require.True(t, ok, "projection should be FunctionCall")
+			assert.Equal(t, "CAST", fc.Name)
+			require.Len(t, fc.Args, 2)
+			typeLit, ok := fc.Args[1].(*s3select.Literal)
+			require.True(t, ok)
+			assert.Equal(t, tt.expectedType, typeLit.Value)
+		})
+	}
+}
+
+func TestParser_WhereWithCAST(t *testing.T) {
+	p := New()
+
+	// This is the exact query from the integration test
+	query, err := p.Parse("SELECT name, age FROM s3object WHERE CAST(age AS INT) > 28")
+	require.NoError(t, err)
+	require.NotNil(t, query.Where)
+	assert.Len(t, query.Projections, 2)
+
+	// WHERE clause should be: CAST(age AS INT) > 28
+	binOp, ok := query.Where.(*s3select.BinaryOp)
+	require.True(t, ok)
+	assert.Equal(t, ">", binOp.Op)
+
+	// Left side should be CAST function call
+	fc, ok := binOp.Left.(*s3select.FunctionCall)
+	require.True(t, ok)
+	assert.Equal(t, "CAST", fc.Name)
+	require.Len(t, fc.Args, 2)
+
+	// CAST arg 1: column ref "age"
+	col, ok := fc.Args[0].(*s3select.ColumnRef)
+	require.True(t, ok)
+	assert.Equal(t, "age", col.Name)
+
+	// CAST arg 2: type "int" (mapped from INT via SIGNED)
+	typeLit, ok := fc.Args[1].(*s3select.Literal)
+	require.True(t, ok)
+	assert.Equal(t, "int", typeLit.Value)
+
+	// Right side should be literal 28
+	lit, ok := binOp.Right.(*s3select.Literal)
+	require.True(t, ok)
+	assert.Equal(t, int64(28), lit.Value)
+}
+
+func TestNormalizeCASTTypes(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			"SELECT CAST(age AS INT) FROM s3object",
+			"SELECT CAST(age AS SIGNED) FROM s3object",
+		},
+		{
+			"SELECT * FROM s3object WHERE CAST(age AS INTEGER) > 28",
+			"SELECT * FROM s3object WHERE CAST(age AS SIGNED) > 28",
+		},
+		{
+			"SELECT CAST(val AS FLOAT) FROM s3object",
+			"SELECT CAST(val AS DECIMAL) FROM s3object",
+		},
+		{
+			"SELECT CAST(val AS STRING) FROM s3object",
+			"SELECT CAST(val AS CHAR) FROM s3object",
+		},
+		{
+			"SELECT CAST(val AS TIMESTAMP) FROM s3object",
+			"SELECT CAST(val AS DATETIME) FROM s3object",
+		},
+		{
+			// DECIMAL is native MySQL, should not be changed
+			"SELECT CAST(val AS DECIMAL) FROM s3object",
+			"SELECT CAST(val AS DECIMAL) FROM s3object",
+		},
+		{
+			// Column alias "AS integer" (no closing paren) should not be affected
+			"SELECT name AS integer FROM s3object",
+			"SELECT name AS integer FROM s3object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := normalizeCASTTypes(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestParseUnaryExpr(t *testing.T) {
 	p := New()
 

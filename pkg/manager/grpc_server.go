@@ -123,27 +123,72 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 
 	reg.LastHeartbeat = time.Now()
 
-	// Check if status change is needed (Offline → Active)
+	// Check if status change is needed (Offline -> Active)
 	needsStatusUpdate := reg.Status == ServiceOffline
+
+	// Track capacity updates
+	capacityUpdated := false
+	if req.ServiceType == manager_pb.ServiceType_FILE_SERVICE {
+		if fileMetadata := req.GetFileService(); fileMetadata != nil {
+			if len(fileMetadata.StorageBackends) > 0 {
+				reg.StorageBackends = fileMetadata.StorageBackends
+				capacityUpdated = true
+			}
+		}
+	}
+
+	// Check for data loss condition from metadata service heartbeats
+	// checkDataLossCondition only reads ms.state.Collections (already locked)
+	// and acquires ms.collectionsRecoveryRequiredMu (separate mutex, no deadlock)
+	if req.ServiceType == manager_pb.ServiceType_METADATA_SERVICE {
+		if metadataInfo := req.GetMetadataService(); metadataInfo != nil {
+			ms.checkDataLossCondition(serviceID, metadataInfo.BucketCount)
+		}
+	}
+
+	// Update cached cluster capacity if storage info changed
+	// updateClusterCapacity only reads ms.state.FileServices (already locked)
+	// and acquires ms.clusterCapacityMu (separate mutex, no deadlock)
+	if capacityUpdated {
+		ms.updateClusterCapacity()
+	}
+
+	topologyChanged := reg.LastKnownTopologyVersion < ms.state.TopologyVersion
+	if topologyChanged {
+		reg.LastKnownTopologyVersion = ms.state.TopologyVersion
+	}
+
+	// Build the full response while holding the lock, eliminating the
+	// TOCTOU race from the previous unlock-relock pattern where the
+	// service could be unregistered between the two lock acquisitions.
+	resp := &manager_pb.HeartbeatResponse{
+		TopologyChanged: topologyChanged,
+		TopologyVersion: ms.state.TopologyVersion,
+		PlacementPolicy: ms.state.PlacementPolicy,
+	}
+
 	ms.state.Unlock()
 
-	// Route status change through Raft for atomicity
+	logger.Debug().
+		Str("service_id", serviceID).
+		Uint64("client_version", req.Version).
+		Uint64("current_version", resp.TopologyVersion).
+		Bool("topology_changed", topologyChanged).
+		Msg("Heartbeat received")
+
+	// Status update via Raft happens AFTER the response is built.
+	// Even if the service is unregistered between now and the apply,
+	// the FSM handler checks for existence and handles it gracefully.
 	if needsStatusUpdate {
 		logger.Info().
 			Str("service_id", serviceID).
 			Msg("Service came back online - updating via Raft")
 
-		// Check if we're leader
 		leaderAddr, err := forwardOrError(ms.raftNode)
 		if err != nil {
 			logger.Warn().Err(err).Str("service_id", serviceID).Msg("Failed to check leader for status update")
-			// Continue anyway - status will be updated on next heartbeat
 		} else if leaderAddr != "" {
-			// We're not the leader - the actual status update should happen on leader
-			// Heartbeats are processed locally, but status changes need leader consensus
-			// This is expected: follower heartbeat updates LastHeartbeat locally, but
-			// status recovery will only be durable when heartbeat reaches leader
-			logger.Debug().Str("leader", leaderAddr).Msg("Not leader, skipping status update (will sync via heartbeat to leader)")
+			logger.Debug().Str("leader", leaderAddr).Msg("Not leader, skipping status update")
 		} else {
 			// We are the leader - apply through Raft
 			statusUpdate := ServiceStatusUpdate{
@@ -157,60 +202,7 @@ func (ms *ManagerServer) Heartbeat(ctx context.Context, req *manager_pb.Heartbea
 		}
 	}
 
-	// Re-acquire lock for the rest of the updates
-	ms.state.Lock()
-	defer ms.state.Unlock()
-
-	// Re-fetch reg in case it was modified
-	reg, exists = registry[serviceID]
-	if !exists {
-		return &manager_pb.HeartbeatResponse{
-			TopologyChanged: false,
-			TopologyVersion: ms.state.TopologyVersion,
-		}, nil
-	}
-
-	// Track if we need to update capacity cache
-	capacityUpdated := false
-
-	if req.ServiceType == manager_pb.ServiceType_FILE_SERVICE {
-		if fileMetadata := req.GetFileService(); fileMetadata != nil {
-			if len(fileMetadata.StorageBackends) > 0 {
-				reg.StorageBackends = fileMetadata.StorageBackends
-				capacityUpdated = true
-			}
-		}
-	}
-
-	// Check for data loss condition from metadata service heartbeats
-	if req.ServiceType == manager_pb.ServiceType_METADATA_SERVICE {
-		if metadataInfo := req.GetMetadataService(); metadataInfo != nil {
-			ms.checkDataLossCondition(serviceID, metadataInfo.BucketCount)
-		}
-	}
-
-	// Update cached cluster capacity if storage info changed
-	if capacityUpdated {
-		ms.updateClusterCapacity()
-	}
-
-	topologyChanged := reg.LastKnownTopologyVersion < ms.state.TopologyVersion
-	if topologyChanged {
-		reg.LastKnownTopologyVersion = ms.state.TopologyVersion
-	}
-
-	logger.Debug().
-		Str("service_id", serviceID).
-		Uint64("client_version", req.Version).
-		Uint64("current_version", ms.state.TopologyVersion).
-		Bool("topology_changed", topologyChanged).
-		Msg("Heartbeat received")
-
-	return &manager_pb.HeartbeatResponse{
-		TopologyChanged: topologyChanged,
-		TopologyVersion: ms.state.TopologyVersion,
-		PlacementPolicy: ms.state.PlacementPolicy,
-	}, nil
+	return resp, nil
 }
 
 // WatchTopology implements server-streaming PUSH-based topology updates.

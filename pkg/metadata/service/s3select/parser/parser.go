@@ -5,11 +5,56 @@ package parser
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/LeeDigitalWorks/zapfs/pkg/metadata/service/s3select"
 	"github.com/xwb1989/sqlparser"
 )
+
+// castTypeRe matches S3 Select CAST types that are not valid MySQL CAST types.
+// Captures: AS <S3_TYPE> followed by optional whitespace and closing paren.
+var castTypeRe = regexp.MustCompile(`(?i)\bAS\s+(INT|INTEGER|FLOAT|DOUBLE|BOOL|BOOLEAN|STRING|VARCHAR|TIMESTAMP)\s*\)`)
+
+// s3ToMySQLType maps S3 Select CAST type names to MySQL-compatible equivalents.
+var s3ToMySQLType = map[string]string{
+	"INT":       "SIGNED",
+	"INTEGER":   "SIGNED",
+	"FLOAT":     "DECIMAL",
+	"DOUBLE":    "DECIMAL",
+	"BOOL":      "SIGNED",
+	"BOOLEAN":   "SIGNED",
+	"STRING":    "CHAR",
+	"VARCHAR":   "CHAR",
+	"TIMESTAMP": "DATETIME",
+}
+
+// mysqlToS3Type maps MySQL CAST type names back to S3 Select type names
+// for use in the CAST function evaluation.
+var mysqlToS3Type = map[string]string{
+	"signed":   "int",
+	"char":     "string",
+	"datetime": "timestamp",
+	// "decimal" stays as "decimal" (works in both)
+}
+
+// normalizeCASTTypes replaces S3 Select CAST types with MySQL-compatible
+// equivalents so that xwb1989/sqlparser can parse them.
+func normalizeCASTTypes(sql string) string {
+	return castTypeRe.ReplaceAllStringFunc(sql, func(match string) string {
+		// Extract the type keyword from the match
+		sub := castTypeRe.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		typeName := strings.ToUpper(sub[1])
+		if replacement, ok := s3ToMySQLType[typeName]; ok {
+			// Rebuild: "AS <replacement>)"
+			return "AS " + replacement + ")"
+		}
+		return match
+	})
+}
 
 // Parser parses S3 Select SQL expressions.
 type Parser struct{}
@@ -21,7 +66,9 @@ func New() *Parser {
 
 // Parse parses an S3 Select SQL expression.
 func (p *Parser) Parse(sql string) (*s3select.Query, error) {
-	stmt, err := sqlparser.Parse(sql)
+	// Normalize S3 Select CAST types to MySQL-compatible types before parsing
+	normalized := normalizeCASTTypes(sql)
+	stmt, err := sqlparser.Parse(normalized)
 	if err != nil {
 		return nil, &s3select.SelectError{
 			Code:    "InvalidQuery",
@@ -222,6 +269,10 @@ func (p *Parser) parseExpr(expr sqlparser.Expr) (s3select.Expression, error) {
 		typeName := ""
 		if e.Type != nil {
 			typeName = e.Type.Type
+			// Map MySQL types back to S3 Select types (e.g. "signed" → "int")
+			if s3Type, ok := mysqlToS3Type[typeName]; ok {
+				typeName = s3Type
+			}
 		}
 		return &s3select.FunctionCall{
 			Name: "CAST",

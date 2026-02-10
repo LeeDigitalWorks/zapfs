@@ -585,6 +585,9 @@ func (e *Executor) evaluate(expr Expression, record Record) (any, error) {
 	case *UnaryOp:
 		return e.evalUnaryOp(ex, record)
 
+	case *FunctionCall:
+		return e.evalFunctionCall(ex, record)
+
 	default:
 		return nil, &SelectError{
 			Code:    "InvalidExpression",
@@ -636,6 +639,126 @@ func (e *Executor) evalUnaryOp(op *UnaryOp, record Record) (any, error) {
 		return -toFloat64(val), nil
 	default:
 		return nil, fmt.Errorf("unsupported unary operator: %s", op.Op)
+	}
+}
+
+func (e *Executor) evalFunctionCall(fc *FunctionCall, record Record) (any, error) {
+	// Evaluate arguments
+	args := make([]any, len(fc.Args))
+	for i, arg := range fc.Args {
+		val, err := e.evaluate(arg, record)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = val
+	}
+
+	return applyFunction(fc.Name, args)
+}
+
+func applyFunction(name string, args []any) (any, error) {
+	switch strings.ToUpper(name) {
+	case "CAST":
+		return applyCast(args)
+	case "LOWER":
+		if len(args) != 1 {
+			return nil, fmt.Errorf("LOWER requires 1 argument")
+		}
+		if args[0] == nil {
+			return nil, nil
+		}
+		return strings.ToLower(toString(args[0])), nil
+	case "UPPER":
+		if len(args) != 1 {
+			return nil, fmt.Errorf("UPPER requires 1 argument")
+		}
+		if args[0] == nil {
+			return nil, nil
+		}
+		return strings.ToUpper(toString(args[0])), nil
+	case "TRIM":
+		if len(args) != 1 {
+			return nil, fmt.Errorf("TRIM requires 1 argument")
+		}
+		if args[0] == nil {
+			return nil, nil
+		}
+		return strings.TrimSpace(toString(args[0])), nil
+	case "CHAR_LENGTH", "CHARACTER_LENGTH":
+		if len(args) != 1 {
+			return nil, fmt.Errorf("CHAR_LENGTH requires 1 argument")
+		}
+		if args[0] == nil {
+			return nil, nil
+		}
+		return int64(len([]rune(toString(args[0])))), nil
+	case "COALESCE":
+		for _, arg := range args {
+			if arg != nil {
+				return arg, nil
+			}
+		}
+		return nil, nil
+	case "NULLIF":
+		if len(args) != 2 {
+			return nil, fmt.Errorf("NULLIF requires 2 arguments")
+		}
+		if equals(args[0], args[1]) {
+			return nil, nil
+		}
+		return args[0], nil
+	default:
+		return nil, &SelectError{
+			Code:    "InvalidFunction",
+			Message: fmt.Sprintf("unsupported function: %s", name),
+		}
+	}
+}
+
+func applyCast(args []any) (any, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("CAST requires 2 arguments (value, type)")
+	}
+	if args[0] == nil {
+		return nil, nil
+	}
+
+	targetType := strings.ToUpper(toString(args[1]))
+	switch targetType {
+	case "INT", "INTEGER", "SIGNED", "UNSIGNED":
+		// Parse string to int64
+		var i int64
+		switch v := args[0].(type) {
+		case int64:
+			return v, nil
+		case int:
+			return int64(v), nil
+		case float64:
+			return int64(v), nil
+		case string:
+			_, err := fmt.Sscanf(v, "%d", &i)
+			if err != nil {
+				// Try parsing as float then truncate
+				var f float64
+				if _, err2 := fmt.Sscanf(v, "%f", &f); err2 == nil {
+					return int64(f), nil
+				}
+				return nil, fmt.Errorf("CAST: cannot convert %q to %s", v, targetType)
+			}
+			return i, nil
+		default:
+			return nil, fmt.Errorf("CAST: cannot convert %T to %s", args[0], targetType)
+		}
+	case "FLOAT", "DOUBLE", "DECIMAL":
+		return toFloat64(args[0]), nil
+	case "STRING", "VARCHAR", "CHAR":
+		return toString(args[0]), nil
+	case "BOOL", "BOOLEAN":
+		return toBool(args[0]), nil
+	case "TIMESTAMP", "DATETIME":
+		return toString(args[0]), nil // Keep as string for comparison
+	default:
+		return nil, fmt.Errorf("CAST: unsupported target type: %s", targetType)
 	}
 }
 

@@ -24,6 +24,14 @@ type MasterKey struct {
 	key []byte
 }
 
+// Key returns the raw key bytes for use with external encryption routines.
+func (m *MasterKey) Key() []byte {
+	if m == nil {
+		return nil
+	}
+	return m.key
+}
+
 var (
 	globalMasterKey     *MasterKey
 	globalMasterKeyOnce sync.Once
