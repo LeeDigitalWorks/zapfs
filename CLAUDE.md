@@ -13,9 +13,9 @@ ZapFS is a distributed object storage system with an S3-compatible API, written 
 ## Build Commands
 
 ```bash
-# Build
-make build                    # Community edition (./zapfs)
-make build-enterprise         # Enterprise edition with -tags enterprise
+# Build (single binary — enterprise features gated by license key at runtime)
+make build                    # Build ./zapfs (includes enterprise code, gated by license)
+go build -o zapfs .           # Community-only build (no enterprise code compiled in)
 
 # Test
 make test                     # Unit tests
@@ -25,19 +25,37 @@ go test -v ./path/to/pkg/...  # Run single package tests
 go test -v -run TestName ./path/to/pkg/...  # Run single test
 
 # Integration tests (requires Docker Compose)
-make docker-up                # Start services
+make docker-up                # Start production compose
+make docker-down              # Stop production compose
 make integration              # Run all integration tests
 make integration-s3           # S3 API tests only
-make docker-down              # Stop services
+make integration-all          # Full integration suite (starts minimal cluster automatically)
+make integration-resiliency   # Resiliency-specific tests
+
+# Development environment (hot reload)
+make docker-dev               # Start dev environment with hot reload
+make docker-dev-d             # Start dev environment detached
+make docker-dev-down          # Stop dev environment
+make docker-dev-logs          # View dev logs
+make docker-dev-rebuild       # Rebuild dev images (clears caches)
+
+# Minimal cluster (for benchmarks & quick tests)
+make minimal-up               # Start minimal cluster (1 manager, 2 file, 1 metadata, 1 mysql)
+make minimal-down             # Stop minimal cluster
+make minimal-test             # Run resiliency tests on minimal cluster
+make benchmark                # Run performance benchmarks on minimal cluster
 
 # Code generation
 make mocks                    # Generate mocks (mockery v3)
+make mocks-clean              # Clean and regenerate mocks
 make proto                    # Compile .proto files (cd proto && make protoc)
 
 # Quality
 make lint                     # Run golangci-lint
 make fmt                      # Format with goimports
-staticcheck ./...             # Run staticcheck (catches unused code, deprecated APIs, style issues)
+make vet                      # Run go vet
+make staticcheck              # Run staticcheck (excludes proto/*_pb/)
+make hooks-install            # Install pre-commit hook (gofmt, go vet, staticcheck, build)
 ```
 
 **Note:** Ignore staticcheck warnings in `proto/*_pb/` (auto-generated) and `checkLicense` functions (enterprise feature guards).
@@ -83,8 +101,12 @@ Generated code goes to `proto/*_pb/` directories (common_pb, manager_pb, metadat
 |----------|-------------|
 | `ZAPFS_IAM_MASTER_KEY` | Base64-encoded 32-byte key for secret encryption |
 | `LOG_LEVEL` | debug, info, warn, error |
-| `DB_DSN` | MySQL connection string (e.g., `zapfs:zapfs@tcp(localhost:3306)/zapfs`) |
+| `DB_DSN` | Database connection string (e.g., `zapfs:zapfs@tcp(localhost:3306)/zapfs`) |
 | `ZAPFS_LICENSE_KEY` | Enterprise license key or path |
+
+Supported database drivers: `vitess` (default), `mysql`, `postgres`, `cockroachdb`.
+
+Example configuration files for all services are in `cmd/config/` (manager.toml, metadata.toml, file.toml, iam.toml, security.toml, profiles.json, pools.json, tiers.toml).
 
 ## Development Credentials
 

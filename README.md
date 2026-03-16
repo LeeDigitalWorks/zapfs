@@ -121,16 +121,47 @@ curl -X POST http://localhost:8060/v1/iam/users/myuser/access-keys
 | `ZAPFS_IAM_MASTER_KEY` | Base64-encoded 32-byte key for encrypting secrets at rest | (dev key) |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | info |
 
+### Configuration Reference
+
+Each service is configured via CLI flags or TOML config files. Example configurations with inline documentation are in `cmd/config/`:
+
+| File | Service | Key Options |
+|------|---------|-------------|
+| `manager.toml` | Manager | Raft settings, placement, backup scheduling, LDAP/OIDC |
+| `metadata.toml` | Metadata | Database, rate limiting, federation, lifecycle scanner, events |
+| `file.toml` | File | Storage backends (local/S3), erasure coding, reconciliation |
+| `iam.toml` | IAM | Users, groups, access keys, policies |
+| `security.toml` | Security | TLS, encryption, master key |
+| `profiles.json` | Storage | Storage profiles (erasure coding schemes, compression) |
+| `pools.json` | Storage | Storage pool definitions |
+
+Supported database drivers: `vitess` (default), `mysql`, `postgres`, `cockroachdb`.
+
+### Observability
+
+Each service exposes a debug HTTP port with Prometheus metrics and pprof endpoints:
+
+| Service | Debug Port | Endpoints |
+|---------|-----------|-----------|
+| Manager | `:8055` | `/metrics`, `/debug/pprof/` |
+| Metadata | `:8085` | `/metrics`, `/debug/pprof/`, `/debug/iam/cache`, `/debug/buckets/cache` |
+| File | `:8010` | `/metrics`, `/debug/pprof/` |
+
+Set `LOG_LEVEL` (debug, info, warn, error) to control log verbosity. Logs are structured JSON.
+
 ## Development
 
 ### Building
 
 ```bash
-# Build binary
+# Build binary (enterprise — features gated by license key at runtime)
+make build
+
+# Build community-only binary (no enterprise code)
 go build -o zapfs .
 
 # Run tests
-go test ./...
+make test
 
 # Generate mocks
 make mocks
@@ -214,6 +245,9 @@ The default build includes all core S3 functionality:
 | **Access Control** | Bucket/Object ACLs, Bucket Policies |
 | **Configuration** | CORS, Website Hosting, Tagging, Encryption |
 | **Authentication** | AWS SigV4, SigV2, Presigned URLs, POST Policy |
+| **S3 Select** | SQL queries on CSV, JSON, and Parquet objects |
+| **Storage** | Compression (LZ4, ZSTD, Snappy), content-hash deduplication |
+| **Analytics** | Bucket Analytics configuration |
 
 ```bash
 go build -o zapfs .
@@ -246,6 +280,8 @@ export ZAPFS_LICENSE_KEY=$(cat ~/Downloads/zapfs-license.key)
 |---------|------------------|-------------|
 | Usage Reporting | FeatureAdvancedMetrics | Storage, bandwidth, and request tracking |
 | Lifecycle Rules | FeatureLifecycle | Object expiration and transitions |
+| Storage Transitions | FeatureLifecycle | Automated storage class transitions |
+| Intelligent Tiering | FeatureLifecycle | Access-pattern-based storage tiering |
 | Object Lock (WORM) | FeatureObjectLock | Retention and legal hold |
 | SSE-KMS Encryption | FeatureKMS | KMS-managed encryption keys |
 | Bucket Access Logging | FeatureAccessLog | S3 access logs to target bucket |
